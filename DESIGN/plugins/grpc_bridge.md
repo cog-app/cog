@@ -68,6 +68,7 @@ Build the plugin as a standalone binary, then load it from the host via `Registr
 - Hook callbacks are fire-and-forget over gRPC (no data is serialized to the plugin).
 - Protected plugins (dashboard, files) are always in-process and cannot be loaded via gRPC.
 - Per-user database access is not yet proxied; external plugins must use the API layer for data.
+- `RegisterService` is not bridged: `HandleHTTPRequest` carries one buffered request and one response, and a streaming RPC needs both open at once. An out-of-process plugin that registers a service gets a warning and no route. Bridging it would mean streaming request and response bodies over a bidirectional `HandleHTTPStream`.
 
 ## Code Generation
 

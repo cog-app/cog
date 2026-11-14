@@ -14,7 +14,7 @@ func parse(tokens []token) (Expr, error) {
 		return nil, err
 	}
 	if p.peek().kind != tokEOF {
-		return nil, fmt.Errorf("unexpected token %q at position %d", p.peek().val, p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "unexpected token %q", p.peek().val)
 	}
 	return expr, nil
 }
@@ -42,7 +42,7 @@ func (p *parser) next() token {
 func (p *parser) expect(kind tokenKind) (token, error) {
 	t := p.next()
 	if t.kind != kind {
-		return t, fmt.Errorf("expected %d, got %q at position %d", kind, t.val, t.pos)
+		return t, syntaxErr(t.pos, "expected %d, got %q", kind, t.val)
 	}
 	return t, nil
 }
@@ -126,7 +126,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 			return nil, err
 		}
 		if _, err := p.expect(tokRParen); err != nil {
-			return nil, fmt.Errorf("unclosed parenthesis at position %d", p.peek().pos)
+			return nil, syntaxErr(p.peek().pos, "unclosed parenthesis")
 		}
 		return expr, nil
 
@@ -153,7 +153,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 		return &TextExpr{Value: t.val}, nil
 
 	default:
-		return nil, fmt.Errorf("unexpected token %q at position %d", p.peek().val, p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "unexpected token %q", p.peek().val)
 	}
 }
 
@@ -163,7 +163,7 @@ func (p *parser) parseField() (Expr, error) {
 
 	field, err := p.expect(tokText)
 	if err != nil {
-		return nil, fmt.Errorf("expected field name after ':' at position %d", p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "expected field name after ':'")
 	}
 
 	switch p.peek().kind {
@@ -187,10 +187,10 @@ func (p *parser) parseField() (Expr, error) {
 		if p.peek().val == "IN" {
 			return p.parseFieldIn(field.val)
 		}
-		return nil, fmt.Errorf("expected '=', 'IN', or comparison operator after field name at position %d", p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "expected '=', 'IN', or comparison operator after field name")
 
 	default:
-		return nil, fmt.Errorf("expected '=', 'IN', or comparison operator after field name at position %d", p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "expected '=', 'IN', or comparison operator after field name")
 	}
 }
 
@@ -211,7 +211,7 @@ func compareOpFor(k tokenKind) CompareOp {
 func (p *parser) parseFieldIn(field string) (Expr, error) {
 	p.next() // consume IN
 	if _, err := p.expect(tokLParen); err != nil {
-		return nil, fmt.Errorf("expected '(' after IN at position %d", p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "expected '(' after IN")
 	}
 
 	var values []string
@@ -228,7 +228,7 @@ func (p *parser) parseFieldIn(field string) (Expr, error) {
 	}
 
 	if _, err := p.expect(tokRParen); err != nil {
-		return nil, fmt.Errorf("expected ')' after value list at position %d", p.peek().pos)
+		return nil, syntaxErr(p.peek().pos, "expected ')' after value list")
 	}
 
 	return &FieldInExpr{Field: field, Values: values}, nil
@@ -264,6 +264,21 @@ func (p *parser) parseValue() (string, error) {
 	case tokQuoted:
 		return p.next().val, nil
 	default:
-		return "", fmt.Errorf("expected value at position %d", p.peek().pos)
+		return "", syntaxErr(p.peek().pos, "expected value")
 	}
+}
+
+// SyntaxError is a query that does not parse. Pos is the byte offset of the
+// token it stopped at, for an editor to point at.
+type SyntaxError struct {
+	Pos int
+	Msg string
+}
+
+func (e *SyntaxError) Error() string {
+	return fmt.Sprintf("%s at position %d", e.Msg, e.Pos)
+}
+
+func syntaxErr(pos int, format string, args ...any) error {
+	return &SyntaxError{Pos: pos, Msg: fmt.Sprintf(format, args...)}
 }

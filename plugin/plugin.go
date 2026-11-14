@@ -57,6 +57,16 @@ type Registrar interface {
 	// RegisterAction mounts a state-changing handler (POST/PUT/DELETE) at /apps/{plugin_id}/{path}.
 	// The handler is wrapped with auth, CSRF, and plugin-enabled checks.
 	RegisterAction(method, path string, handler http.Handler)
+	// RegisterService mounts an RPC service — the path and handler a
+	// connect.New…ServiceHandler returns, such as "/cogfeed.v1.FeedService/" —
+	// at the root, where gRPC, gRPC-Web and Connect clients address it by its
+	// fully qualified name. It takes credentials (app passwords) only, not the
+	// session cookie, so it needs no CSRF token.
+	//
+	// Only in-process plugins can serve one: the bridge to an out-of-process
+	// plugin carries one request and one response, and a streaming RPC needs
+	// both open at once.
+	RegisterService(path string, handler http.Handler)
 	// RegisterResource declares a shareable resource type and its handler.
 	RegisterResource(def ResourceDef)
 	// RegisterHook subscribes to a named hook event.

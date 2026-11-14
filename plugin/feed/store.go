@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/query"
 )
@@ -85,13 +87,27 @@ func (s *Store) ListFolders() ([]Folder, error) {
 	return folders, nil
 }
 
-// RenameFolder updates a folder's name.
-func (s *Store) RenameFolder(id int64, name string) error {
-	_, err := s.db.Exec(`UPDATE folders SET name = ? WHERE id = ?`, name, id)
+// updatedOne wraps an UPDATE's error, and reports sql.ErrNoRows if it
+// changed no row, so a caller can tell a missing row from a failure.
+func updatedOne(res sql.Result, err error, format string, args ...any) error {
 	if err != nil {
-		return fmt.Errorf("rename folder: %w", err)
+		return fmt.Errorf(format+": %w", append(args, err)...)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf(format+" rows affected: %w", append(args, err)...)
+	}
+	if n == 0 {
+		return fmt.Errorf(format+": %w", append(args, sql.ErrNoRows)...)
 	}
 	return nil
+}
+
+// RenameFolder updates a folder's name, or returns sql.ErrNoRows if there is
+// none.
+func (s *Store) RenameFolder(id int64, name string) error {
+	res, err := s.db.Exec(`UPDATE folders SET name = ? WHERE id = ?`, name, id)
+	return updatedOne(res, err, "rename folder %d", id)
 }
 
 // GetFolder returns a single folder by ID.
@@ -138,28 +154,6 @@ func (s *Store) CreateSubscription(sub Subscription) (int64, error) {
 		return 0, fmt.Errorf("create subscription last insert id: %w", err)
 	}
 	return id, nil
-}
-
-// importSubscription creates sub unless a subscription with the same URL
-// already exists, reporting whether a row was added. Importers use it so that
-// a duplicate is skipped while any other failure is reported.
-func (s *Store) importSubscription(sub Subscription) (bool, error) {
-	res, err := s.db.Exec(`
-		INSERT INTO subscriptions
-			(folder_id, kind, url, title, site_url, image_url, poll_interval_sec, next_check_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(url) DO NOTHING`,
-		sub.FolderID, sub.Kind, sub.URL, sub.Title, sub.SiteURL, sub.ImageURL,
-		sub.PollIntervalSec, sub.NextCheckAt,
-	)
-	if err != nil {
-		return false, fmt.Errorf("import subscription %q: %w", sub.URL, err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("import subscription %q rows affected: %w", sub.URL, err)
-	}
-	return n > 0, nil
 }
 
 // GetSubscription returns a single subscription by ID.
@@ -257,7 +251,12 @@ func (s *Store) UpdateSubscriptionMetadata(id int64, updates map[string]string) 
 		if !allowedMetadataKeys[key] {
 			continue
 		}
-		setClauses = append(setClauses, key+" = ?")
+		if key == "title" {
+			// A title the user gave it stays.
+			setClauses = append(setClauses, "title = CASE WHEN title_locked THEN title ELSE ? END")
+		} else {
+			setClauses = append(setClauses, key+" = ?")
+		}
 		args = append(args, val)
 	}
 	if len(setClauses) == 0 {
@@ -389,11 +388,12 @@ type Item struct {
 // existing id with inserted=false. On success returns the new id with inserted=true.
 func (s *Store) UpsertItem(it Item) (int64, bool, error) {
 	res, err := s.db.Exec(`
-		INSERT OR IGNORE INTO items
+		INSERT INTO items
 			(subscription_id, guid, type, title, author, url, content_html,
 			 media_url, media_mime, duration_sec, thumbnail_url, published_at,
 			 is_read, is_starred, content_hash)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(subscription_id, guid) DO NOTHING`,
 		it.SubscriptionID, it.GUID, it.Type, it.Title, it.Author, it.URL, it.ContentHTML,
 		it.MediaURL, it.MediaMIME, it.DurationSec, it.ThumbnailURL, it.PublishedAt,
 		boolToInt(it.IsRead), boolToInt(it.IsStarred), it.ContentHash,
@@ -583,13 +583,20 @@ type Playback struct {
 
 // --- Playlist type ---
 
-// Playlist is a saved query that produces an ordered list of items.
+// Playlist is a saved query that produces an ordered list of items. How it
+// plays — its order and whether videos play as audio — is the same on every
+// device; what a device downloads of it is the device's business.
 type Playlist struct {
 	ID        int64
 	Name      string
 	Query     string
-	SortOrder int64
+	SortOrder int64 // its place in the sidebar
 	CreatedAt int64
+	Order     PlayOrder
+	// ShuffleSeed holds a shuffled order still until it is reshuffled.
+	ShuffleSeed int64
+	// ListenOnly plays (and downloads) its videos as audio.
+	ListenOnly bool
 }
 
 // --- Filter methods ---
@@ -634,17 +641,15 @@ func (s *Store) ListFilters() ([]Filter, error) {
 	return filters, nil
 }
 
-// UpdateFilter updates an existing filter.
+// UpdateFilter updates an existing filter, or returns sql.ErrNoRows if there
+// is none.
 func (s *Store) UpdateFilter(f Filter) error {
-	_, err := s.db.Exec(`
+	res, err := s.db.Exec(`
 		UPDATE filters SET sort_order = ?, query = ?, action = ?, action_value = ?
 		WHERE id = ?`,
 		f.SortOrder, f.Query, f.Action, f.ActionValue, f.ID,
 	)
-	if err != nil {
-		return fmt.Errorf("update filter: %w", err)
-	}
-	return nil
+	return updatedOne(res, err, "update filter %d", f.ID)
 }
 
 // DeleteFilter removes a filter by ID.
@@ -882,6 +887,19 @@ func (s *Store) GetSilenceRanges(itemID int64) ([]Range, error) {
 	return rs, nil
 }
 
+// PendingSilence returns up to limit item IDs whose download is ready on disk
+// and whose silence ranges have not been computed.
+func (s *Store) PendingSilence(limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT item_id FROM downloads
+		 WHERE state = 'ready' AND local_path != '' AND silence_state = ''
+		 ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending silence: %w", err)
+	}
+	return scanInt64IDs(rows, "pending silence")
+}
+
 // SetSilenceRanges caches silence ranges for an item and marks detection done.
 func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
 	buf, err := json.Marshal(ranges)
@@ -1042,16 +1060,25 @@ func scanInt64IDs(rows *sql.Rows, ctx string) ([]int64, error) {
 
 // --- Playback methods ---
 
-// SetPlayback upserts playback progress for an item.
-func (s *Store) SetPlayback(itemID int64, progressSec float64, completed bool) error {
+// SetPlayback records playback progress for an item as of at, when it
+// happened on the client that played it. An update older than the one stored
+// is ignored, so a device syncing offline progress late cannot rewind a
+// position set since; last writer wins by when it played, not when it
+// arrived. A time in the future is taken as now, so a client with a fast
+// clock cannot lock out every later update.
+func (s *Store) SetPlayback(itemID int64, progressSec float64, completed bool, at time.Time) error {
+	if now := time.Now(); at.After(now) {
+		at = now
+	}
 	_, err := s.db.Exec(`
 		INSERT INTO playback (item_id, progress_sec, completed, last_played_at)
-		VALUES (?, ?, ?, unixepoch())
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(item_id) DO UPDATE SET
 			progress_sec = excluded.progress_sec,
 			completed = excluded.completed,
-			last_played_at = unixepoch()`,
-		itemID, progressSec, boolToInt(completed),
+			last_played_at = excluded.last_played_at
+		WHERE excluded.last_played_at >= playback.last_played_at`,
+		itemID, progressSec, boolToInt(completed), at.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("set playback: %w", err)
@@ -1139,9 +1166,14 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 
 // --- Playlist methods ---
 
-// CreatePlaylist inserts a new playlist and returns its ID.
-func (s *Store) CreatePlaylist(name, query string) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO playlists (name, query) VALUES (?, ?)`, name, query)
+// CreatePlaylist inserts a new playlist and returns its ID. Its order is
+// newest first unless p says otherwise.
+func (s *Store) CreatePlaylist(p Playlist) (int64, error) {
+	if p.Order == "" {
+		p.Order = OrderNewest
+	}
+	res, err := s.db.Exec(`INSERT INTO playlists (name, query, sort_order, play_order, shuffle_seed, listen_only) VALUES (?, ?, ?, ?, ?, ?)`,
+		p.Name, p.Query, p.SortOrder, p.Order, p.ShuffleSeed, p.ListenOnly)
 	if err != nil {
 		return 0, fmt.Errorf("create playlist: %w", err)
 	}
@@ -1152,19 +1184,25 @@ func (s *Store) CreatePlaylist(name, query string) (int64, error) {
 	return id, nil
 }
 
+const playlistColumns = `id, name, query, sort_order, created_at, play_order, shuffle_seed, listen_only`
+
+func scanPlaylist(row interface{ Scan(...any) error }) (Playlist, error) {
+	var p Playlist
+	err := row.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt, &p.Order, &p.ShuffleSeed, &p.ListenOnly)
+	return p, err
+}
+
 // ListPlaylists returns all playlists ordered by sort_order, name.
 func (s *Store) ListPlaylists() ([]Playlist, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, query, sort_order, created_at
-		FROM playlists ORDER BY sort_order, name, id`)
+	rows, err := s.db.Query(`SELECT ` + playlistColumns + ` FROM playlists ORDER BY sort_order, name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list playlists: %w", err)
 	}
 	defer rows.Close()
 	var playlists []Playlist
 	for rows.Next() {
-		var p Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+		p, err := scanPlaylist(rows)
+		if err != nil {
 			return nil, fmt.Errorf("list playlists scan: %w", err)
 		}
 		playlists = append(playlists, p)
@@ -1175,24 +1213,34 @@ func (s *Store) ListPlaylists() ([]Playlist, error) {
 	return playlists, nil
 }
 
-// UpdatePlaylist updates an existing playlist.
+// UpdatePlaylist updates an existing playlist. It returns sql.ErrNoRows
+// when there is none with p's ID.
 func (s *Store) UpdatePlaylist(p Playlist) error {
-	_, err := s.db.Exec(`
-		UPDATE playlists SET name = ?, query = ?, sort_order = ?
+	if p.Order == "" {
+		p.Order = OrderNewest
+	}
+	res, err := s.db.Exec(`
+		UPDATE playlists SET name = ?, query = ?, sort_order = ?, play_order = ?, shuffle_seed = ?, listen_only = ?
 		WHERE id = ?`,
-		p.Name, p.Query, p.SortOrder, p.ID,
+		p.Name, p.Query, p.SortOrder, p.Order, p.ShuffleSeed, p.ListenOnly, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update playlist: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update playlist rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update playlist %d: %w", p.ID, sql.ErrNoRows)
 	}
 	return nil
 }
 
 // GetPlaylist returns a single playlist by ID.
 func (s *Store) GetPlaylist(id int64) (Playlist, error) {
-	var p Playlist
-	row := s.db.QueryRow(`SELECT id, name, query, sort_order, created_at FROM playlists WHERE id = ?`, id)
-	if err := row.Scan(&p.ID, &p.Name, &p.Query, &p.SortOrder, &p.CreatedAt); err != nil {
+	p, err := scanPlaylist(s.db.QueryRow(`SELECT `+playlistColumns+` FROM playlists WHERE id = ?`, id))
+	if err != nil {
 		return p, fmt.Errorf("get playlist: %w", err)
 	}
 	return p, nil
@@ -1220,6 +1268,8 @@ func (s *Store) CountUnread() (int64, error) {
 type SidebarCounts struct {
 	TotalUnread    int
 	StarredCount   int
+	TotalItems     int
+	Downloaded     int // items whose download is ready to play
 	BySubscription map[int64]int
 	ByFolder       map[int64]int
 }
@@ -1255,8 +1305,11 @@ func (s *Store) LoadSidebarCounts() (SidebarCounts, error) {
 	if err := rows.Err(); err != nil {
 		return sc, fmt.Errorf("sidebar counts rows: %w", err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE is_starred = 1`).Scan(&sc.StarredCount); err != nil {
-		return sc, fmt.Errorf("sidebar starred count: %w", err)
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*), COALESCE(SUM(is_starred), 0),
+		       (SELECT COUNT(*) FROM downloads WHERE state = 'ready')
+		FROM items`).Scan(&sc.TotalItems, &sc.StarredCount, &sc.Downloaded); err != nil {
+		return sc, fmt.Errorf("sidebar item counts: %w", err)
 	}
 	return sc, nil
 }
@@ -1274,25 +1327,43 @@ type ViewSpec struct {
 	FolderID       sql.NullInt64
 	SubscriptionID sql.NullInt64
 	TagName        string
-	HideRead       bool
-	Query          query.Expr    // optional cog-grammar filter; compiled to SQL.
-	Schema         *query.Schema // required when Query != nil.
+	// History keeps the items played, most recently played first, whatever
+	// Order says.
+	History  bool
+	HideRead bool
+	Query    query.Expr    // optional cog-grammar filter; compiled to SQL.
+	Schema   *query.Schema // required when Query != nil.
+	// Unfinished keeps audio and video not yet played to the end: what a
+	// play queue holds.
+	Unfinished bool
+	Order      PlayOrder // "" is newest first
+	Seed       int64     // the shuffle, when Order is OrderShuffled
+	// After continues a list from the item it last returned (keyset
+	// pagination): only items after it in this order are listed.
+	After *Cursor
+
+	joinPlayback bool // join playback as pb whatever else needs it
 }
 
-// ListItemsForView returns items (with subscription title) according to the ViewSpec.
-func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
-	var base strings.Builder
-	base.WriteString(`
-		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
-		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
-		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title
-		FROM items i
-		JOIN subscriptions s ON i.subscription_id = s.id`)
+// Cursor is an item's place in a list's order: its sort key and, to break
+// ties, its id.
+type Cursor struct {
+	Key int64
+	ID  int64
+}
 
-	var where []string
-	var args []any
+// unfinishedSQL is ViewSpec.Unfinished's condition; it needs playbackJoin.
+const unfinishedSQL = "i.type != 'text' AND COALESCE(pb.completed, 0) = 0"
 
+const playbackJoin = " LEFT JOIN playback pb ON pb.item_id = i.id"
+
+// leftSQL is the seconds left to play of an item; it needs playbackJoin.
+const leftSQL = "MAX(i.duration_sec - CAST(COALESCE(pb.progress_sec, 0) AS INTEGER), 0)"
+
+// from returns the joins and conditions after `FROM items i JOIN
+// subscriptions s`, shared by the item list and the counts.
+func (spec ViewSpec) from() (joins string, where []string, args []any, err error) {
+	var b strings.Builder
 	switch {
 	case spec.Starred:
 		where = append(where, "i.is_starred = 1")
@@ -1303,7 +1374,7 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 		where = append(where, "s.folder_id = ?")
 		args = append(args, spec.FolderID.Int64)
 	case spec.TagName != "":
-		base.WriteString(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id")
+		b.WriteString(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id")
 		where = append(where, "t.name = ?")
 		args = append(args, spec.TagName)
 	}
@@ -1312,58 +1383,123 @@ func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscripti
 	if spec.HideRead {
 		where = append(where, "i.is_read = 0")
 	}
+	switch {
+	case spec.History:
+		b.WriteString(" JOIN playback pb ON pb.item_id = i.id")
+	case spec.Unfinished || spec.Order == OrderShortest || spec.joinPlayback:
+		b.WriteString(playbackJoin)
+	}
+	if spec.Unfinished {
+		where = append(where, unfinishedSQL)
+	}
 
 	if spec.Query != nil {
 		if spec.Schema == nil {
-			return nil, fmt.Errorf("list items for view: Query set but Schema is nil")
+			return "", nil, nil, fmt.Errorf("Query set but Schema is nil")
 		}
 		w, qArgs, joinNames, err := query.Compile(spec.Query, *spec.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("list items for view: compile: %w", err)
+			return "", nil, nil, fmt.Errorf("compile: %w", err)
 		}
 		for _, name := range joinNames {
-			base.WriteByte(' ')
-			base.WriteString(spec.Schema.Joins[name])
+			b.WriteByte(' ')
+			b.WriteString(spec.Schema.Joins[name])
 		}
 		if w != "" {
 			where = append(where, w)
 			args = append(args, qArgs...)
 		}
 	}
+	return b.String(), where, args, nil
+}
 
-	q := base.String()
+// sortKey is the integer the list is ordered by, then by id in the same
+// direction; one key and the id are what a Cursor holds.
+func (spec ViewSpec) sortKey() (expr string, args []any, desc bool) {
+	switch {
+	case spec.History:
+		return "pb.last_played_at", nil, true
+	case spec.Order == OrderOldest:
+		return "i.published_at", nil, false
+	case spec.Order == OrderShortest:
+		return leftSQL, nil, false
+	case spec.Order == OrderShuffled:
+		// A hash of the id and the seed, so the order holds still until the
+		// seed changes: x spreads the id and the seed, and squaring it mod a
+		// prime breaks up the arithmetic progression x alone leaves. x stays
+		// below 2^31 and its square below 2^63 for seeds below 10^9.
+		x := "((i.id * 48271 + ? * 69621) % 1000000007)"
+		seed := spec.Seed % 1000000007
+		return "(" + x + " * " + x + " % 1000000007)", []any{seed, seed}, false
+	default:
+		return "i.published_at", nil, true
+	}
+}
+
+// ListItemsForView returns items (with subscription title) according to the ViewSpec.
+func (s *Store) ListItemsForView(spec ViewSpec, limit int) ([]ItemWithSubscription, error) {
+	items, _, err := s.listItems(spec, limit)
+	return items, err
+}
+
+// listItems is ListItemsForView, with each item's place in the order.
+func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []Cursor, error) {
+	joins, where, args, err := spec.from()
+	if err != nil {
+		return nil, nil, fmt.Errorf("list items for view: %w", err)
+	}
+	key, keyArgs, desc := spec.sortKey()
+	q := `
+		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
+		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
+		       COALESCE(s.title, s.url) AS subscription_title, ` + key + `
+		FROM items i
+		JOIN subscriptions s ON i.subscription_id = s.id` + joins
+	args = append(slices.Clone(keyArgs), args...)
+	dir, cmp := "ASC", ">"
+	if desc {
+		dir, cmp = "DESC", "<"
+	}
+	if spec.After != nil {
+		where = append(where, "("+key+", i.id) "+cmp+" (?, ?)")
+		args = append(append(args, keyArgs...), spec.After.Key, spec.After.ID)
+	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY i.published_at DESC, i.id DESC LIMIT ?"
-	args = append(args, limit)
+	q += " ORDER BY " + key + " " + dir + ", i.id " + dir + " LIMIT ?"
+	args = append(append(args, keyArgs...), limit)
 
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list items for view: %w", err)
+		return nil, nil, fmt.Errorf("list items for view: %w", err)
 	}
 	defer rows.Close()
 
 	var items []ItemWithSubscription
+	var keys []Cursor
 	for rows.Next() {
 		var iws ItemWithSubscription
 		var isRead, isStarred int
+		var k int64
 		if err := rows.Scan(
 			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
 			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
 			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle,
+			&iws.ContentHash, &iws.SubscriptionTitle, &k,
 		); err != nil {
-			return nil, fmt.Errorf("list items for view scan: %w", err)
+			return nil, nil, fmt.Errorf("list items for view scan: %w", err)
 		}
 		iws.IsRead = isRead != 0
 		iws.IsStarred = isStarred != 0
 		items = append(items, iws)
+		keys = append(keys, Cursor{Key: k, ID: iws.ID})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list items for view rows: %w", err)
+		return nil, nil, fmt.Errorf("list items for view rows: %w", err)
 	}
-	return items, nil
+	return items, keys, nil
 }
 
 // MarkAllRead marks all items as read.
@@ -1488,6 +1624,36 @@ func (s *Store) ListTags() ([]string, error) {
 	return out, rows.Err()
 }
 
+// TagCount is a tag and how many items carry it.
+type TagCount struct {
+	Name  string
+	Count int64
+}
+
+// ListTagCounts returns every tag with its item count, ordered by name.
+func (s *Store) ListTagCounts() ([]TagCount, error) {
+	rows, err := s.db.Query(`
+		SELECT t.name, COUNT(it.item_id)
+		FROM tags t LEFT JOIN item_tags it ON it.tag_id = t.id
+		GROUP BY t.id ORDER BY t.name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tag counts: %w", err)
+	}
+	defer rows.Close()
+	var out []TagCount
+	for rows.Next() {
+		var tc TagCount
+		if err := rows.Scan(&tc.Name, &tc.Count); err != nil {
+			return nil, fmt.Errorf("scan tag count: %w", err)
+		}
+		out = append(out, tc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tag counts rows: %w", err)
+	}
+	return out, nil
+}
+
 // RemoveTag removes the association between an item and a tag.
 func (s *Store) RemoveTag(itemID int64, tag string) error {
 	_, err := s.db.Exec(`
@@ -1532,6 +1698,72 @@ func (s *Store) TagsByItems(ids []int64) (map[int64][]string, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("tags by items rows: %w", err)
+	}
+	return out, nil
+}
+
+// idArgs is ids as a placeholder list and its arguments, for IN (…).
+func idArgs(ids []int64) (string, []any) {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", len(ids)), ","), args
+}
+
+// PlaybackByItems returns playback progress per item ID in one query. Items
+// never played are absent from the map.
+func (s *Store) PlaybackByItems(ids []int64) (map[int64]Playback, error) {
+	out := make(map[int64]Playback)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := idArgs(ids)
+	rows, err := s.db.Query(`
+		SELECT item_id, progress_sec, completed, last_played_at
+		FROM playback WHERE item_id IN (`+in+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("playback by items: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pb Playback
+		if err := rows.Scan(&pb.ItemID, &pb.ProgressSec, &pb.Completed, &pb.LastPlayedAt); err != nil {
+			return nil, fmt.Errorf("playback by items scan: %w", err)
+		}
+		out[pb.ItemID] = pb
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("playback by items rows: %w", err)
+	}
+	return out, nil
+}
+
+// DownloadsByItems returns the download row per item ID in one query, with
+// what a client is shown of it: state, error, size and captions. Items with
+// no download are absent from the map.
+func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
+	out := make(map[int64]Download)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := idArgs(ids)
+	rows, err := s.db.Query(`
+		SELECT item_id, state, error, bytes, captions_path
+		FROM downloads WHERE item_id IN (`+in+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("downloads by items: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d Download
+		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath); err != nil {
+			return nil, fmt.Errorf("downloads by items scan: %w", err)
+		}
+		out[d.ItemID] = d
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("downloads by items rows: %w", err)
 	}
 	return out, nil
 }
@@ -1721,6 +1953,14 @@ var (
 	settingHideEmpty     = BoolSetting("hide_empty", false)
 )
 
+// The bounds of the player preferences a client may set.
+const (
+	MinSpeed   = 0.25
+	MaxSpeed   = 4.0
+	MinSkipSec = 1
+	MaxSkipSec = 120
+)
+
 // PlayerPrefs is the per-user set of media-player preferences.
 type PlayerPrefs struct {
 	Speed        float64 `json:"speed"`
@@ -1857,63 +2097,51 @@ func (s *Store) ListPlaybackHistory(limit int) ([]PlayedItem, error) {
 	return out, rows.Err()
 }
 
-// PlaybackHistoryItems returns played items joined with their subscription
-// title, ordered by last-played descending. Same shape as ListItemsForView's
-// return, so callers that need the view shape don't need to remap from
-// PlayedItem.
-func (s *Store) PlaybackHistoryItems(limit int) ([]ItemWithSubscription, error) {
-	rows, err := s.db.Query(`
-		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
-		       i.content_html, i.media_url, i.media_mime, i.duration_sec,
-		       i.thumbnail_url, i.published_at, i.fetched_at, i.is_read, i.is_starred,
-		       i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title
-		FROM playback p
-		JOIN items i ON i.id = p.item_id
-		JOIN subscriptions s ON s.id = i.subscription_id
-		ORDER BY p.last_played_at DESC, i.id DESC
-		LIMIT ?`, limit)
-	if err != nil {
-		return nil, fmt.Errorf("playback history items: %w", err)
-	}
-	defer rows.Close()
-	var out []ItemWithSubscription
-	for rows.Next() {
-		var iws ItemWithSubscription
-		var isRead, isStarred int
-		if err := rows.Scan(
-			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
-			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
-			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle,
-		); err != nil {
-			return nil, fmt.Errorf("playback history items scan: %w", err)
-		}
-		iws.IsRead = isRead != 0
-		iws.IsStarred = isStarred != 0
-		out = append(out, iws)
-	}
-	return out, rows.Err()
-}
-
 // --- Per-subscription settings store helpers ---
 
-// UpdateSubscriptionPollInterval updates the poll_interval_sec for a subscription.
-func (s *Store) UpdateSubscriptionPollInterval(id, sec int64) error {
-	_, err := s.db.Exec(`UPDATE subscriptions SET poll_interval_sec = ? WHERE id = ?`, sec, id)
-	if err != nil {
-		return fmt.Errorf("update poll interval: %w", err)
-	}
-	return nil
+// SubscriptionChanges are the settings a user changes on a subscription; a
+// nil field is left as it is.
+type SubscriptionChanges struct {
+	Folder *sql.NullInt64 // NULL takes it out of its folder
+	// Title is the user's name for it, which the poller then leaves alone.
+	// "" goes back to the feed's own title, from a full fetch the next time
+	// it is polled.
+	Title           *string
+	PollIntervalSec *int64
+	Paused          *bool
 }
 
-// UpdateSubscriptionFolder sets the folder for a subscription (NULL clears it).
-func (s *Store) UpdateSubscriptionFolder(id int64, folderID sql.NullInt64) error {
-	_, err := s.db.Exec(`UPDATE subscriptions SET folder_id = ? WHERE id = ?`, folderID, id)
-	if err != nil {
-		return fmt.Errorf("update folder: %w", err)
+// UpdateSubscription applies c to a subscription in one statement, and
+// returns sql.ErrNoRows if there is none.
+func (s *Store) UpdateSubscription(id int64, c SubscriptionChanges) error {
+	var set []string
+	var args []any
+	if c.Folder != nil {
+		set = append(set, "folder_id = ?")
+		args = append(args, *c.Folder)
 	}
-	return nil
+	if c.Title != nil {
+		if *c.Title == "" {
+			set = append(set, "title_locked = 0", "etag = ''", "last_modified = ''", "next_check_at = 1")
+		} else {
+			set = append(set, "title = ?", "title_locked = 1")
+			args = append(args, *c.Title)
+		}
+	}
+	if c.PollIntervalSec != nil {
+		set = append(set, "poll_interval_sec = ?")
+		args = append(args, *c.PollIntervalSec)
+	}
+	if c.Paused != nil {
+		set = append(set, "paused = ?")
+		args = append(args, boolToInt(*c.Paused))
+	}
+	if len(set) == 0 {
+		_, err := s.GetSubscription(id) // still reports a missing subscription
+		return err
+	}
+	res, err := s.db.Exec(`UPDATE subscriptions SET `+strings.Join(set, ", ")+` WHERE id = ?`, append(args, id)...)
+	return updatedOne(res, err, "update subscription %d", id)
 }
 
 // --- Bulk subscription changes ---

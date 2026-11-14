@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -174,7 +175,7 @@ func TestEpisodeActions(t *testing.T) {
 	require.True(t, read)
 
 	// Cog's own player is reported back as a play.
-	require.NoError(t, feed.NewStore(db).SetPlayback(ep1, 200, false))
+	require.NoError(t, feed.NewStore(db).SetPlayback(ep1, 200, false, time.Now()))
 
 	var got episodeActions
 	env.Get(t, api+"/episode_action?since=0", auth).Status(200).JSON(&got)
@@ -328,7 +329,7 @@ func TestEpisodeActions_EnclosureGUID(t *testing.T) {
 	require.True(t, read)
 
 	// Cog's own plays are reported under the feed's GUID.
-	require.NoError(t, feed.NewStore(db).SetPlayback(ep, 30, false))
+	require.NoError(t, feed.NewStore(db).SetPlayback(ep, 30, false, time.Now()))
 	var got episodeActions
 	env.Get(t, api+"/episode_action?since=0", auth).Status(200).JSON(&got)
 	var guids []string

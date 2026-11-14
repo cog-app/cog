@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +21,6 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
-	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
@@ -672,12 +672,69 @@ func (h *Pages) AddPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := store.CreatePlaylist(name, queryStr); err != nil {
+	order := PlayOrder(r.FormValue("order"))
+	if order == "" {
+		order = OrderNewest
+	}
+	if !order.Valid() {
+		h.setFlash(w, "error", "Unknown order.")
+		http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
+		return
+	}
+
+	if _, err := store.CreatePlaylist(Playlist{
+		Name:        name,
+		Query:       queryStr,
+		Order:       order,
+		ShuffleSeed: newShuffleSeed(),
+		ListenOnly:  r.FormValue("listen_only") == "on",
+	}); err != nil {
 		h.setFlash(w, "error", "Could not create playlist: "+err.Error())
 		slog.Error("feed: create playlist", "err", err)
 	}
 
 	http.Redirect(w, r, "/apps/feed/settings/playlists", http.StatusSeeOther)
+}
+
+// newShuffleSeed is a fresh shuffle, below the 10^9 ViewSpec.orderBy needs.
+func newShuffleSeed() int64 { return rand.Int64N(1_000_000_000) }
+
+// SetPlaylistPlay handles POST /playlists/{id}/play: the playlist's order and
+// whether it is listen only, or (with reshuffle) a new shuffle.
+func (h *Pages) SetPlaylistPlay(w http.ResponseWriter, r *http.Request) {
+	const back = "/apps/feed/settings/playlists"
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	pl, err := store.GetPlaylist(id)
+	if err != nil {
+		lookupError(w, r, err)
+		return
+	}
+	if r.FormValue("reshuffle") != "" {
+		pl.Order, pl.ShuffleSeed = OrderShuffled, newShuffleSeed()
+	} else {
+		order := PlayOrder(r.FormValue("order"))
+		if !order.Valid() {
+			h.setFlash(w, "error", "Unknown order.")
+			http.Redirect(w, r, back, http.StatusSeeOther)
+			return
+		}
+		pl.Order = order
+		pl.ListenOnly = r.FormValue("listen_only") == "on"
+	}
+	if err := store.UpdatePlaylist(pl); err != nil {
+		h.setFlash(w, "error", "Could not save the playlist.")
+		slog.Error("feed: update playlist", "id", id, "err", err)
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 // DeletePlaylist handles POST /playlists/{id}/delete.
@@ -805,34 +862,10 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var expr query.Expr
-	if pl.Query != "" {
-		if e, perr := query.Parse(pl.Query); perr == nil {
-			expr = e
-		} else {
-			slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", perr)
-		}
-	}
-	if expr != nil {
-		expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-	}
-	items, plErr := store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: prefs.HideEmpty,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
-	if plErr != nil {
-		http.Error(w, "could not list items: "+plErr.Error(), http.StatusInternalServerError)
+	items, err := store.PlaylistItems(pl, ViewSpec{HideRead: prefs.HideEmpty}, h.plugin.ctx.Now(), feedViewLimit)
+	if err != nil {
+		httperr.Internal(w, r, err)
 		return
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		items, plErr = h.refineItems(store, items, expr)
-		if plErr != nil {
-			slog.Error("feed: playlist refine", "err", plErr)
-			http.Error(w, "could not refine items: "+plErr.Error(), http.StatusInternalServerError)
-			return
-		}
 	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
@@ -846,159 +879,27 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 // neighbors are stable. List-page handlers apply their own HideRead via their
 // own ViewSpec — this function intentionally omits it.
 func (h *Pages) resolveViewItems(store *Store, c viewCtx) ([]ItemWithSubscription, error) {
-	const limit = feedViewLimit
-	var items []ItemWithSubscription
-	var err error
-	switch c.Kind {
-	case "starred":
-		items, err = store.ListItemsForView(ViewSpec{Starred: true}, limit)
-	case "folder":
-		items, err = store.ListItemsForView(ViewSpec{FolderID: validID(c.ID)}, limit)
-	case "sub":
-		items, err = store.ListItemsForView(ViewSpec{SubscriptionID: validID(c.ID)}, limit)
-	case "tag":
-		items, err = store.ListItemsForView(ViewSpec{TagName: c.Name}, limit)
-	case "playlist":
-		pl, perr := store.GetPlaylist(c.ID)
-		if perr != nil {
-			return nil, fmt.Errorf("resolve playlist %d: %w", c.ID, perr)
-		}
-		var expr query.Expr
-		if pl.Query != "" {
-			if e, qerr := query.Parse(pl.Query); qerr == nil {
-				expr = e
-			} else {
-				slog.Warn("feed: playlist query does not parse; showing all items", "playlist_id", pl.ID, "query", pl.Query, "err", qerr)
-			}
-		}
-		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-		}
-		items, err = store.ListItemsForView(ViewSpec{
-			All: true, Query: expr, Schema: SearchSchema(),
-		}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve playlist items: %w", err)
-		}
-		if expr != nil && queryNeedsRefine(expr) {
-			items, err = h.refineItems(store, items, expr)
-			if err != nil {
-				return nil, fmt.Errorf("resolve playlist refine: %w", err)
-			}
-		}
-	case "history":
-		items, err = store.PlaybackHistoryItems(limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve history: %w", err)
-		}
-	default: // all
-		var expr query.Expr
-		if c.Q != "" {
-			e, qerr := query.Parse(c.Q)
-			if qerr != nil {
-				// The list this came from showed the parse error and no
-				// items, so there is nothing to step through.
-				slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", qerr)
-				return nil, nil
-			}
-			expr = e
-		}
-		if expr != nil {
-			expr = query.ResolveRelativeDates(expr, *SearchSchema(), h.plugin.ctx.Now())
-		}
-		items, err = store.ListItemsForView(ViewSpec{
-			All: true, Query: expr, Schema: SearchSchema(),
-		}, limit)
-		if err != nil {
-			return nil, fmt.Errorf("resolve all items: %w", err)
-		}
-		if expr != nil && queryNeedsRefine(expr) {
-			items, err = h.refineItems(store, items, expr)
-			if err != nil {
-				return nil, fmt.Errorf("resolve all items refine: %w", err)
-			}
+	v := View{Kind: ViewKind(c.Kind), ID: c.ID, Tag: c.Name}
+	if !v.Kind.Valid() {
+		v.Kind = ViewAll
+	}
+	spec, expr, err := store.ResolveView(v)
+	if err != nil {
+		return nil, fmt.Errorf("resolve view items: %w", err)
+	}
+	if v.Kind == ViewAll && c.Q != "" {
+		if expr, err = query.Parse(c.Q); err != nil {
+			// The list this came from showed the parse error and no
+			// items, so there is nothing to step through.
+			slog.Warn("feed: search query in view context does not parse", "query", c.Q, "err", err)
+			return nil, nil
 		}
 	}
+	items, err := store.ListItemsMatching(spec, expr, h.plugin.ctx.Now(), feedViewLimit)
 	if err != nil {
 		return nil, fmt.Errorf("resolve view items: %w", err)
 	}
 	return items, nil
-}
-
-// validID wraps an int64 as a valid sql.NullInt64.
-func validID(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
-
-// queryNeedsRefine reports whether e contains a TextExpr/PhraseExpr — the only
-// nodes the SQL compiler evaluates as a permissive superset. When false, the
-// SQL result is already exact and no Go refine is needed.
-func queryNeedsRefine(e query.Expr) bool {
-	switch x := e.(type) {
-	case *query.TextExpr, *query.PhraseExpr:
-		return true
-	case *query.NotExpr:
-		return queryNeedsRefine(x.Inner)
-	case *query.AndExpr:
-		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
-	case *query.OrExpr:
-		return queryNeedsRefine(x.Left) || queryNeedsRefine(x.Right)
-	default:
-		return false
-	}
-}
-
-// refineItems filters the SQL-prefiltered rows down to an exact match of expr
-// using bleve-exact semantics. Caller guarantees queryNeedsRefine(expr)==true.
-// Builds a full query.Record per row (subscription/folder memoized by id;
-// tags + download-state batch-loaded) and keeps rows where search.ExactMatch
-// holds. Order preserved.
-func (h *Pages) refineItems(store *Store, items []ItemWithSubscription, expr query.Expr) ([]ItemWithSubscription, error) {
-	if len(items) == 0 {
-		return items, nil
-	}
-	ids := make([]int64, len(items))
-	for i, it := range items {
-		ids[i] = it.ID
-	}
-	tagsByItem, err := store.TagsByItems(ids)
-	if err != nil {
-		return nil, fmt.Errorf("refine tags: %w", err)
-	}
-	dlByItem, err := store.DownloadStateByItems(ids)
-	if err != nil {
-		return nil, fmt.Errorf("refine downloads: %w", err)
-	}
-	subCache := map[int64]Subscription{}
-	folderCache := map[int64]string{}
-	out := items[:0]
-	for _, it := range items {
-		sub, ok := subCache[it.SubscriptionID]
-		if !ok {
-			sub, err = store.GetSubscription(it.SubscriptionID)
-			if err != nil {
-				return nil, fmt.Errorf("refine subscription: %w", err)
-			}
-			subCache[it.SubscriptionID] = sub
-		}
-		folderName := ""
-		if sub.FolderID.Valid {
-			fn, ok := folderCache[sub.FolderID.Int64]
-			if !ok {
-				f, err := store.GetFolder(sub.FolderID.Int64)
-				if err != nil {
-					return nil, fmt.Errorf("refine folder: %w", err)
-				}
-				fn = f.Name
-				folderCache[sub.FolderID.Int64] = fn
-			}
-			folderName = fn
-		}
-		rec := BuildRecord(it.Item, sub, folderName, tagsByItem[it.ID],
-			!it.IsRead, it.IsStarred, dlByItem[it.ID] == "ready")
-		if search.ExactMatch(expr, rec, *SearchSchema()) {
-			out = append(out, it)
-		}
-	}
-	return out, nil
 }
 
 // Index shows the main feed item list with optional query filtering.
@@ -1042,21 +943,11 @@ func (h *Pages) searchItems(store *Store, q string, hideRead bool) (items []Item
 		if perr != nil {
 			return nil, perr.Error(), nil
 		}
-		expr = query.ResolveRelativeDates(e, *SearchSchema(), h.plugin.ctx.Now())
+		expr = e
 	}
-	items, err = store.ListItemsForView(ViewSpec{
-		All:      true,
-		HideRead: hideRead,
-		Query:    expr,
-		Schema:   SearchSchema(),
-	}, feedViewLimit)
+	items, err = store.ListItemsMatching(ViewSpec{All: true, HideRead: hideRead}, expr, h.plugin.ctx.Now(), feedViewLimit)
 	if err != nil {
 		return nil, "", fmt.Errorf("could not list items: %w", err)
-	}
-	if expr != nil && queryNeedsRefine(expr) {
-		if items, err = h.refineItems(store, items, expr); err != nil {
-			return nil, "", fmt.Errorf("could not refine items: %w", err)
-		}
 	}
 	return items, "", nil
 }
@@ -1477,7 +1368,7 @@ func (h *Pages) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	if err := store.SetPlayback(id, progressSec, false); err != nil {
+	if err := store.SetPlayback(id, progressSec, false, time.Now()); err != nil {
 		slog.Error("feed: update progress", "id", id, "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1495,7 +1386,7 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	if err := store.SetPlayback(id, 0, true); err != nil {
+	if err := store.SetPlayback(id, 0, true, time.Now()); err != nil {
 		slog.Error("feed: mark complete playback", "id", id, "err", err)
 	}
 	if err := store.MarkRead(id, true); err != nil {
@@ -1579,7 +1470,8 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StreamURL returns the direct stream URL for a YouTube item.
+// StreamURL returns the direct stream URL for a YouTube item; with
+// ?variant=audio, its best audio-only stream.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1596,7 +1488,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL)
+	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL, r.URL.Query().Get("variant") == "audio")
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -1605,8 +1497,8 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": streamURL})
 }
 
-// Ranges returns the unified mute (profanity) + skip (silence) ranges for an item.
-// Silence ranges are computed lazily on first request when a local file exists.
+// Ranges returns the unified mute (profanity) + skip (silence) ranges for an
+// item, and whether the silence ranges are still to be computed.
 func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1654,39 +1546,25 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Skip ranges from silence detection (lazy, cached, requires local file).
+	// Skip ranges from silence detection, which the pipeline runs once a
+	// download is ready. Until it has, the ranges are pending: running
+	// ffmpeg over a whole episode here held the request for as long as
+	// the file took to decode.
+	pending := false
 	if d.LocalPath != "" {
-		skips, derr := h.silenceRanges(r.Context(), store, space, id, d)
-		if derr != nil {
-			slog.Error("feed: silence ranges", "id", id, "err", derr)
+		if d.SilenceState == "done" {
+			skips, err := store.GetSilenceRanges(id)
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			ranges = append(ranges, skips...)
+		} else {
+			pending = true
 		}
-		ranges = append(ranges, skips...)
 	}
 
-	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges})
-}
-
-// silenceRanges returns cached silence ranges, computing them once if not yet done.
-func (h *Pages) silenceRanges(ctx context.Context, store *Store, space Space, id int64, d Download) ([]Range, error) {
-	if d.SilenceState == "done" {
-		return store.GetSilenceRanges(id)
-	}
-	media, err := space.Path(d.LocalPath)
-	if err != nil {
-		return nil, err
-	}
-	rs, err := detectSilence(ctx, media)
-	if err != nil {
-		// Cache an empty "done" result so we don't recompute in a tight loop.
-		if serr := store.SetSilenceRanges(id, nil); serr != nil {
-			slog.Error("feed: cache empty silence ranges", "id", id, "err", serr)
-		}
-		return nil, err
-	}
-	if serr := store.SetSilenceRanges(id, rs); serr != nil {
-		return rs, serr
-	}
-	return rs, nil
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"ranges": ranges, "pending": pending})
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.
@@ -1857,6 +1735,13 @@ func (h *Pages) RemoveItemTag(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.Header.Get("Referer"), http.StatusSeeOther)
 }
 
+// A filter preview shows this many matches; a query that needs the refine
+// step is matched against the newest filterPreviewLimit items.
+const (
+	filterPreviewSample = 10
+	filterPreviewLimit  = 200
+)
+
 // FilterPreview returns a preview of items matching a filter query (HTMX partial).
 func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -1878,20 +1763,10 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Parse error: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	items, err := store.ListItemsForView(ViewSpec{All: true}, 200)
-	if err != nil {
-		httperr.Internal(w, r, fmt.Errorf("Could not load items: %w", err))
-		return
-	}
-	// refineItems batch-loads each row's tags and download state rather than
-	// querying per row.
-	matched, err := h.refineItems(store, items, expr)
+	_, matched, err := store.Preview(expr, h.plugin.ctx.Now(), filterPreviewSample, filterPreviewLimit)
 	if err != nil {
 		httperr.Internal(w, r, fmt.Errorf("Could not match items: %w", err))
 		return
-	}
-	if len(matched) > 10 {
-		matched = matched[:10]
 	}
 	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
@@ -1977,25 +1852,24 @@ func (h *Pages) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var n int
-	switch format {
-	case "antennapod":
-		n, err = ImportAntennaPod(store, data)
-	case "newpipe":
-		n, err = ImportNewPipe(store, data)
-	case "youtube-csv":
-		n, err = ImportYouTubeTakeout(store, data)
+	switch format := ImportFormat(format); format {
+	case ImportAntennaPod, ImportNewPipe, ImportYouTubeCSV:
+		h.importAndRedirect(w, r, store, format, data)
 	default:
-		h.setFlash(w, "error", "Unknown import format: "+format)
+		h.setFlash(w, "error", "Unknown import format: "+string(format))
 		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
-		return
 	}
+}
+
+// importAndRedirect imports data, starts fetching what it added, and
+// redirects to the subscriptions page saying how it went.
+func (h *Pages) importAndRedirect(w http.ResponseWriter, r *http.Request, store *Store, format ImportFormat, data []byte) {
+	res, err := store.Import(format, data, sql.NullInt64{})
 	if err != nil {
 		h.setFlash(w, "error", "Import failed: "+err.Error())
 	} else {
-		u := plugin.UserFromContext(r.Context())
-		go h.plugin.TriggerFetch(u.Username, 0)
-		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
+		go h.plugin.TriggerFetch(plugin.Username(r), 0)
+		h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", res.Added))
 	}
 	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
 }
@@ -2028,16 +1902,7 @@ func (h *Pages) ImportOPML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := store.ImportOPML(data)
-	if err != nil {
-		h.setFlash(w, "error", "OPML parse error: "+err.Error())
-		http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
-		return
-	}
-	u := plugin.UserFromContext(r.Context())
-	go h.plugin.TriggerFetch(u.Username, 0)
-	h.setFlash(w, "success", fmt.Sprintf("Imported %d subscriptions.", n))
-	http.Redirect(w, r, "/apps/feed/settings/subscriptions", http.StatusSeeOther)
+	h.importAndRedirect(w, r, store, ImportOPML, data)
 }
 
 // ExportOPML returns the user's RSS subscriptions as an OPML file download.
@@ -2122,32 +1987,37 @@ func (h *Pages) SaveSubscriptionSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	paused := r.FormValue("paused") == "on"
-	if err := store.PauseSubscription(id, paused); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	sub, err := store.GetSubscription(id)
+	if err != nil {
+		lookupError(w, r, err)
 		return
 	}
-	if iv := r.FormValue("poll_interval_sec"); iv != "" {
-		if n, parseErr := strconv.ParseInt(iv, 10, 64); parseErr == nil && n > 0 {
-			if err := store.UpdateSubscriptionPollInterval(id, n); err != nil {
-				h.setFlash(w, "error", err.Error())
-				http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-				return
-			}
-		}
-	}
-	fv := r.FormValue("folder_id")
+	paused := r.FormValue("paused") == "on"
 	var folderID sql.NullInt64
-	if fv != "" {
+	if fv := r.FormValue("folder_id"); fv != "" {
 		if n, parseErr := strconv.ParseInt(fv, 10, 64); parseErr == nil {
 			folderID = sql.NullInt64{Int64: n, Valid: true}
 		}
 	}
-	if err := store.UpdateSubscriptionFolder(id, folderID); err != nil {
-		h.setFlash(w, "error", err.Error())
+	c := SubscriptionChanges{Folder: &folderID, Paused: &paused}
+	if iv := r.FormValue("poll_interval_sec"); iv != "" {
+		if n, parseErr := strconv.ParseInt(iv, 10, 64); parseErr == nil && n > 0 {
+			c.PollIntervalSec = &n
+		}
+	}
+	// Only a title the user changed becomes theirs: saving the other
+	// settings leaves the feed's own title following the feed.
+	if title := strings.TrimSpace(r.FormValue("title")); title != sub.Title {
+		c.Title = &title
+	}
+	if err := store.UpdateSubscription(id, c); err != nil {
+		h.setFlash(w, "error", "Could not save the subscription.")
+		slog.Error("feed: save subscription settings", "id", id, "err", err)
 		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 		return
+	}
+	if c.Title != nil && *c.Title == "" {
+		go h.plugin.TriggerFetch(plugin.Username(r), id)
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
@@ -2208,17 +2078,17 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	// Only overwrite fields actually present in the form (partial updates).
 	if v := r.FormValue("speed"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cur.Speed = min(max(f, 0.25), 4.0)
+			cur.Speed = min(max(f, MinSpeed), MaxSpeed)
 		}
 	}
 	if v := r.FormValue("skip_back_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipBackSec = min(max(n, 1), 120)
+			cur.SkipBackSec = min(max(n, MinSkipSec), MaxSkipSec)
 		}
 	}
 	if v := r.FormValue("skip_fwd_sec"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
-			cur.SkipFwdSec = min(max(n, 1), 120)
+			cur.SkipFwdSec = min(max(n, MinSkipSec), MaxSkipSec)
 		}
 	}
 	if v := r.FormValue("volume"); v != "" {
@@ -2275,7 +2145,8 @@ func sidebarPath(page string) string {
 // buildItemNav works out an item's place in the list it was opened from.
 func buildItemNav(store *Store, c viewCtx, items []ItemWithSubscription, id int64) itemNav {
 	prev, next := neighbors(items, id, false)
-	nav := itemNav{Ctx: c.encode(), Label: c.label(store), Path: c.path(), Total: len(items)}
+	nav := itemNav{Ctx: c.encode(), Path: c.path(), Total: len(items)}
+	nav.Label, nav.ListenOnly = c.label(store)
 	for i := range items {
 		if items[i].ID == id {
 			nav.Pos = i + 1

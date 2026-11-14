@@ -1,6 +1,7 @@
 package feed_test
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -22,19 +23,21 @@ const sampleOPML = `<?xml version="1.0"?>
 
 func TestImportOPML(t *testing.T) {
 	s := newStore(t)
-	n, err := s.ImportOPML([]byte(sampleOPML))
+	res, err := s.Import(feed.ImportOPML, []byte(sampleOPML), sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 3 {
-		t.Fatalf("got %d created want 3", n)
+	if res.Added != 3 {
+		t.Fatalf("got %d created want 3", res.Added)
 	}
 
-	subs, _ := s.ListSubscriptions()
+	subs, err := s.ListSubscriptions()
+	require.NoError(t, err)
 	if len(subs) != 3 {
 		t.Fatalf("got %d subscriptions", len(subs))
 	}
 
 	// Tech folder should exist with 2 subs in it.
-	folders, _ := s.ListFolders()
+	folders, err := s.ListFolders()
+	require.NoError(t, err)
 	if len(folders) != 1 || folders[0].Name != "Tech" {
 		t.Fatalf("got folders %+v", folders)
 	}
@@ -56,17 +59,17 @@ func TestImportOPML(t *testing.T) {
 
 func TestImportOPMLSkipsDuplicates(t *testing.T) {
 	s := newStore(t)
-	_, _ = s.ImportOPML([]byte(sampleOPML))
-	n, err := s.ImportOPML([]byte(sampleOPML))
+	_, err := s.Import(feed.ImportOPML, []byte(sampleOPML), sql.NullInt64{})
 	require.NoError(t, err)
-	if n != 0 {
-		t.Errorf("second import should add 0, got %d", n)
-	}
+	res, err := s.Import(feed.ImportOPML, []byte(sampleOPML), sql.NullInt64{})
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Added)
+	require.Equal(t, 3, res.Skipped)
 }
 
 func TestExportOPMLRoundTrip(t *testing.T) {
 	s := newStore(t)
-	_, err := s.ImportOPML([]byte(sampleOPML))
+	_, err := s.Import(feed.ImportOPML, []byte(sampleOPML), sql.NullInt64{})
 	require.NoError(t, err)
 
 	data, err := s.ExportOPML()
@@ -86,13 +89,16 @@ func TestExportOPMLRoundTrip(t *testing.T) {
 
 func TestExportOPMLExcludesNonRSS(t *testing.T) {
 	s := newStore(t)
-	_, _ = s.CreateSubscription(feed.Subscription{
+	_, err := s.CreateSubscription(feed.Subscription{
 		Kind: "youtube", URL: "https://yt.example/c1", Title: "YT Chan",
 	})
-	_, _ = s.CreateSubscription(feed.Subscription{
+	require.NoError(t, err)
+	_, err = s.CreateSubscription(feed.Subscription{
 		Kind: "rss", URL: "https://rss.example/feed", Title: "RSS Feed",
 	})
-	data, _ := s.ExportOPML()
+	require.NoError(t, err)
+	data, err := s.ExportOPML()
+	require.NoError(t, err)
 	str := string(data)
 	if strings.Contains(str, "yt.example") {
 		t.Error("youtube subscription leaked into OPML")

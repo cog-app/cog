@@ -401,6 +401,9 @@ func (r *capturingRegistrar) Now() time.Time       { return time.Now() }
 func (r *capturingRegistrar) RootDB() (*sql.DB, error) {
 	return nil, fmt.Errorf("RootDB not available for gRPC plugins")
 }
+func (r *capturingRegistrar) RegisterService(path string, handler http.Handler) {
+	slog.Warn("plugin: RPC services are served only by in-process plugins", "path", path)
+}
 func (r *capturingRegistrar) RegisterDAVHandler(prefix string, handler http.Handler) {}
 func (r *capturingRegistrar) RegisterSettingsPage(page cogplugin.SettingsPage)       {}
 func (r *capturingRegistrar) RegisterCommand(def cogplugin.CommandDef)               {}

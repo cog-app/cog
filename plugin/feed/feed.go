@@ -129,10 +129,14 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	})
 
 	// Main app pages and item actions
+	p.registerService(ctx)
+
 	pages := NewPages(p)
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Index))
 	ctx.RegisterPage("items/{id}", http.HandlerFunc(pages.ItemDetail))
-	ctx.RegisterPage("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
+	// Media is served as itself, ranges included: the media element's source
+	// and a native client's download, never a page in the shell.
+	ctx.RegisterAPI("items/{id}/media", http.HandlerFunc(pages.ItemMedia))
 	ctx.RegisterAction("POST", "items/{id}/read", http.HandlerFunc(pages.ToggleRead))
 	ctx.RegisterAction("POST", "items/{id}/star", http.HandlerFunc(pages.ToggleStar))
 	ctx.RegisterAction("POST", "items/{id}/mark-read", http.HandlerFunc(pages.MarkItemRead))
@@ -178,6 +182,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "filters/{id}/delete", http.HandlerFunc(pages.DeleteFilter))
 	ctx.RegisterAction("POST", "playlists", http.HandlerFunc(pages.AddPlaylist))
 	ctx.RegisterAction("POST", "playlists/{id}/delete", http.HandlerFunc(pages.DeletePlaylist))
+	ctx.RegisterAction("POST", "playlists/{id}/play", http.HandlerFunc(pages.SetPlaylistPlay))
 	ctx.RegisterAction("POST", "import", http.HandlerFunc(pages.Import))
 	ctx.RegisterAction("POST", "opml/import", http.HandlerFunc(pages.ImportOPML))
 	ctx.RegisterAction("POST", "talks/preview", http.HandlerFunc(pages.TalksPreview))

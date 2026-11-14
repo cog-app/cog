@@ -1,0 +1,490 @@
+// Draft. This file moves into Cog (plugin/feed/feedpb) once the service is
+// implemented there; this repo then imports it from the cog module.
+//
+// FeedService is served by Cog and, with the same contract, by the app's core
+// as a cache-first local proxy. A client never needs to know which one it is
+// talking to.
+syntax = "proto3";
+
+package cogfeed.v1;
+
+option go_package = "git.duckfam.us/jj-software/cog/plugin/feed/feedpb;feedpb";
+option java_package = "us.duckfam.cogfeed.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+service FeedService {
+  // --- Browsing ---------------------------------------------------------
+  // Sidebar in one call: folders, subscriptions, tags, playlists, counts.
+  rpc GetLibrary(GetLibraryRequest) returns (Library) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Items of a view (all, unread, starred, history, folder, subscription,
+  // tag, playlist) or of a query in Cog's grammar, in server order.
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc GetItem(GetItemRequest) returns (ItemDetail) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Validates a query and returns a count and a few matches (the filter
+  // editor's live preview).
+  rpc PreviewQuery(PreviewQueryRequest) returns (PreviewQueryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // --- Item state --------------------------------------------------------
+  rpc SetRead(SetReadRequest) returns (Item);
+  rpc SetStarred(SetStarredRequest) returns (Item);
+  rpc MarkAllRead(MarkAllReadRequest) returns (MarkAllReadResponse);
+  rpc SetTags(SetTagsRequest) returns (Item);
+  // Client-timestamped; the server keeps the newest by `at`.
+  rpc ReportProgress(ReportProgressRequest) returns (Playback);
+
+  // --- Media ---------------------------------------------------------------
+  // Where to play an item from, for a variant. Cog's /items/{id}/media for
+  // downloaded or RSS media; a resolved stream (with expiry) for YouTube.
+  rpc ResolveMedia(ResolveMediaRequest) returns (MediaSource) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Skip (silence) and mute (profanity) ranges.
+  rpc GetRanges(GetRangesRequest) returns (Ranges) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Ask the server to download (and run its pipeline on) an item.
+  rpc RequestDownload(RequestDownloadRequest) returns (DownloadState);
+  rpc GetPlayerPrefs(GetPlayerPrefsRequest) returns (PlayerPrefs) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc SetPlayerPrefs(PlayerPrefs) returns (PlayerPrefs);
+
+  // --- Sync ----------------------------------------------------------------
+  // Everything that changed since a token. Empty token = full snapshot.
+  rpc Changes(ChangesRequest) returns (ChangesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Server streaming: pushes a token whenever something changes, so a client
+  // calls Changes promptly instead of polling. Ends on server shutdown.
+  rpc Watch(WatchRequest) returns (stream WatchEvent) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // --- Management (web parity) -----------------------------------------------
+  rpc AddSubscription(AddSubscriptionRequest) returns (Subscription);
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (Subscription);
+  rpc DeleteSubscription(DeleteSubscriptionRequest) returns (DeleteResponse);
+  rpc RefreshSubscription(RefreshSubscriptionRequest) returns (Subscription);
+  rpc SaveFolder(Folder) returns (Folder);
+  rpc DeleteFolder(DeleteFolderRequest) returns (DeleteResponse);
+  rpc ListFilters(ListFiltersRequest) returns (ListFiltersResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc SaveFilter(Filter) returns (Filter);
+  rpc DeleteFilter(DeleteFilterRequest) returns (DeleteResponse);
+  rpc SavePlaylist(Playlist) returns (Playlist);
+  rpc DeletePlaylist(DeletePlaylistRequest) returns (DeleteResponse);
+  rpc Import(ImportRequest) returns (ImportResponse);
+  rpc ExportOPML(ExportOPMLRequest) returns (ExportOPMLResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// --- Library -----------------------------------------------------------------
+
+message GetLibraryRequest {}
+
+message Library {
+  repeated Folder folders = 1;
+  repeated Subscription subscriptions = 2;
+  repeated Playlist playlists = 3;
+  repeated TagCount tags = 4;
+  Counts counts = 5;
+  string changes_token = 6;
+}
+
+message Counts {
+  int64 all = 1;
+  int64 unread = 2;
+  int64 starred = 3;
+  int64 downloaded = 4;
+}
+
+message Folder {
+  int64 id = 1;
+  string name = 2;
+  int64 unread = 3;
+}
+
+enum SubscriptionKind {
+  SUBSCRIPTION_KIND_UNSPECIFIED = 0;
+  SUBSCRIPTION_KIND_RSS = 1;
+  SUBSCRIPTION_KIND_YOUTUBE = 2;
+  SUBSCRIPTION_KIND_URL = 3;
+}
+
+message Subscription {
+  int64 id = 1;
+  optional int64 folder_id = 2;
+  SubscriptionKind kind = 3;
+  string url = 4;
+  string title = 5;
+  string description = 6;
+  string site_url = 7;
+  string image_url = 8;
+  int64 poll_interval_sec = 9;
+  bool paused = 10;
+  string last_error = 11;
+  google.protobuf.Timestamp last_success_at = 12;
+  int64 unread = 13;
+}
+
+// How a playlist plays, the same on every device. What a device downloads
+// of it is kept on the device.
+enum PlayOrder {
+  PLAY_ORDER_UNSPECIFIED = 0; // newest first
+  PLAY_ORDER_NEWEST = 1;
+  PLAY_ORDER_OLDEST = 2;
+  PLAY_ORDER_SHORTEST = 3; // least time left first
+  PLAY_ORDER_SHUFFLED = 4;
+}
+
+message Playlist {
+  int64 id = 1; // 0 in SavePlaylist creates one
+  string name = 2;
+  string query = 3; // Cog query grammar
+  int64 sort_order = 4; // its place in the library
+  // Counts are filled by the server and ignored by SavePlaylist.
+  int64 count = 5;
+  int64 unfinished_count = 6; // audio and video not played to the end
+  int64 unfinished_duration_sec = 7; // the time left to play of those
+  PlayOrder order = 8;
+  // The shuffle, which holds still until it changes. SavePlaylist with a
+  // shuffled order and 0 here picks a new one: that is a reshuffle.
+  int64 shuffle_seed = 9;
+  bool listen_only = 10; // its videos play and download as audio
+}
+
+message TagCount {
+  string name = 1;
+  int64 count = 2;
+}
+
+// --- Items -------------------------------------------------------------------
+
+enum ItemType {
+  ITEM_TYPE_UNSPECIFIED = 0;
+  ITEM_TYPE_TEXT = 1;
+  ITEM_TYPE_AUDIO = 2;
+  ITEM_TYPE_VIDEO = 3;
+}
+
+message Item {
+  int64 id = 1;
+  int64 subscription_id = 2;
+  string subscription_title = 3;
+  ItemType type = 4;
+  string title = 5;
+  string author = 6;
+  string url = 7;
+  string thumbnail_url = 8;
+  int64 duration_sec = 9;
+  google.protobuf.Timestamp published_at = 10;
+  bool read = 11;
+  bool starred = 12;
+  repeated string tags = 13;
+  Playback playback = 14;
+  DownloadState server_download = 15;
+}
+
+message ItemDetail {
+  Item item = 1;
+  string content_html = 2; // sanitized by the server
+  bool has_captions = 3;
+  // content_html as CommonMark, with links and images made absolute against
+  // the item's URL, for clients that render Markdown rather than HTML.
+  string content_markdown = 4;
+}
+
+message Playback {
+  int64 item_id = 1;
+  double progress_sec = 2;
+  bool completed = 3;
+  google.protobuf.Timestamp at = 4;
+}
+
+message View {
+  oneof kind {
+    bool all = 1;
+    bool unread = 2;
+    bool starred = 3;
+    bool history = 4;
+    int64 folder_id = 5;
+    int64 subscription_id = 6;
+    string tag = 7;
+    int64 playlist_id = 8;
+  }
+}
+
+message ListItemsRequest {
+  View view = 1; // unset is all
+  string query = 2; // ANDed with the view
+  bool hide_read = 3;
+  bool unfinished_only = 4; // play queues: audio and video not played to the end
+  int32 page_size = 5; // 0 is 50, at most 500
+  // From the last page's next_page_token. A token from another order (a
+  // playlist reordered or reshuffled since) is refused: start again.
+  string page_token = 6;
+}
+
+message ListItemsResponse {
+  repeated Item items = 1; // in the view's order: a playlist's own, history by last played, newest first otherwise
+  string next_page_token = 2; // empty on the last page
+  int64 total = 3; // every item that matches; counted on the first page only
+}
+
+message GetItemRequest {
+  int64 id = 1;
+}
+
+message PreviewQueryRequest {
+  string query = 1;
+  int32 sample = 2; // how many matches to return; 0 is 10, at most 50
+}
+
+message PreviewQueryResponse {
+  string error = 1; // why the query is not valid; empty when it is
+  int64 count = 2;
+  repeated Item sample = 3; // the first matches, newest first
+  // Where in the query a parse error is, as a byte offset; unset for an error
+  // that is not about one place.
+  optional int32 error_position = 4;
+}
+
+message SetReadRequest {
+  int64 id = 1;
+  bool read = 2;
+}
+
+message SetStarredRequest {
+  int64 id = 1;
+  bool starred = 2;
+}
+
+message MarkAllReadRequest {
+  View view = 1; // unset is all
+}
+
+message MarkAllReadResponse {
+  int64 changed = 1;
+}
+
+message SetTagsRequest {
+  int64 id = 1;
+  repeated string add = 2;
+  repeated string remove = 3;
+}
+
+message ReportProgressRequest {
+  int64 item_id = 1;
+  double progress_sec = 2;
+  bool completed = 3;
+  google.protobuf.Timestamp at = 4; // client clock
+  string device = 5;
+}
+
+// --- Media -------------------------------------------------------------------
+
+enum Variant {
+  VARIANT_UNSPECIFIED = 0; // the server's choice: video for video items
+  VARIANT_AUDIO = 1;
+  VARIANT_VIDEO = 2;
+}
+
+message ResolveMediaRequest {
+  int64 item_id = 1;
+  Variant variant = 2;
+  int32 max_height = 3; // VIDEO only; 0 = no limit
+}
+
+message MediaSource {
+  string url = 1; // absolute; may be Cog's /items/{id}/media or an origin URL
+  map<string, string> headers = 2; // to send with the request (auth for Cog URLs)
+  string mime = 3;
+  Variant variant = 4;
+  google.protobuf.Timestamp expires_at = 5; // resolved streams expire
+  bool cleaned = 6; // profanity-muted audio served by Cog
+  int64 bytes = 7; // 0 when unknown
+}
+
+message GetRangesRequest {
+  int64 item_id = 1;
+}
+
+message Range {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_SKIP = 1;
+    ACTION_MUTE = 2;
+  }
+  double start = 1;
+  double end = 2;
+  Action action = 3;
+}
+
+message Ranges {
+  repeated Range ranges = 1;
+  bool pending = 2; // analysis not done yet; ask again later
+}
+
+message RequestDownloadRequest {
+  int64 item_id = 1;
+  Variant variant = 2;
+}
+
+message DownloadState {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_NONE = 1;
+    STATE_QUEUED = 2;
+    STATE_DOWNLOADING = 3;
+    STATE_READY = 4;
+    STATE_ERROR = 5;
+  }
+  State state = 1;
+  string error = 2;
+  int64 bytes = 3;
+}
+
+message GetPlayerPrefsRequest {}
+
+message PlayerPrefs {
+  double speed = 1;
+  int32 skip_back_sec = 2;
+  int32 skip_fwd_sec = 3;
+  double volume = 4;
+  bool autoplay_next = 5;
+  bool skip_silence = 6;
+  bool hide_empty = 7;
+}
+
+// --- Sync --------------------------------------------------------------------
+
+message ChangesRequest {
+  string token = 1;
+  int32 limit = 2;
+}
+
+message ChangesResponse {
+  repeated Item items = 1;
+  repeated int64 deleted_items = 2;
+  repeated Subscription subscriptions = 3;
+  repeated int64 deleted_subscriptions = 4;
+  repeated Folder folders = 5;
+  repeated int64 deleted_folders = 6;
+  repeated Playlist playlists = 7;
+  repeated int64 deleted_playlists = 8;
+  PlayerPrefs prefs = 9; // set when changed
+  string token = 10;
+  bool more = 11; // call again with token
+  bool reset = 12; // token too old: discard the cache and start over
+}
+
+message WatchRequest {
+  string token = 1;
+}
+
+message WatchEvent {
+  string token = 1;
+}
+
+// --- Management --------------------------------------------------------------
+
+message AddSubscriptionRequest {
+  string url = 1; // feed, channel, or page URL; the server detects the kind
+  optional int64 folder_id = 2;
+}
+
+// An unset field is left as it is.
+message UpdateSubscriptionRequest {
+  int64 id = 1;
+  optional int64 folder_id = 2; // 0 takes it out of its folder
+  // The user's name for it, which polling then leaves alone; "" goes back to
+  // the feed's own title from its next fetch.
+  optional string title = 3;
+  optional int64 poll_interval_sec = 4; // at least 60
+  optional bool paused = 5;
+}
+
+message DeleteSubscriptionRequest {
+  int64 id = 1;
+}
+
+message RefreshSubscriptionRequest {
+  int64 id = 1;
+}
+
+message DeleteFolderRequest {
+  int64 id = 1;
+}
+
+message Filter {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    ACTION_SKIP = 1;
+    ACTION_TAG = 2;
+    ACTION_DOWNLOAD = 3;
+    ACTION_MUTE_PROFANITY = 4;
+    ACTION_TRANSCRIBE = 5;
+  }
+  int64 id = 1;
+  int64 sort_order = 2;
+  string query = 3;
+  Action action = 4;
+  string action_value = 5;
+}
+
+message ListFiltersRequest {}
+
+message ListFiltersResponse {
+  repeated Filter filters = 1;
+}
+
+message DeleteFilterRequest {
+  int64 id = 1;
+}
+
+message DeletePlaylistRequest {
+  int64 id = 1;
+}
+
+message DeleteResponse {}
+
+message ImportRequest {
+  enum Format {
+    FORMAT_UNSPECIFIED = 0; // detect
+    FORMAT_OPML = 1;
+    FORMAT_ANTENNAPOD = 2;
+    FORMAT_NEWPIPE = 3;
+    FORMAT_YOUTUBE_CSV = 4;
+  }
+  Format format = 1;
+  bytes data = 2; // at most 20 MiB
+  // Where subscriptions the export does not put in a folder go; one it does
+  // goes in the folder of that name, created if need be.
+  optional int64 folder_id = 3;
+}
+
+// An import adds everything or nothing: an export the server cannot read is
+// InvalidArgument.
+message ImportResponse {
+  int64 added = 1;
+  int64 skipped = 2; // already subscribed to
+  reserved 3;
+}
+
+message ExportOPMLRequest {}
+
+message ExportOPMLResponse {
+  bytes opml = 1;
+}

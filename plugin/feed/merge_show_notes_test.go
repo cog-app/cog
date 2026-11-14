@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -37,7 +38,7 @@ func TestMergeShowNotesMigration(t *testing.T) {
 	second := item("ep1#ba9876543210", "video", "https://pod.example/ep1.mp4", "", false, false)
 	bare := item("ep2#0123456789ab", "audio", "https://pod.example/ep2.mp3", "", false, false)
 	post := item("post", "text", "", "<p>post</p>", false, false)
-	require.NoError(t, store.SetPlayback(ep, 30, false))
+	require.NoError(t, store.SetPlayback(ep, 30, false, time.Now()))
 	require.NoError(t, store.AddTag(ep, "later"))
 	require.NoError(t, store.AddTag(notes, "news"))
 

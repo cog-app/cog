@@ -107,6 +107,12 @@ func TestItemsAndTags(t *testing.T) {
 		t.Fatalf("dedup returned wrong id: %d vs %d", id2, id)
 	}
 
+	// Only the duplicate is ignored: an invalid item is an error that says so,
+	// not a missing row.
+	_, _, err = s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "guid-2", Type: "article"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK constraint failed")
+
 	require.NoError(t, s.AddTag(id, "sunday"))
 	require.NoError(t, s.AddTag(id, "weekly"))
 	tags, err := s.ItemTags(id)
@@ -226,7 +232,7 @@ func TestDownloadsAndPlayback(t *testing.T) {
 		t.Fatalf("got %+v", d)
 	}
 
-	require.NoError(t, s.SetPlayback(id, 42.5, false))
+	require.NoError(t, s.SetPlayback(id, 42.5, false, time.Now()))
 	pb, err := s.GetPlayback(id)
 	require.NoError(t, err)
 	if pb.ProgressSec != 42.5 || pb.Completed {
@@ -236,7 +242,7 @@ func TestDownloadsAndPlayback(t *testing.T) {
 
 func TestPlaylistsCRUD(t *testing.T) {
 	s := newStore(t)
-	id, err := s.CreatePlaylist("Morning", "type:audio AND tag:morning")
+	id, err := s.CreatePlaylist(feed.Playlist{Name: "Morning", Query: "type:audio AND tag:morning"})
 	require.NoError(t, err)
 	pls, err := s.ListPlaylists()
 	require.NoError(t, err)
@@ -506,14 +512,14 @@ func TestListSubscriptionsErrorsFirst(t *testing.T) {
 	}
 }
 
-func TestPlaybackHistoryItemsJoined(t *testing.T) {
+func TestHistoryViewJoined(t *testing.T) {
 	s := newStore(t)
 	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "SubT"})
 	require.NoError(t, err)
 	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio", Title: "T"})
 	require.NoError(t, err)
-	require.NoError(t, s.SetPlayback(id, 5.0, true))
-	got, err := s.PlaybackHistoryItems(10)
+	require.NoError(t, s.SetPlayback(id, 5.0, true, time.Now()))
+	got, err := s.ListItemsForView(feed.ViewSpec{History: true}, 10)
 	require.NoError(t, err)
 	if len(got) != 1 || got[0].SubscriptionTitle != "SubT" || got[0].Title != "T" {
 		t.Fatalf("%+v", got)
@@ -622,5 +628,33 @@ func TestDownloadStateByItems(t *testing.T) {
 	require.NoError(t, err)
 	if len(empty) != 0 {
 		t.Errorf("expected empty map for nil ids, got %v", empty)
+	}
+}
+
+func TestPlaybackLastWriterWinsByWhenItPlayed(t *testing.T) {
+	s := newStore(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://x.test/f", Title: "S"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio", Title: "T"})
+	require.NoError(t, err)
+
+	now := time.Now()
+	require.NoError(t, s.SetPlayback(id, 300, false, now.Add(-time.Minute)))
+	// A phone that played offline an hour ago syncs after the desktop did.
+	require.NoError(t, s.SetPlayback(id, 120, false, now.Add(-time.Hour)))
+	pb, err := s.GetPlayback(id)
+	require.NoError(t, err)
+	if pb.ProgressSec != 300 || pb.LastPlayedAt != now.Add(-time.Minute).Unix() {
+		t.Fatalf("stale update applied: %+v", pb)
+	}
+
+	// A clock running a day fast is taken as now, so the next real update
+	// still lands.
+	require.NoError(t, s.SetPlayback(id, 400, false, now.Add(24*time.Hour)))
+	require.NoError(t, s.SetPlayback(id, 410, false, time.Now()))
+	pb, err = s.GetPlayback(id)
+	require.NoError(t, err)
+	if pb.ProgressSec != 410 {
+		t.Fatalf("update after a fast clock lost: %+v", pb)
 	}
 }

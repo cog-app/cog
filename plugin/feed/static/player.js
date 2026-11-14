@@ -44,6 +44,7 @@
 			itemID: root.dataset.itemId,
 			type: root.dataset.mediaType,
 			sourceKind: root.dataset.sourceKind,
+			variant: root.dataset.variant || "",
 			resume: parseFloat(root.dataset.resume) || 0,
 			csrf: root.dataset.csrf,
 			title: root.dataset.title || "",
@@ -97,7 +98,8 @@
 
 		// --- source loading (YouTube resolves a stream URL) ---
 		if (cfg.sourceKind === "youtube") {
-			fetch("/apps/feed/api/stream-url/" + cfg.itemID, {
+			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
+			fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
 				headers: { "X-CSRF-Token": cfg.csrf },
 			})
 				.then(function (r) { return r.json(); })
@@ -125,16 +127,22 @@
 		});
 
 		// --- ranges (mute + skip) ---
+		// The silence ranges are pending until the server has analysed the
+		// download, so ask again while the player is still on the page.
 		var ranges = [];
-		fetch("/apps/feed/api/ranges/" + cfg.itemID, {
-			headers: { "X-CSRF-Token": cfg.csrf },
-		})
-			.then(function (r) { return r.json(); })
-			.then(function (d) {
-				ranges = (d.ranges || []);
-				renderMarkers();
+		function loadRanges() {
+			fetch("/apps/feed/api/ranges/" + cfg.itemID, {
+				headers: { "X-CSRF-Token": cfg.csrf },
 			})
-			.catch(function (e) { console.error("feed: ranges", e); });
+				.then(function (r) { return r.json(); })
+				.then(function (d) {
+					ranges = (d.ranges || []);
+					renderMarkers();
+					if (d.pending && root.isConnected) setTimeout(loadRanges, 30000);
+				})
+				.catch(function (e) { console.error("feed: ranges", e); });
+		}
+		loadRanges();
 
 		function renderMarkers() {
 			if (!markers || !el.duration) return;

@@ -12,54 +12,39 @@ import (
 	"path/filepath"
 )
 
-// ImportNewPipe reads a NewPipe ZIP export (as raw bytes) and creates YouTube
-// subscriptions. Returns the number of subscriptions created.
-// Duplicates (same URL) are silently skipped.
-func ImportNewPipe(s *Store, data []byte) (int, error) {
+// parseNewPipe lists the YouTube channels in a NewPipe ZIP export (as raw
+// bytes).
+func parseNewPipe(data []byte) ([]importEntry, error) {
 	dbPath, cleanup, err := extractNewPipeDBFromBytes(data)
 	if err != nil {
-		return 0, fmt.Errorf("import newpipe: %w", err)
+		return nil, err
 	}
 	defer cleanup()
 
 	npDB, err := sql.Open("sqlite3", dbPath+"?mode=ro")
 	if err != nil {
-		return 0, fmt.Errorf("import newpipe: open db: %w", err)
+		return nil, fmt.Errorf("open db: %w", err)
 	}
 	defer npDB.Close()
 
-	// service_id=0 means YouTube in NewPipe.
 	rows, err := npDB.Query(`SELECT url, name FROM subscriptions WHERE url != ''`)
 	if err != nil {
-		return 0, fmt.Errorf("import newpipe: query subscriptions: %w", err)
+		return nil, fmt.Errorf("query subscriptions: %w", err)
 	}
 	defer rows.Close()
 
-	count := 0
+	var entries []importEntry
 	for rows.Next() {
-		var channelURL, name string
-		if err := rows.Scan(&channelURL, &name); err != nil {
-			return count, fmt.Errorf("import newpipe: scan: %w", err)
+		sub := Subscription{Kind: "youtube"}
+		if err := rows.Scan(&sub.URL, &sub.Title); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
 		}
-		created, err := s.importSubscription(Subscription{
-			Kind:            "youtube",
-			URL:             channelURL,
-			Title:           name,
-			PollIntervalSec: 1800,
-			NextCheckAt:     1,
-		})
-		if err != nil {
-			return count, fmt.Errorf("import newpipe: %w", err)
-		}
-		if created {
-			count++
-		}
+		entries = append(entries, importEntry{Subscription: sub})
 	}
 	if err := rows.Err(); err != nil {
-		return count, fmt.Errorf("import newpipe: rows: %w", err)
+		return nil, fmt.Errorf("rows: %w", err)
 	}
-
-	return count, nil
+	return entries, nil
 }
 
 // extractNewPipeDBFromBytes extracts newpipe.db from a ZIP archive in memory,

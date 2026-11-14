@@ -72,6 +72,12 @@ Plugins register routes via the `PluginRegistrar`. Cog handles the underlying ro
   - **Purpose:** State-changing operations (POST/PUT/DELETE) from forms or HTMX.
   - **Format:** Returns HTMX fragments.
   - **CSRF:** Strictly enforced. Tokens are namespaced per plugin via `HMAC(secret, sessionID+pluginID)`, automatically applied by `RegisterAction()`.
+- **RPC services (`/{package}.{Service}/{Method}`):**
+  - **Purpose:** Native apps. `RegisterService` takes the path and handler a `connect.New…ServiceHandler` returns; the handler speaks gRPC, gRPC-Web and Connect, so one mount serves `grpc-go` clients and plain HTTP/1.1 ones alike.
+  - **Mounting:** At the root, by the service's fully qualified name, which has a package and so never collides with a page.
+  - **CSRF:** None needed: the route takes only credentials a request carries (app passwords, as Bearer or Basic) and refuses the session cookie (`auth.RequireToken`), which a cross-site page cannot forge.
+  - **Transport:** The server speaks cleartext HTTP/2 (h2c) beside HTTP/1 on its one port, since gRPC needs HTTP/2 and Cog sits behind a proxy that ends TLS.
+  - In-process plugins only — see the [bridge's limitations](grpc_bridge.md#limitations).
 - **Resources (`/apps/{plugin_id}/{resource_name}/{resource_id}`):**
   - Standardized URLs for specific plugin objects.
   - Used as the destination for **Global Search** results and **Public Link Sharing**.
@@ -103,6 +109,7 @@ type Registrar interface {
     RegisterAPI(path string, handler http.Handler)
     RegisterPage(path string, handler http.Handler)
     RegisterAction(method, path string, handler http.Handler)
+    RegisterService(path string, handler http.Handler)
     RegisterResource(def ResourceDef)
     RegisterHook(hookName string, callback HookCallback)
     RegisterNavItem(item NavItem)

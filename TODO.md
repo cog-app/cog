@@ -37,11 +37,165 @@ These tasks should be completed by Claude in priority order. Check them off the 
   - [ ] Cache content locally
   - [ ] Skip media by patterns (search patterns?)
   - [ ] Content filtering (ad skipping; profanity blocking)
-  - [ ] Includes a mobile app
+  - [-] Includes a mobile app — see "Feed: native app API" below
   - Calendar
     - Allow subscribing to iCal subscriptions; expose those via CalDAV (so I don't need to configure it on each device and can make edits)
 
 ---
+
+# Feed: native app API
+
+[cog-feed-sngl](https://git.duckfam.us/jj-software/cog-feed-sngl) is a native
+Feed client (gtk4, Android, terminal) written in SNGL. It talks to Cog over
+gRPC with the service drafted in its `proto/cogfeed/v1/feed.proto`, and fetches
+media bytes over plain HTTP. Its `DESIGN.md` and `design/protocol.md` explain
+the choices; this is what Cog needs for it, in the order the app needs it.
+
+## Serving gRPC
+
+- [x] Serve gRPC on the main port. `connectrpc.com/connect` handlers on the
+      mux speak gRPC, gRPC-Web and Connect over `net/http`, so the auth chain
+      and logging apply unchanged, and the server speaks h2c beside HTTP/1
+      (`TestServerSpeaksCleartextHTTP2`). `go tool protoc` runs goprotoc with
+      the pinned `protoc-gen-connect-go` (goprotoc only knows the go and
+      go-grpc generators by name).
+- [x] Plugin API for it: `RegisterService(path string, h http.Handler)` (the
+      pair `connect.New…Handler` returns), routed at `/<package>.<Service>/`,
+      wrapped in `auth.RequireToken`: credentials only, the session cookie
+      refused, so no CSRF (`TestFeedServiceRefusesTheSessionCookie`).
+- [x] The out-of-process bridge's `HandleHTTPRequest` is unary, so a
+      server-streaming RPC cannot pass through it. Recorded in
+      `DESIGN/plugins/grpc_bridge.md`; an external plugin's `RegisterService`
+      warns and mounts nothing.
+- [x] A `cogtest` helper: `env.RPCClient(t, authorization)` serves the
+      handler over HTTP/2 and returns a client and base URL;
+      `user.AppPassword(t, name)` makes the credential.
+- [x] An app password from Login Flow v2 authenticates a gRPC call, as a
+      Bearer token or with Basic auth, and is named after the app and the
+      device its User-Agent's comment starts with ("CogFeed on Pixel 8")
+      (`TestLoginFlowAppPasswordCallsFeedService`, `TestClientName`).
+
+## FeedService
+
+- [x] Move the proto to `plugin/feed/feedpb/feed.proto` with a
+      `go:generate` like `plugin/plugpb`'s; the app imports it from here.
+      FeedService is mounted; RPCs not yet written answer Unimplemented, and
+      errors that are not `connect.Error`s are logged and sent as a generic
+      Internal.
+- [x] The view logic is the store's, shared by web and gRPC: a `View` (the
+      web's view context, a client's `View`) resolves to a `ViewSpec` and a
+      playlist's query (`Store.ResolveView`), and `ViewPage`, `CountView` and
+      `MarkViewRead` list, count and mark it. The web's item navigation, search
+      and playlist pages list through them, so a search fills its 500 rather
+      than refining the newest 500 down. History is `ViewSpec.History`.
+      `buildItemNav` stays in the handlers: it only reads the list.
+- [x] Keyset pagination: every order is one integer key and the id, so a
+      page token is `(key, id)` and an arrival does not shift the next page; a
+      query that needs the refine step reads SQL a batch at a time until its
+      page is full (`TestListItemsPagesASparseSearch`). A token from another
+      order — a playlist reordered or reshuffled — is refused.
+- [x] `ViewSpec.Unfinished` for play queues: audio and video whose
+      `playback` is not completed (`TestUnfinishedKeepsMediaNotPlayedToTheEnd`);
+      `ListItems`' `unfinished_only` maps to it.
+- [x] Playlists carry how they play, the same on every device: `order`
+      (newest, oldest, shortest — least time left — and shuffled, a seed so it
+      holds still until reshuffled) and `listen_only` (videos play as audio).
+      `migration002`, the proto's `Playlist`, `SavePlaylist` (a shuffled
+      order with no seed reshuffles) and `DeletePlaylist`; on the web, the
+      playlists page sets both, the playlist page and the player's next
+      follow the order, and a video in a listen-only playlist plays in an
+      `<audio>` element from YouTube's best audio stream
+      (`TestPlaylistPlaysInItsOrder`, `TestSavePlaylistOverGRPC`,
+      `TestWebPlaylistOrderAndListenOnly`, `TestPlaylistPlayMigration`).
+      Playlist queries moved from the handlers to `Store.PlaylistItems`.
+- [x] Playlist tiles: count, unfinished count and time left, for every
+      playlist whose SQL is exact in one `UNION ALL` query; one whose query
+      needs the refine step counts what it lists (`TestPlaylistCounts`).
+- [x] `GetLibrary` (`TestGetLibraryOverGRPC`), with the playlist counts.
+- [x] Item-state RPCs: `GetItem`, `SetRead`, `SetStarred`, `SetTags`
+      (`TestItemStateOverGRPC`). Items are converted in batches — tags,
+      playback and downloads one query each — ready for `ListItems`.
+- [x] Browse RPCs: `ListItems` (view, query, hide read, unfinished only,
+      pages, total on the first page) and `MarkAllRead` of a view
+      (`TestListItemsOverGRPC`, `TestMarkAllReadOverGRPC`).
+- [x] Article bodies as Markdown (`ItemDetail.content_markdown`), converted
+      from the sanitized HTML on read — no migration, and a better converter
+      reaches old items — with links and images made absolute against the
+      item's URL (`TestGetItemContentAsMarkdown`). `UpsertItem` ignores only
+      the duplicate, so an invalid item is a CHECK error, not "no rows".
+- [x] `PreviewQuery`, sharing `Store.Preview` with the web's filter preview:
+      a count and the newest matches, an invalid query as an answer with
+      `error_position` from the parser's new `query.SyntaxError`
+      (`TestPreviewQueryOverGRPC`, `TestParseErrorPosition`).
+- [x] Management RPCs with web parity: subscriptions (add with detection,
+      update folder/title/interval/paused in one statement, delete, refresh),
+      folders, filters, `Import` (`TestSubscriptionsOverGRPC`,
+      `TestFoldersOverGRPC`, `TestFiltersOverGRPC`, `TestImportOverGRPC`).
+      A title the user gives a subscription is locked (`migration003`), so
+      polling no longer overwrites it; clearing it refetches the feed's. The
+      web's settings form edits it too, and only a title the user changed
+      locks (`TestWebSubscriptionSettingsTitle`). The four importers are one
+      `Store.Import` in one transaction: it detects the format by its first
+      bytes, counts what it skipped, puts unfiled subscriptions in a folder
+      the client names, and reports an unreadable export as
+      `ErrUnreadableImport` (InvalidArgument) rather than a server fault.
+      Requests are bounded to the largest import before they are read.
+- [x] Player prefs: `GetPlayerPrefs`, and `SetPlayerPrefs` replacing them
+      all and refusing a value outside the web's bounds rather than clamping it
+      (`TestPlayerPrefsOverGRPC`).
+
+## Playback
+
+- [x] Progress with the client's timestamp: `SetPlayback` takes `at`, and
+      an update older than the stored `last_played_at` is ignored (last
+      writer wins by when it happened, not when it arrived); a future time is
+      taken as now so a fast clock cannot lock out later updates
+      (`TestPlaybackLastWriterWinsByWhenItPlayed`). The gpodder triggers
+      already read `last_played_at`.
+- [x] `ReportProgress` passes the client's `at` through, answers with what
+      is stored (not what was sent, when a later update won), and marks a
+      completed item read (`TestReportProgressOverGRPC`).
+
+## Media
+
+- [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
+      a request that was not HTMX went through `shellMiddleware`, which
+      buffered the whole file and wrapped it in the HTML shell, and a missing
+      credential was a redirect to the login page instead of 401
+      (`TestItemMediaServesTheDownloadedFile`,
+      `TestItemMediaRefusesWithoutCredentials`).
+- [ ] `ResolveMedia(item, variant, max_height)`: the URL to play from, with
+      headers and expiry. Cog's media URL for downloaded or cleaned media and
+      RSS enclosures; for YouTube a resolved stream — `bestaudio` for the
+      audio variant, best video up to `max_height` otherwise — cached until it
+      expires. Generalises `api/stream-url/{id}`.
+- [ ] `?variant=audio` on the media route for a downloaded video: an audio
+      sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
+      download, so background play and audio-only offline copies do not move
+      the video bytes.
+- [x] Ranges that never run ffmpeg in the request. Silence detection is a
+      pipeline worker after the downloader (`pipeline.Silence`); the endpoint
+      reads the row and answers `pending` until it has run, and the web
+      player asks again while it is pending
+      (`TestSilenceRecordsSkipRanges`, `TestRangesPendingUntilAnalysed`).
+- [ ] `RequestDownload(item, variant)` and the download state on `Item`, so a
+      client can ask the server to fetch (and run profanity/silence on) a
+      YouTube item before downloading it to the device.
+- [ ] Captions (VTT) over the API for offline use.
+
+## Sync
+
+- [ ] A change sequence per feed database: triggers on `items`, `playback`,
+      `item_tags`, `subscriptions`, `folders`, `playlists` and
+      `feed_settings` bump a `change_seq` and write tombstones for deletes,
+      in the writing transaction (the pattern `gpodder_episode_actions` and
+      `internal/db/changelog.go` already use). Tombstones are pruned after a
+      retention window; a token older than that answers `reset`.
+- [ ] `Changes(token)` returning changed rows and tombstones in batches.
+- [ ] `Watch(token)`: a server stream that emits the new token whenever the
+      sequence moves, driven by the update hooks the search drainer already
+      uses to wake up, so open clients refresh within a second without
+      polling.
 
 # Audit findings — 2026-11-04
 

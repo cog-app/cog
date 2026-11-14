@@ -6,21 +6,17 @@ import (
 	"strings"
 )
 
-// ImportYouTubeTakeout parses a Google Takeout subscriptions CSV and creates
-// YouTube subscriptions. The expected columns are:
+// parseYouTubeTakeout lists the channels in a Google Takeout subscriptions
+// CSV, whose columns are:
 //
 //	Channel Id, Channel Url, Channel Title
-//
-// Returns the number of subscriptions created.
-// Duplicates (same URL) are silently skipped.
-func ImportYouTubeTakeout(s *Store, data []byte) (int, error) {
-	reader := csv.NewReader(strings.NewReader(string(data)))
-	records, err := reader.ReadAll()
+func parseYouTubeTakeout(data []byte) ([]importEntry, error) {
+	records, err := csv.NewReader(strings.NewReader(string(data))).ReadAll()
 	if err != nil {
-		return 0, fmt.Errorf("import youtube takeout: parse csv: %w", err)
+		return nil, fmt.Errorf("parse csv: %w", err)
 	}
 
-	count := 0
+	var entries []importEntry
 	for i, row := range records {
 		if i == 0 {
 			continue // skip header
@@ -30,29 +26,17 @@ func ImportYouTubeTakeout(s *Store, data []byte) (int, error) {
 		}
 		channelID := strings.TrimSpace(row[0])
 		channelURL := strings.TrimSpace(row[1])
-		channelTitle := strings.TrimSpace(row[2])
-
 		if channelURL == "" && channelID != "" {
 			channelURL = "https://www.youtube.com/channel/" + channelID
 		}
 		if channelURL == "" {
 			continue
 		}
-
-		created, err := s.importSubscription(Subscription{
-			Kind:            "youtube",
-			URL:             channelURL,
-			Title:           channelTitle,
-			PollIntervalSec: 1800,
-			NextCheckAt:     1,
-		})
-		if err != nil {
-			return count, fmt.Errorf("import youtube takeout: %w", err)
-		}
-		if created {
-			count++
-		}
+		entries = append(entries, importEntry{Subscription: Subscription{
+			Kind:  "youtube",
+			URL:   channelURL,
+			Title: strings.TrimSpace(row[2]),
+		}})
 	}
-
-	return count, nil
+	return entries, nil
 }
