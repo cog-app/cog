@@ -230,11 +230,11 @@ func embeddedMedia(doc *goquery.Document) (audio, video string) {
 	doc.Find("script").EachWithBreak(func(_ int, s *goquery.Selection) bool {
 		text := s.Text()
 		for prefix := range strings.SplitSeq(talksStatePrefixes, "|") {
-			i := strings.Index(text, prefix)
-			if i < 0 {
+			_, after, found := strings.Cut(text, prefix)
+			if !found {
 				continue
 			}
-			state, ok := decodeState(text[i+len(prefix):])
+			state, ok := decodeState(after)
 			if !ok {
 				continue
 			}

@@ -97,8 +97,8 @@ func TestNewsAPI_Folders(t *testing.T) {
 	require.Equal(t, 0, len(listResp.Folders))
 }
 
-// TestNewsAPI_FeedCRUD exercises subscription list/delete via the feeds endpoint.
-// A youtube subscription inserted alongside should NOT appear in the feeds list.
+// TestNewsAPI_FeedCRUD exercises subscription list/delete via the feeds
+// endpoint, which lists subscriptions of every kind.
 func TestNewsAPI_FeedCRUD(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
@@ -110,26 +110,22 @@ func TestNewsAPI_FeedCRUD(t *testing.T) {
 	// Insert an RSS subscription directly.
 	subID := createSub(t, db, "https://example.com/feed.xml", sql.NullInt64{})
 
-	// Insert a youtube subscription — should NOT appear in /feeds.
 	_, err = db.Exec(`INSERT INTO subscriptions (kind, url) VALUES ('youtube', 'https://youtube.com/channel/abc')`)
 	require.NoError(t, err)
 
-	// List feeds via API — only the rss one should appear.
 	var listResp struct {
 		Feeds []map[string]any `json:"feeds"`
 	}
 	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&listResp)
-	require.Equal(t, 1, len(listResp.Feeds))
-	require.Equal(t, "https://example.com/feed.xml", listResp.Feeds[0]["url"])
+	require.Equal(t, 2, len(listResp.Feeds))
 
-	// Delete the RSS feed.
 	doReq(t, env, "DELETE", newsAPI+"/feeds/"+fmtID(float64(subID)), nil, alice.Auth).Status(200)
 	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&listResp)
-	require.Equal(t, 0, len(listResp.Feeds))
+	require.Equal(t, 1, len(listResp.Feeds))
+	require.Equal(t, "https://youtube.com/channel/abc", listResp.Feeds[0]["url"])
 }
 
-// TestNewsAPI_Items exercises item listing, marking read, and verifies that
-// audio items are excluded from the /items endpoint.
+// TestNewsAPI_Items exercises item listing and marking read.
 func TestNewsAPI_Items(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
@@ -147,18 +143,17 @@ func TestNewsAPI_Items(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Insert an audio item — should NOT appear in /items.
+	// An audio item without notes appears too; filters keep it out if wanted.
 	_, err = db.Exec(`INSERT INTO items (subscription_id, guid, type, title, url, content_html) VALUES (?, 'guid-audio', 'audio', 'Podcast Episode', 'https://example.com/ep1', '')`,
 		subID)
 	require.NoError(t, err)
 
-	// List items via API — only text items should appear.
 	var itemsResp struct {
 		Items []map[string]any `json:"items"`
 	}
 	env.Get(t, newsAPI+"/items?batchSize=50&getRead=true", alice.Auth).
 		Status(200).JSON(&itemsResp)
-	require.Equal(t, 3, len(itemsResp.Items))
+	require.Equal(t, 4, len(itemsResp.Items))
 
 	// All should be unread.
 	for _, item := range itemsResp.Items {

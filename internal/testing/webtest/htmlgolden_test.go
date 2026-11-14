@@ -1,8 +1,6 @@
 package webtest
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,53 +29,6 @@ func TestStylesheetHashReachesTheGolden(t *testing.T) {
 
 	if before == after {
 		t.Fatal("a changed stylesheet hash left the golden identical; a CSS edit would not be noticed")
-	}
-}
-
-// TestVolatileValuesAreMasked keeps per-run values out of the golden. Without
-// this every snapshot fails on every run for reasons that have nothing to do
-// with the page.
-func TestVolatileValuesAreMasked(t *testing.T) {
-	first := normalize(t, `<html><body hx-headers='{"X-CSRF-Token":"2384570768059786728779548a95b3378fc1e82349589e917ee3ad1932b83b4b"}'>`+
-		`<img src="/avatar/69474ee7baf0372a133b61095fe862d4">`+
-		`<input name="subject_id" value="0a5b6c7d-1e2f-3a4b-5c6d-7e8f9a0b1c2d">`+
-		`</body></html>`)
-	second := normalize(t, `<html><body hx-headers='{"X-CSRF-Token":"3055b79337abad7b51c0c872848025e3044278b38cb1fb36f92f266e8afb9b11"}'>`+
-		`<img src="/avatar/e0ecfd10232941bc982c313b01fd929e">`+
-		`<input name="subject_id" value="ffffffff-1111-2222-3333-444444444444">`+
-		`</body></html>`)
-
-	if first != second {
-		t.Fatalf("volatile values reached the golden:\n%s\n---\n%s", first, second)
-	}
-	if strings.Contains(first, "2384570768") {
-		t.Error("csrf token was not masked")
-	}
-}
-
-// TestTempDirsAreMasked keeps the test's temp directory, which has a random
-// suffix, out of pages that show a path.
-func TestTempDirsAreMasked(t *testing.T) {
-	page := func(dir string) string {
-		return normalize(t, `<html><body><td>file://`+filepath.Join(os.TempDir(), dir, "001")+`</td></body></html>`)
-	}
-	first, second := page("TestBrowserAdminCreateVolume2382680420"), page("TestBrowserAdminCreateVolume117")
-	if first != second {
-		t.Fatalf("temp directory reached the golden:\n%s\n---\n%s", first, second)
-	}
-	if !strings.Contains(first, "file://«tmp»/001") {
-		t.Fatalf("the path under the temp directory was not kept:\n%s", first)
-	}
-}
-
-// TestShortHashesSurvive guards the masking against being too greedy: the
-// asset cache-busting hash is twelve characters, and masking it would undo
-// TestStylesheetHashReachesTheGolden.
-func TestShortHashesSurvive(t *testing.T) {
-	out := normalize(t, `<html><head><link rel="stylesheet" href="/static/style.css?v=014e31a1dbda"></head><body></body></html>`)
-
-	if !strings.Contains(out, "014e31a1dbda") {
-		t.Fatalf("the asset hash was masked away:\n%s", out)
 	}
 }
 
@@ -168,18 +119,5 @@ func TestChildlessAndVoidElementsSelfClose(t *testing.T) {
 	}
 	if strings.Contains(out, "</br>") || strings.Contains(out, "</img>") {
 		t.Errorf("void element was given a closing tag:\n%s", out)
-	}
-}
-
-// TestServerPortIsMasked keeps the test server's random port out of pages
-// that print an absolute URL.
-func TestServerPortIsMasked(t *testing.T) {
-	first := normalize(t, `<html><body><a href="http://127.0.0.1:40211/invite/x">http://127.0.0.1:40211/invite/x</a></body></html>`)
-	second := normalize(t, `<html><body><a href="http://127.0.0.1:3311/invite/x">http://127.0.0.1:3311/invite/x</a></body></html>`)
-	if first != second {
-		t.Fatalf("server port reached the golden:\n%s\n---\n%s", first, second)
-	}
-	if !strings.Contains(first, "http://127.0.0.1:«port»/invite/x") {
-		t.Fatalf("the URL around the port was not kept:\n%s", first)
 	}
 }

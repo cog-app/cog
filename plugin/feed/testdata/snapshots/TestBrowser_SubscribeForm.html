@@ -5,7 +5,7 @@
     <title>
       Subscriptions — Cog
     </title>
-    <link href="/static/style.css?v=03447a70b7cc" rel="stylesheet" />
+    <link href="/static/style.css?v=840fe19b7805" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxwYXRoIGQ9Ik00IDExYTkgOSAwIDAgMSA5IDkiPjwvcGF0aD48cGF0aCBkPSJNNCA0YTE2IDE2IDAgMCAxIDE2IDE2Ij48L3BhdGg+PGNpcmNsZSBjeD0iNSIgY3k9IjE5IiByPSIxIj48L2NpcmNsZT48L3N2Zz4=" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -364,6 +364,11 @@
               Playlists
             </span>
           </a>
+          <a class="sidebar-item" href="/apps/feed/settings/sync">
+            <span class="break-anywhere">
+              Sync
+            </span>
+          </a>
         </nav>
         <div class="sidebar-content">
           <header class="page-header">
@@ -457,176 +462,271 @@
                   4
                 </span>
               </summary>
-              <ul class="feed-sub-list" id="subscription-list">
-                <li>
-                  <div class="feed-sub-list-main">
-                    <a class="font-medium" href="/apps/feed/subscription/2">
-                      A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
-                    </a>
-                    <div class="feed-sub-list-meta">
-                      <span class="badge badge-outline">
-                        rss
+              <form action="/apps/feed/subscriptions/bulk" class="feed-sub-bulk" id="bulk-subscriptions" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button aria-hidden="true" disabled="" hidden="" type="submit" />
+                <div class="feed-sub-toolbar">
+                  <label class="sr-only" for="sub-filter">
+                    Filter subscriptions
+                  </label>
+                  <input autocomplete="off" class="form-control" id="sub-filter" placeholder="Filter by name or URL" type="search" />
+                  <div aria-label="Show" class="chip-group" role="radiogroup">
+                    <label class="chip">
+                      <input checked="" name="sub-type" type="radio" value="" />
+                      All
+                    </label>
+                    <label class="chip">
+                      <input name="sub-type" type="radio" value="podcast" />
+                      Podcasts
+                    </label>
+                    <label class="chip">
+                      <input name="sub-type" type="radio" value="articles" />
+                      Articles
+                    </label>
+                    <label class="chip">
+                      <input name="sub-type" type="radio" value="youtube" />
+                      YouTube
+                    </label>
+                  </div>
+                </div>
+                <fieldset class="feed-sub-group">
+                  <legend>
+                    <label class="form-check">
+                      <input aria-label="Select all in No folder" data-group-toggle="" type="checkbox" />
+                      No folder
+                      <span class="count">
+                        2
                       </span>
-                      <code>
-                        https://long.example.org/rss
-                      </code>
-                    </div>
-                  </div>
-                  <div class="list-row-actions">
-                    <a aria-label="Settings for A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/2/settings" title="Settings">
-                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                        <line x1="4" x2="4" y1="21" y2="14" />
-                        <line x1="4" x2="4" y1="10" y2="3" />
-                        <line x1="12" x2="12" y1="21" y2="12" />
-                        <line x1="12" x2="12" y1="8" y2="3" />
-                        <line x1="20" x2="20" y1="21" y2="16" />
-                        <line x1="20" x2="20" y1="12" y2="3" />
-                        <line x1="1" x2="7" y1="14" y2="14" />
-                        <line x1="9" x2="15" y1="8" y2="8" />
-                        <line x1="17" x2="23" y1="16" y2="16" />
-                      </svg>
-                    </a>
-                    <form action="/apps/feed/subscriptions/2/delete" method="post" onsubmit="__templ_feedConfirm_f4b0(\"Unsubscribe from “A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar” and delete its articles?\")">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button aria-label="Delete A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
-                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </li>
-                <li>
-                  <div class="feed-sub-list-main">
-                    <a class="font-medium" href="/apps/feed/subscription/1">
-                      Example Engineering Blog
-                    </a>
-                    <div class="feed-sub-list-meta">
-                      <span class="badge badge-outline">
-                        rss
+                    </label>
+                  </legend>
+                  <ul class="feed-sub-list">
+                    <li data-search="a subscription with an extremely long title that will not fit in the sidebar https://long.example.org/rss" data-type="articles">
+                      <input aria-label="Select A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" name="id" type="checkbox" value="2" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/2">
+                          A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            rss
+                          </span>
+                          <code>
+                            https://long.example.org/rss
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/2/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/2/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “A Subscription With An Extremely Long Title That Will Not Fit In The Sidebar” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                    <li data-search="video channel https://www.youtube.com/channel/ucexample" data-type="youtube">
+                      <input aria-label="Select Video Channel" name="id" type="checkbox" value="4" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/4">
+                          Video Channel
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            youtube
+                          </span>
+                          <code>
+                            https://www.youtube.com/channel/UCexample
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for Video Channel" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/4/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete Video Channel" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/4/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “Video Channel” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                  </ul>
+                </fieldset>
+                <fieldset class="feed-sub-group">
+                  <legend>
+                    <label class="form-check">
+                      <input aria-label="Select all in Podcasts" data-group-toggle="" type="checkbox" />
+                      Podcasts
+                      <span class="count">
+                        1
                       </span>
-                      <code>
-                        https://blog.example.com/feed.xml
-                      </code>
-                    </div>
-                  </div>
-                  <div class="list-row-actions">
-                    <a aria-label="Settings for Example Engineering Blog" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/1/settings" title="Settings">
-                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                        <line x1="4" x2="4" y1="21" y2="14" />
-                        <line x1="4" x2="4" y1="10" y2="3" />
-                        <line x1="12" x2="12" y1="21" y2="12" />
-                        <line x1="12" x2="12" y1="8" y2="3" />
-                        <line x1="20" x2="20" y1="21" y2="16" />
-                        <line x1="20" x2="20" y1="12" y2="3" />
-                        <line x1="1" x2="7" y1="14" y2="14" />
-                        <line x1="9" x2="15" y1="8" y2="8" />
-                        <line x1="17" x2="23" y1="16" y2="16" />
-                      </svg>
-                    </a>
-                    <form action="/apps/feed/subscriptions/1/delete" method="post" onsubmit="__templ_feedConfirm_f4b0(\"Unsubscribe from “Example Engineering Blog” and delete its articles?\")">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button aria-label="Delete Example Engineering Blog" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
-                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </li>
-                <li>
-                  <div class="feed-sub-list-main">
-                    <a class="font-medium" href="/apps/feed/subscription/4">
-                      Video Channel
-                    </a>
-                    <div class="feed-sub-list-meta">
-                      <span class="badge badge-outline">
-                        youtube
+                    </label>
+                  </legend>
+                  <ul class="feed-sub-list">
+                    <li data-search="weekly audio show https://audio.example.net/podcast.xml" data-type="podcast">
+                      <input aria-label="Select Weekly Audio Show" name="id" type="checkbox" value="3" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/3">
+                          Weekly Audio Show
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            rss
+                          </span>
+                          <code>
+                            https://audio.example.net/podcast.xml
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for Weekly Audio Show" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/3/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete Weekly Audio Show" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/3/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “Weekly Audio Show” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                  </ul>
+                </fieldset>
+                <fieldset class="feed-sub-group">
+                  <legend>
+                    <label class="form-check">
+                      <input aria-label="Select all in Tech News" data-group-toggle="" type="checkbox" />
+                      Tech News
+                      <span class="count">
+                        1
                       </span>
-                      <code>
-                        https://www.youtube.com/channel/UCexample
-                      </code>
-                    </div>
-                  </div>
-                  <div class="list-row-actions">
-                    <a aria-label="Settings for Video Channel" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/4/settings" title="Settings">
-                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                        <line x1="4" x2="4" y1="21" y2="14" />
-                        <line x1="4" x2="4" y1="10" y2="3" />
-                        <line x1="12" x2="12" y1="21" y2="12" />
-                        <line x1="12" x2="12" y1="8" y2="3" />
-                        <line x1="20" x2="20" y1="21" y2="16" />
-                        <line x1="20" x2="20" y1="12" y2="3" />
-                        <line x1="1" x2="7" y1="14" y2="14" />
-                        <line x1="9" x2="15" y1="8" y2="8" />
-                        <line x1="17" x2="23" y1="16" y2="16" />
-                      </svg>
-                    </a>
-                    <form action="/apps/feed/subscriptions/4/delete" method="post" onsubmit="__templ_feedConfirm_f4b0(\"Unsubscribe from “Video Channel” and delete its articles?\")">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button aria-label="Delete Video Channel" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
-                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </li>
-                <li>
-                  <div class="feed-sub-list-main">
-                    <a class="font-medium" href="/apps/feed/subscription/3">
-                      Weekly Audio Show
-                    </a>
-                    <div class="feed-sub-list-meta">
-                      <span class="badge badge-outline">
-                        rss
-                      </span>
-                      <code>
-                        https://audio.example.net/podcast.xml
-                      </code>
-                    </div>
-                  </div>
-                  <div class="list-row-actions">
-                    <a aria-label="Settings for Weekly Audio Show" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/3/settings" title="Settings">
-                      <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                        <line x1="4" x2="4" y1="21" y2="14" />
-                        <line x1="4" x2="4" y1="10" y2="3" />
-                        <line x1="12" x2="12" y1="21" y2="12" />
-                        <line x1="12" x2="12" y1="8" y2="3" />
-                        <line x1="20" x2="20" y1="21" y2="16" />
-                        <line x1="20" x2="20" y1="12" y2="3" />
-                        <line x1="1" x2="7" y1="14" y2="14" />
-                        <line x1="9" x2="15" y1="8" y2="8" />
-                        <line x1="17" x2="23" y1="16" y2="16" />
-                      </svg>
-                    </a>
-                    <form action="/apps/feed/subscriptions/3/delete" method="post" onsubmit="__templ_feedConfirm_f4b0(\"Unsubscribe from “Weekly Audio Show” and delete its articles?\")">
-                      <input name="csrf_token" type="hidden" value="«hex»" />
-                      <button aria-label="Delete Weekly Audio Show" class="btn-icon btn-icon-sm btn-icon-danger" title="Delete" type="submit">
-                        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </li>
-              </ul>
+                    </label>
+                  </legend>
+                  <ul class="feed-sub-list">
+                    <li data-search="example engineering blog https://blog.example.com/feed.xml" data-type="articles">
+                      <input aria-label="Select Example Engineering Blog" name="id" type="checkbox" value="1" />
+                      <div class="feed-sub-list-main">
+                        <a class="font-medium" href="/apps/feed/subscription/1">
+                          Example Engineering Blog
+                        </a>
+                        <div class="feed-sub-list-meta">
+                          <span class="badge badge-outline">
+                            rss
+                          </span>
+                          <code>
+                            https://blog.example.com/feed.xml
+                          </code>
+                        </div>
+                      </div>
+                      <div class="list-row-actions">
+                        <a aria-label="Settings for Example Engineering Blog" class="btn-icon btn-icon-sm" href="/apps/feed/subscription/1/settings" title="Settings">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <line x1="4" x2="4" y1="21" y2="14" />
+                            <line x1="4" x2="4" y1="10" y2="3" />
+                            <line x1="12" x2="12" y1="21" y2="12" />
+                            <line x1="12" x2="12" y1="8" y2="3" />
+                            <line x1="20" x2="20" y1="21" y2="16" />
+                            <line x1="20" x2="20" y1="12" y2="3" />
+                            <line x1="1" x2="7" y1="14" y2="14" />
+                            <line x1="9" x2="15" y1="8" y2="8" />
+                            <line x1="17" x2="23" y1="16" y2="16" />
+                          </svg>
+                        </a>
+                        <button aria-label="Delete Example Engineering Blog" class="btn-icon btn-icon-sm btn-icon-danger" formaction="/apps/feed/subscriptions/1/delete" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from “Example Engineering Blog” and delete its articles?\")" title="Delete" type="submit">
+                          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </li>
+                  </ul>
+                </fieldset>
+                <p class="empty-state empty-state-sm" hidden="" id="sub-filter-empty">
+                  No subscriptions match.
+                </p>
+                <div class="feed-sub-bulk-bar" hidden="" id="bulk-bar">
+                  <span>
+                    <span id="bulk-count">
+                      0
+                    </span>
+                    selected
+                  </span>
+                  <label class="sr-only" for="bulk-folder">
+                    Folder
+                  </label>
+                  <select class="form-control" id="bulk-folder" name="folder_id">
+                    <option value="">
+                      No folder
+                    </option>
+                    <option value="2">
+                      Podcasts
+                    </option>
+                    <option value="1">
+                      Tech News
+                    </option>
+                    <option value="new">
+                      New folder…
+                    </option>
+                  </select>
+                  <label class="sr-only" for="bulk-new-folder">
+                    New folder name
+                  </label>
+                  <input class="form-control" hidden="" id="bulk-new-folder" name="new_folder" placeholder="New folder name" type="text" />
+                  <button class="btn btn-primary" name="action" type="submit" value="move">
+                    Move
+                  </button>
+                  <button class="btn btn-danger" name="action" onclick="__templ_feedConfirm_f4b0(\"Unsubscribe from the selected subscriptions and delete their articles?\")" type="submit" value="delete">
+                    Unsubscribe
+                  </button>
+                </div>
+              </form>
             </details>
           </section>
           <section class="card">

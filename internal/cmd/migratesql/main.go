@@ -74,6 +74,7 @@ func run(dir string) error {
 		s = strings.Replace(s, "CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
 		s = strings.Replace(s, "CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ", 1)
 		s = strings.Replace(s, "CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1)
+		s = strings.Replace(s, "CREATE VIEW ", "CREATE VIEW IF NOT EXISTS ", 1)
 		stmts = append(stmts, s+";\n")
 	}
 	if err := rows.Err(); err != nil {

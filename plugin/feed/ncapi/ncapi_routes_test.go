@@ -10,6 +10,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 )
 
 // Clients read the server version from /version and probe /status and /user
@@ -52,7 +53,7 @@ func TestNewsAPI_BadAndMissingIDs(t *testing.T) {
 
 // The news API manages RSS feeds only; podcast and video subscriptions share
 // the table but are not its to change.
-func TestNewsAPI_LeavesOtherKindsAlone(t *testing.T) {
+func TestNewsAPI_ManagesEveryKind(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
 	db, err := feedPlugin(t, env).DB(alice.Username)
@@ -64,16 +65,24 @@ func TestNewsAPI_LeavesOtherKindsAlone(t *testing.T) {
 	require.NoError(t, err)
 	id := fmtID(float64(ytID))
 
-	doReq(t, env, "PUT", newsAPI+"/feeds/"+id+"/rename", map[string]any{"feedTitle": "x"}, alice.Auth).Status(404)
-	doReq(t, env, "DELETE", newsAPI+"/feeds/"+id, nil, alice.Auth).Status(404)
+	var feeds struct {
+		Feeds []map[string]any `json:"feeds"`
+	}
+	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&feeds)
+	require.Equal(t, 1, len(feeds.Feeds))
 
+	doReq(t, env, "PUT", newsAPI+"/feeds/"+id+"/rename", map[string]any{"feedTitle": "x"}, alice.Auth).Status(200)
 	var title string
 	require.NoError(t, db.QueryRow(`SELECT title FROM subscriptions WHERE id = ?`, ytID).Scan(&title))
-	require.Equal(t, "Channel", title)
+	require.Equal(t, "x", title)
+
+	doReq(t, env, "DELETE", newsAPI+"/feeds/"+id, nil, alice.Auth).Status(200)
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&n))
+	require.Equal(t, 0, n)
 }
 
-// Deleting a folder deletes its feeds, as in NextCloud News, but only the RSS
-// ones.
+// Deleting a folder deletes its feeds, as in NextCloud News, of every kind.
 func TestNewsAPI_DeleteFolderDeletesFeeds(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
@@ -91,11 +100,9 @@ func TestNewsAPI_DeleteFolderDeletesFeeds(t *testing.T) {
 
 	doReq(t, env, "DELETE", newsAPI+"/folders/"+fmtID(float64(folderID)), nil, alice.Auth).Status(200)
 
-	var rss, yt int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE kind = 'rss'`).Scan(&rss))
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE kind = 'youtube' AND folder_id IS NULL`).Scan(&yt))
-	require.Equal(t, 0, rss)
-	require.Equal(t, 1, yt)
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&n))
+	require.Equal(t, 0, n)
 }
 
 // Moving into a folder that does not exist is a 404, not a constraint error.
@@ -147,4 +154,43 @@ func TestNewsAPI_UpdatedStarredItems(t *testing.T) {
 	env.Get(t, newsAPI+"/items/updated?lastModified=0&type=2", alice.Auth).Status(200).JSON(&resp)
 	require.Equal(t, 1, len(resp.Items))
 	require.Equal(t, "A", resp.Items[0]["title"])
+}
+
+// A feed added outside any folder goes in the folder chosen for news apps;
+// one added to a folder stays there.
+func TestNewsAPI_CreateFeedInChosenFolder(t *testing.T) {
+	safehttp.SetAllowPrivate(true) // the feed server is on loopback
+	t.Cleanup(func() { safehttp.SetAllowPrivate(false) })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>T</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := feedPlugin(t, env).DB(alice.Username)
+	require.NoError(t, err)
+	store := feed.NewStore(db)
+	news, err := store.CreateFolder("News")
+	require.NoError(t, err)
+	other, err := store.CreateFolder("Other")
+	require.NoError(t, err)
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	require.NoError(t, syncprefs.SaveFolder(tx, syncprefs.NCNews, sql.NullInt64{Int64: news, Valid: true}))
+	require.NoError(t, tx.Commit())
+
+	folderOf := func(path string, folderID int64) any {
+		t.Helper()
+		var resp struct {
+			Feeds []map[string]any `json:"feeds"`
+		}
+		doReq(t, env, "POST", newsAPI+"/feeds", map[string]any{"url": srv.URL + path, "folderId": folderID}, alice.Auth).
+			Status(200).JSON(&resp)
+		require.Equal(t, 1, len(resp.Feeds))
+		return resp.Feeds[0]["folderId"]
+	}
+	require.Equal(t, any(float64(news)), folderOf("/a.xml", 0))
+	require.Equal(t, any(float64(other)), folderOf("/b.xml", other))
 }

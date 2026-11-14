@@ -1,6 +1,7 @@
 package compat_test
 
 import (
+	"encoding/xml"
 	"net/http"
 	"net/url"
 	"strings"
@@ -48,10 +49,9 @@ func TestPROPPATCH_EscapesUserControlledHref(t *testing.T) {
 	require.False(t, strings.Contains(out, "weird<&"))
 }
 
-// TestLOCK_EscapesUsername verifies LOCK responses escape username+filePath
-// (audit security.md #14). Username with "<" can't be created via the API,
-// but filePath via WebDAV can carry these chars after PathEscape decode.
-func TestLOCK_EscapesFilePathInLockToken(t *testing.T) {
+// A LOCK response names the lock root, a path the client chose; it must come
+// back as an escaped href, not raw markup.
+func TestLOCK_EscapesLockRoot(t *testing.T) {
 	env := cogtest.New(t)
 	alice := env.CreateUser(t, "alice", "pass")
 	prefix := "/remote.php/dav/files/" + alice.ID
@@ -59,11 +59,12 @@ func TestLOCK_EscapesFilePathInLockToken(t *testing.T) {
 	name := "lock<&me.txt"
 	webdavReq(t, env, "PUT", prefix+"/"+url.PathEscape(name), "x", alice.Auth).Status(201)
 
-	resp := webdavReq(t, env, "LOCK", prefix+"/"+url.PathEscape(name), "", alice.Auth)
+	lockBody := `<?xml version="1.0"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>`
+	resp := webdavReq(t, env, "LOCK", prefix+"/"+url.PathEscape(name), lockBody, alice.Auth)
 	resp.Status(http.StatusOK)
 	out := resp.ReadBody()
 
-	// The token includes the file path. Escape must apply.
-	require.True(t, strings.Contains(out, "lock&lt;&amp;me.txt"))
+	require.True(t, strings.Contains(out, "lock%3C&amp;me.txt"))
 	require.False(t, strings.Contains(out, "lock<&me.txt"))
+	require.NoError(t, xml.Unmarshal([]byte(out), new(struct{})))
 }

@@ -2,14 +2,18 @@ package gpoddersync_test
 
 import (
 	"database/sql"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 )
 
 const api = "/index.php/apps/gpoddersync"
@@ -63,8 +67,6 @@ func insertItem(t *testing.T, db *sql.DB, subID int64, guid, typ, mediaURL strin
 		RETURNING id`, subID, guid, typ, mediaURL, duration).Scan(&id))
 	return id
 }
-
-func i64(v int64) *int64 { return &v }
 
 func TestSubscriptions(t *testing.T) {
 	env, auth, db := setup(t)
@@ -149,7 +151,7 @@ func TestEpisodeActions(t *testing.T) {
 	// A play matched by GUID, though the client's episode URL differs.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://cdn.example/ep1.mp3?track=1", GUID: "ep1", Action: "PLAY",
-		Timestamp: "2026-11-01T10:00:00", Started: i64(0), Position: i64(120), Total: i64(600),
+		Timestamp: "2026-11-01T10:00:00", Started: new(int64(0)), Position: new(int64(120)), Total: new(int64(600)),
 	}}, auth).Status(200)
 	progress, completed, _ := playback(ep1)
 	require.Equal(t, 120.0, progress)
@@ -158,7 +160,7 @@ func TestEpisodeActions(t *testing.T) {
 	// An older play from another device does not rewind it.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://pod.example/ep1.mp3", Action: "play",
-		Timestamp: "2026-10-01T10:00:00", Position: i64(30), Total: i64(600),
+		Timestamp: "2026-10-01T10:00:00", Position: new(int64(30)), Total: new(int64(600)),
 	}}, auth).Status(200)
 	progress, _, _ = playback(ep1)
 	require.Equal(t, 120.0, progress)
@@ -166,7 +168,7 @@ func TestEpisodeActions(t *testing.T) {
 	// Finished: position == total.
 	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
 		Podcast: feedURL, Episode: "https://pod.example/ep2.mp3", Action: "play",
-		Timestamp: "2026-11-01T11:00:00", Position: i64(300), Total: i64(300),
+		Timestamp: "2026-11-01T11:00:00", Position: new(int64(300)), Total: new(int64(300)),
 	}}, auth).Status(200)
 	_, completed, read := playback(ep2)
 	require.True(t, completed)
@@ -217,11 +219,248 @@ func TestEpisodeActions(t *testing.T) {
 func TestEpisodeActions_BadRequests(t *testing.T) {
 	env, auth, _ := setup(t)
 	for _, body := range [][]episodeAction{
-		{{Podcast: "https://p.example/f", Action: "play", Position: i64(1)}},
+		{{Podcast: "https://p.example/f", Action: "play", Position: new(int64(1))}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "skip"}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "play"}},
 		{{Podcast: "https://p.example/f", Episode: "https://p.example/e", Action: "new", Timestamp: "yesterday"}},
 	} {
 		env.PostJSON(t, api+"/episode_action/create", body, auth).Status(400)
 	}
+}
+
+// playbackOf reports an item's playback (-1 progress when there is none) and
+// read state.
+func playbackOf(t *testing.T, db *sql.DB, id int64) (progress float64, completed bool, read bool) {
+	t.Helper()
+	require.NoError(t, db.QueryRow(`
+		SELECT COALESCE(pb.progress_sec, -1), COALESCE(pb.completed, 0), i.is_read
+		FROM items i LEFT JOIN playback pb ON pb.item_id = i.id WHERE i.id = ?`, id).Scan(&progress, &completed, &read))
+	return
+}
+
+// upsertEpisode stores an entry the way the poller does: its enclosure as an
+// audio item under the entry's GUID, carrying the show notes.
+func upsertEpisode(t *testing.T, store *feed.Store, subID int64, guid, mediaURL string, duration int64) int64 {
+	t.Helper()
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: guid, Type: "audio",
+		MediaURL: mediaURL, DurationSec: duration, ContentHTML: "<p>notes</p>"})
+	require.NoError(t, err)
+	return id
+}
+
+// AntennaPod subscribes and uploads its history in one sync, before Cog has
+// fetched the feeds; the plays apply when the episodes arrive.
+func TestEpisodeActions_BeforeFetch(t *testing.T) {
+	env, auth, db := setup(t)
+	const feedURL = "https://pod.example/feed.xml"
+	env.PostJSON(t, api+"/subscription_change/create", map[string]any{"add": []string{feedURL}}, auth).Status(200)
+	env.PostJSON(t, api+"/episode_action/create", []episodeAction{
+		// Finished, named by GUID under a URL that has since changed.
+		{Podcast: feedURL, Episode: "https://cdn.example/ep1.mp3?track=1", GUID: "ep1", Action: "play",
+			Timestamp: "2026-11-01T10:00:00", Started: new(int64(0)), Position: new(int64(600)), Total: new(int64(600))},
+		// Part way, named by URL; an older play of it is superseded.
+		{Podcast: feedURL, Episode: "https://pod.example/ep2.mp3", Action: "play",
+			Timestamp: "2026-11-01T09:00:00", Position: new(int64(10)), Total: new(int64(300))},
+		{Podcast: feedURL, Episode: "https://pod.example/ep2.mp3", GUID: "ep2", Action: "play",
+			Timestamp: "2026-11-01T11:00:00", Position: new(int64(90)), Total: new(int64(300))},
+		// Finished, in a feed that gives no duration.
+		{Podcast: feedURL, Episode: "https://pod.example/ep3.mp3", GUID: "ep3", Action: "play",
+			Timestamp: "2026-11-01T12:00:00", Position: new(int64(1800)), Total: new(int64(1800))},
+	}, auth).Status(200)
+
+	var subID int64
+	require.NoError(t, db.QueryRow(`SELECT id FROM subscriptions WHERE url = ?`, feedURL).Scan(&subID))
+	store := feed.NewStore(db)
+	ep1 := upsertEpisode(t, store, subID, "ep1", "https://pod.example/ep1.mp3", 600)
+	ep2 := upsertEpisode(t, store, subID, "ep2", "https://pod.example/ep2.mp3", 300)
+	ep3 := upsertEpisode(t, store, subID, "ep3", "https://pod.example/ep3.mp3", 0)
+	ep4 := upsertEpisode(t, store, subID, "ep4", "https://pod.example/ep4.mp3", 300)
+
+	progress, completed, read := playbackOf(t, db, ep1)
+	require.Equal(t, 0.0, progress)
+	require.True(t, completed)
+	require.True(t, read)
+
+	progress, completed, read = playbackOf(t, db, ep2)
+	require.Equal(t, 90.0, progress)
+	require.False(t, completed)
+	require.False(t, read)
+
+	_, completed, read = playbackOf(t, db, ep3)
+	require.True(t, completed)
+	require.True(t, read)
+
+	progress, _, read = playbackOf(t, db, ep4)
+	require.Equal(t, -1.0, progress)
+	require.False(t, read)
+
+	// What goes back to the client still says ep3 is finished, and names
+	// episodes by the feed's GUID.
+	var got episodeActions
+	env.Get(t, api+"/episode_action?since=0", auth).Status(200).JSON(&got)
+	byEpisode := map[string]episodeAction{}
+	for _, a := range got.Actions {
+		byEpisode[a.Episode] = a
+	}
+	ep3Play := byEpisode["https://pod.example/ep3.mp3"]
+	require.Equal(t, "ep3", ep3Play.GUID)
+	require.NotNil(t, ep3Play.Position)
+	require.NotNil(t, ep3Play.Total)
+	require.Equal(t, int64(1800), *ep3Play.Position)
+	require.Equal(t, int64(1800), *ep3Play.Total)
+	require.Equal(t, "ep2", byEpisode["https://pod.example/ep2.mp3"].GUID)
+}
+
+// A play named by the entry's GUID reaches the episode, whatever URL it
+// names.
+func TestEpisodeActions_EnclosureGUID(t *testing.T) {
+	env, auth, db := setup(t)
+	const feedURL = "https://pod.example/feed.xml"
+	sub := insertSub(t, db, feedURL)
+	ep := upsertEpisode(t, feed.NewStore(db), sub, "ep1", "https://pod.example/ep1.mp3", 600)
+
+	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
+		Podcast: feedURL, Episode: "https://cdn.example/ep1.mp3", GUID: "ep1", Action: "play",
+		Timestamp: "2026-11-01T10:00:00", Position: new(int64(600)), Total: new(int64(600)),
+	}}, auth).Status(200)
+
+	_, completed, read := playbackOf(t, db, ep)
+	require.True(t, completed)
+	require.True(t, read)
+
+	// Cog's own plays are reported under the feed's GUID.
+	require.NoError(t, feed.NewStore(db).SetPlayback(ep, 30, false, time.Now()))
+	var got episodeActions
+	env.Get(t, api+"/episode_action?since=0", auth).Status(200).JSON(&got)
+	var guids []string
+	for _, a := range got.Actions {
+		if a.Episode == "https://pod.example/ep1.mp3" {
+			guids = append(guids, a.GUID)
+		}
+	}
+	require.Equal(t, []string{"ep1"}, guids)
+}
+
+// Plays stored before episodes picked them up are applied by the repair
+// migration, and derived plays lose the enclosure hash from their GUID.
+func TestEpisodeActions_RepairMigration(t *testing.T) {
+	_, _, db := setup(t)
+	const feedURL = "https://pod.example/feed.xml"
+	sub := insertSub(t, db, feedURL)
+	// The state an older Cog left: an episode fetched after its play arrived,
+	// and a derived play carrying the item's GUID.
+	_, err := db.Exec(`DROP TRIGGER gpodder_item_inserted`)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+		INSERT INTO gpodder_episode_actions (episode, action, podcast, guid, timestamp, position, total)
+		VALUES ('https://cdn.example/ep1.mp3', 'play', ?1, 'ep1', 1000, 600, 600),
+		       ('https://pod.example/ep2.mp3', 'play', ?1, 'ep2#0123456789ab', 1000, 20, 300)`, feedURL)
+	require.NoError(t, err)
+	// Episodes then carried the enclosure's hash in their GUID.
+	ep1 := upsertEpisode(t, feed.NewStore(db), sub, "ep1#0123456789ab", "https://pod.example/ep1.mp3", 600)
+	ep2 := upsertEpisode(t, feed.NewStore(db), sub, "ep2#0123456789ab", "https://pod.example/ep2.mp3", 300)
+	_, err = db.Exec(`INSERT INTO playback (item_id, progress_sec, last_played_at) VALUES (?, 20, 1000)`, ep2)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE gpodder_episode_actions SET guid = 'ep2#0123456789ab' WHERE episode = 'https://pod.example/ep2.mp3'`)
+	require.NoError(t, err)
+	progress, _, _ := playbackOf(t, db, ep1)
+	require.Equal(t, -1.0, progress)
+
+	_, err = db.Exec(`DELETE FROM _cog_migrations WHERE name = 'sql/migration002_gpodder_pending_plays.sql'`)
+	require.NoError(t, err)
+	require.NoError(t, plugin.Migrate(db, os.DirFS("..")))
+
+	_, completed, read := playbackOf(t, db, ep1)
+	require.True(t, completed)
+	require.True(t, read)
+	progress, _, _ = playbackOf(t, db, ep2)
+	require.Equal(t, 20.0, progress)
+	var guid string
+	require.NoError(t, db.QueryRow(`SELECT guid FROM gpodder_episode_actions WHERE episode = 'https://pod.example/ep2.mp3'`).Scan(&guid))
+	require.Equal(t, "ep2", guid)
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'gpodder_item_inserted'`).Scan(&n))
+	require.Equal(t, 1, n)
+}
+
+// Subscriptions added from a podcast app go in the folder chosen for them.
+func TestSubscriptions_ChosenFolder(t *testing.T) {
+	env, auth, db := setup(t)
+	folder, err := feed.NewStore(db).CreateFolder("Podcasts")
+	require.NoError(t, err)
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	require.NoError(t, syncprefs.SaveFolder(tx, syncprefs.GPodder, sql.NullInt64{Int64: folder, Valid: true}))
+	require.NoError(t, tx.Commit())
+
+	env.PostJSON(t, api+"/subscription_change/create", map[string]any{"add": []string{"https://pod.example/feed.xml"}}, auth).Status(200)
+	var got sql.NullInt64
+	require.NoError(t, db.QueryRow(`SELECT folder_id FROM subscriptions WHERE url = 'https://pod.example/feed.xml'`).Scan(&got))
+	require.Equal(t, sql.NullInt64{Int64: folder, Valid: true}, got)
+
+	// A folder deleted since it was chosen means none.
+	require.NoError(t, feed.NewStore(db).DeleteFolder(folder))
+	env.PostJSON(t, api+"/subscription_change/create", map[string]any{"add": []string{"https://pod2.example/feed.xml"}}, auth).Status(200)
+	require.NoError(t, db.QueryRow(`SELECT folder_id FROM subscriptions WHERE url = 'https://pod2.example/feed.xml'`).Scan(&got))
+	require.False(t, got.Valid)
+}
+
+// An episode is read when it is played: marking it read or unread in
+// NextCloud News reaches podcast apps as a finished play or as new, and a
+// podcast app's play or "new" reaches News as read or unread.
+func TestEpisodeActions_ReadIsPlayed(t *testing.T) {
+	env, auth, db := setup(t)
+	const feedURL = "https://pod.example/feed.xml"
+	sub := insertSub(t, db, feedURL)
+	ep := upsertEpisode(t, feed.NewStore(db), sub, "ep1", "https://pod.example/ep1.mp3", 600)
+	const news = "/index.php/apps/news/api/v1-2/items/"
+	put := func(path string) {
+		t.Helper()
+		env.Do(t, cogtest.NewRequest(t, "PUT", env.Providers.Config.BaseURL+path, nil), auth).Status(200)
+	}
+	actions := func() map[string]episodeAction {
+		t.Helper()
+		var got episodeActions
+		env.Get(t, api+"/episode_action?since=0", auth).Status(200).JSON(&got)
+		out := map[string]episodeAction{}
+		for _, a := range got.Actions {
+			if a.Episode == "https://pod.example/ep1.mp3" {
+				out[a.Action] = a
+			}
+		}
+		return out
+	}
+
+	put(news + strconv.FormatInt(ep, 10) + "/read")
+	_, completed, read := playbackOf(t, db, ep)
+	require.True(t, completed)
+	require.True(t, read)
+	play, ok := actions()["play"]
+	require.True(t, ok)
+	require.Equal(t, "ep1", play.GUID)
+	require.Equal(t, int64(600), *play.Position)
+	require.Equal(t, int64(600), *play.Total)
+
+	put(news + strconv.FormatInt(ep, 10) + "/unread")
+	progress, _, read := playbackOf(t, db, ep)
+	require.Equal(t, -1.0, progress)
+	require.False(t, read)
+	got := actions()
+	_, played := got["play"]
+	require.False(t, played)
+	require.Equal(t, "ep1", got["new"].GUID)
+
+	// And back: the app finishes it, then marks it new.
+	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
+		Podcast: feedURL, Episode: "https://pod.example/ep1.mp3", GUID: "ep1", Action: "play",
+		Timestamp: "2099-01-01T10:00:00", Position: new(int64(600)), Total: new(int64(600)),
+	}}, auth).Status(200)
+	_, _, read = playbackOf(t, db, ep)
+	require.True(t, read)
+	env.PostJSON(t, api+"/episode_action/create", []episodeAction{{
+		Podcast: feedURL, Episode: "https://pod.example/ep1.mp3", GUID: "ep1", Action: "new",
+		Timestamp: "2099-01-01T11:00:00",
+	}}, auth).Status(200)
+	_, _, read = playbackOf(t, db, ep)
+	require.False(t, read)
 }

@@ -26,7 +26,10 @@ func NewPages(p *Plugin) *Pages {
 }
 
 type sidebarData struct {
-	Folders      []Folder
+	// Tree is every folder, in tree order.
+	Tree []folderNode
+	// Folders is the part of the tree the sidebar shows.
+	Folders      []folderNode
 	FolderCounts map[int64]int
 	TagCount     int
 	TotalCount   int
@@ -50,6 +53,9 @@ type listView struct {
 	Search    string
 	Bookmarks []Bookmark
 	Now       time.Time
+	// HasSubfolders is a folder with folders in it, which is not empty
+	// when it holds no bookmarks itself.
+	HasSubfolders bool
 }
 
 func (h *Pages) buildSidebar(db *sql.DB, activePath string, activeFolder int64) (sidebarData, error) {
@@ -69,8 +75,10 @@ func (h *Pages) buildSidebar(db *sql.DB, activePath string, activeFolder int64) 
 	if err != nil {
 		return sidebarData{}, fmt.Errorf("count bookmarks: %w", err)
 	}
+	tree := folderTree(folders)
 	return sidebarData{
-		Folders:      folders,
+		Tree:         tree,
+		Folders:      sidebarFolders(tree, activeFolder),
 		FolderCounts: counts,
 		TagCount:     len(tags),
 		TotalCount:   total,
@@ -146,13 +154,16 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 		notFoundOr(w, r, err, "folder")
 		return
 	}
-	bms, _, err := ListBookmarks(db, &id, nil, "", "lastmodified", 0, 200)
+	// In the folder's own order, which a sync client keeps the same as the
+	// browser's.
+	bms, _, err := ListBookmarks(db, &id, nil, "", "position", 0, 200)
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
+	subs := subfolders(sb.Tree, id)
 	plugin.SetTitle(w, folder.Title)
-	ui.Render(w, r, bookmarksFolderPage(sb, folder, listView{Kind: viewFolder, Bookmarks: bms, Now: h.plugin.ctx.Now()}))
+	ui.Render(w, r, bookmarksFolderPage(sb, folder, subs, listView{Kind: viewFolder, Bookmarks: bms, Now: h.plugin.ctx.Now(), HasSubfolders: len(subs) > 0}))
 }
 
 // TagsView shows every tag with its number of bookmarks.
@@ -317,7 +328,7 @@ func (h *Pages) UpdateBookmark(w http.ResponseWriter, r *http.Request) {
 		folders = []int64{}
 	}
 
-	if _, err := UpdateBookmark(db, id, &title, &description, tags, folders); err != nil {
+	if _, err := UpdateBookmark(db, id, nil, &title, &description, tags, folders); err != nil {
 		notFoundOr(w, r, err, "bookmark")
 		return
 	}
@@ -392,7 +403,11 @@ func (h *Pages) emptyView(db *sql.DB, page *url.URL) (*listView, error) {
 		if err != nil {
 			return nil, nil
 		}
-		v, folder = listView{Kind: viewFolder}, &id
+		has, err := hasSubfolders(db, id)
+		if err != nil {
+			return nil, err
+		}
+		v, folder = listView{Kind: viewFolder, HasSubfolders: has}, &id
 	case strings.HasPrefix(page.Path, "/apps/bookmarks/tag/"):
 		v, tags = listView{Kind: viewTag}, []string{strings.TrimPrefix(page.Path, "/apps/bookmarks/tag/")}
 	default:
@@ -528,11 +543,18 @@ func (h *Pages) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		notFoundOr(w, r, err, "folder")
 		return
 	}
+	msg := fmt.Sprintf("Deleted folder “%s”. Its bookmarks were kept.", folder.Title)
+	if has, err := hasSubfolders(db, id); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	} else if has {
+		msg = fmt.Sprintf("Deleted folder “%s” and the folders in it. Their bookmarks were kept.", folder.Title)
+	}
 	if err := DeleteFolder(db, id); err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	redirectWithFlash(w, r, "/apps/bookmarks/", fmt.Sprintf("Deleted folder “%s”. Its bookmarks were kept.", folder.Title))
+	redirectWithFlash(w, r, "/apps/bookmarks/", msg)
 }
 
 // RenameTag handles POST to rename a tag on every bookmark.

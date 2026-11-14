@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/email"
 	"git.duckfam.us/jj-software/cog/internal/group"
@@ -190,7 +191,7 @@ func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo
 }
 
 // Build constructs the adapter layer from internal services.
-func Build(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access, activityLog internalplugin.ActivityLogger, cookies plugin.CookieConfig) internalplugin.RegistryServices {
+func Build(shares *share.Store, emailFunc func() *email.Sender, users *user.Store, groups *group.Store, qc internalplugin.QuotaChecker, access *volume.Access, activityLog internalplugin.ActivityLogger, cookies plugin.CookieConfig, baseURL string) internalplugin.RegistryServices {
 	var ss plugin.ShareStore
 	if shares != nil {
 		ss = &ShareStoreAdapter{S: shares}
@@ -220,5 +221,6 @@ func Build(shares *share.Store, emailFunc func() *email.Sender, users *user.Stor
 		VolumeAccess: va,
 		ActivityLog:  activityLog,
 		Cookies:      cookies,
+		BaseURL:      strings.TrimSuffix(baseURL, "/"),
 	}
 }

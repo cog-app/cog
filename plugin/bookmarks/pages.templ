@@ -24,9 +24,7 @@ templ bookmarksSidebar(sb sidebarData) {
 		@sidebarLink(sb.ActivePath == "/apps/bookmarks/tags", "/apps/bookmarks/tags", "Tags", sb.TagCount)
 		<div class="sidebar-heading">Folders</div>
 		for _, f := range sb.Folders {
-			if f.ParentID == nil {
-				@sidebarLink(sb.ActiveFolder == f.ID, fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID), f.Title, sb.FolderCounts[f.ID])
-			}
+			@folderLink(sb.ActiveFolder == f.ID, f, sb.FolderCounts[f.ID])
 		}
 		<button type="button" class="sidebar-item bm-sidebar-button" data-modal-open="new-folder-modal">
 			@ui.Icon("plus")
@@ -35,6 +33,24 @@ templ bookmarksSidebar(sb sidebarData) {
 		<div class="sidebar-divider"></div>
 		@sidebarLink(sb.ActivePath == "/apps/bookmarks/import-export", "/apps/bookmarks/import-export", "Import and export", 0)
 	</nav>
+}
+
+// folderLink is a folder in the sidebar, indented by its depth.
+templ folderLink(active bool, f folderNode, count int) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) }
+		if active {
+			class={ depthClass(f.Depth) + " active" }
+			aria-current="page"
+		} else {
+			class={ depthClass(f.Depth) }
+		}
+	>
+		<span class="break-anywhere">{ f.Title }</span>
+		if count > 0 {
+			<span class="count">{ strconv.Itoa(count) }</span>
+		}
+	</a>
 }
 
 templ sidebarLink(active bool, href, label string, count int) {
@@ -66,10 +82,32 @@ templ bookmarksLayout(sb sidebarData) {
 		<form method="post" action="/apps/bookmarks/folders">
 			<input type="hidden" name="csrf_token" value={ plugin.CSRFTokenFromContext(ctx) }/>
 			<div class="modal-body">
-				<div class="form-group mb-0">
+				<div
+					if len(sb.Tree) > 0 {
+						class="form-group"
+					} else {
+						class="form-group mb-0"
+					}
+				>
 					<label for="new-folder-title">Name</label>
 					<input class="form-control" type="text" id="new-folder-title" name="title" required/>
 				</div>
+				if len(sb.Tree) > 0 {
+					<div class="form-group mb-0">
+						<label for="new-folder-parent">Inside</label>
+						<select class="form-control" id="new-folder-parent" name="parent_id">
+							<option value="">Top level</option>
+							for _, f := range sb.Tree {
+								<option
+									value={ strconv.FormatInt(f.ID, 10) }
+									if f.ID == sb.ActiveFolder {
+										selected
+									}
+								>{ f.Path }</option>
+							}
+						</select>
+					</div>
+				}
 			</div>
 			<div class="modal-footer">
 				<button type="button" class="btn" data-modal-close>Cancel</button>
@@ -103,9 +141,9 @@ templ bookmarksIndexPage(sb sidebarData, v listView) {
 	}
 }
 
-templ bookmarksFolderPage(sb sidebarData, folder *Folder, v listView) {
+templ bookmarksFolderPage(sb sidebarData, folder *Folder, subs []folderNode, v listView) {
 	@bookmarksLayout(sb) {
-		@ui.PageHeader(folder.Title, []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}}) {
+		@ui.PageHeader(folder.Title, folderCrumbs(sb.Tree, folder.ID)) {
 			@addBookmarkButton(fmt.Sprintf("/apps/bookmarks/new?folder=%d", folder.ID))
 			<div class="dropdown">
 				<button type="button" class="btn btn-square" data-dropdown-toggle aria-expanded="false" aria-controls="folder-menu" aria-label="Folder actions">
@@ -120,13 +158,30 @@ templ bookmarksFolderPage(sb sidebarData, folder *Folder, v listView) {
 						type="button"
 						class="danger"
 						hx-delete={ fmt.Sprintf("/apps/bookmarks/folders/%d", folder.ID) }
-						hx-confirm={ fmt.Sprintf("Delete the folder “%s”? Its bookmarks are kept.", folder.Title) }
+						if len(subs) > 0 {
+							hx-confirm={ fmt.Sprintf("Delete the folder “%s” and the folders in it? Their bookmarks are kept.", folder.Title) }
+						} else {
+							hx-confirm={ fmt.Sprintf("Delete the folder “%s”? Its bookmarks are kept.", folder.Title) }
+						}
 					>
 						@ui.Icon("trash")
 						Delete folder
 					</button>
 				</div>
 			</div>
+		}
+		if len(subs) > 0 {
+			<ul class="list bm-subfolders" aria-label="Folders">
+				for _, f := range subs {
+					<li class="list-row">
+						@ui.Icon("folder")
+						<div class="list-row-main">
+							<a class="list-row-title" href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) }>{ f.Title }</a>
+							<div class="list-row-meta">{ folderSummary(f, sb.FolderCounts[f.ID]) }</div>
+						</div>
+					</li>
+				}
+			</ul>
 		}
 		@bookmarkList(v)
 		@ui.Modal("rename-folder-modal", "Rename folder") {
@@ -289,14 +344,14 @@ templ bookmarkDetailPage(sb sidebarData, bm *Bookmark, now time.Time) {
 						</div>
 					</dd>
 				}
-				if folders := realFolders(bm.Folders, sb.Folders); len(folders) > 0 {
+				if folders := realFolders(bm.Folders, sb.Tree); len(folders) > 0 {
 					<dt>Folders</dt>
 					<dd>
 						<div class="chip-group">
 							for _, f := range folders {
 								<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/folder/%d", f.ID)) } class="chip">
 									@ui.Icon("folder")
-									{ f.Title }
+									{ f.Path }
 								</a>
 							}
 						</div>
@@ -318,7 +373,7 @@ templ bookmarkEditPage(sb sidebarData, bm *Bookmark, csrfToken string) {
 		@ui.PageHeader("Edit bookmark", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}, {Label: shorten(bm.Title, 40), URL: fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)}})
 		<form class="card" method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmarks/%d", bm.ID)) }>
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			@bookmarkForm(bm.URL, bm.Title, bm.Description, strings.Join(bm.Tags, ", "), bm.Folders, sb.Folders, true)
+			@bookmarkForm(bm.URL, bm.Title, bm.Description, strings.Join(bm.Tags, ", "), bm.Folders, sb.Tree, true)
 			<div class="form-actions">
 				<button class="btn btn-primary" type="submit">Save</button>
 				<a href={ templ.SafeURL(fmt.Sprintf("/apps/bookmarks/bookmark/%d", bm.ID)) } class="btn">Cancel</a>
@@ -332,7 +387,7 @@ templ bookmarkNewPage(sb sidebarData, selectedFolders []int64, csrfToken string)
 		@ui.PageHeader("New bookmark", []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}})
 		<form class="card" method="post" action="/apps/bookmarks/bookmarks">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
-			@bookmarkForm("", "", "", "", selectedFolders, sb.Folders, false)
+			@bookmarkForm("", "", "", "", selectedFolders, sb.Tree, false)
 			<div class="form-actions">
 				<button class="btn btn-primary" type="submit">Add bookmark</button>
 				<a href="/apps/bookmarks/" class="btn">Cancel</a>
@@ -344,7 +399,7 @@ templ bookmarkNewPage(sb sidebarData, selectedFolders []int64, csrfToken string)
 // bookmarkForm is the fields shared by the new and edit forms. The URL of an
 // existing bookmark is fixed (it is the bookmark's identity), so the edit
 // form shows it read-only.
-templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int64, allFolders []Folder, editing bool) {
+templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int64, allFolders []folderNode, editing bool) {
 	<div class="form-group">
 		<label for="url">URL</label>
 		if editing {
@@ -380,7 +435,7 @@ templ bookmarkForm(bmURL, title, description, tags string, selectedFolders []int
 								checked
 							}
 						/>
-						{ f.Title }
+						{ f.Path }
 					</label>
 				}
 			</div>
@@ -409,6 +464,8 @@ templ bookmarkListEmpty(v listView) {
 		switch  {
 			case v.Search != "":
 				@ui.EmptyState("No matches", fmt.Sprintf("No bookmark’s title, URL or description contains “%s”.", v.Search))
+			case v.Kind == viewFolder && v.HasSubfolders:
+				@ui.EmptyState("No bookmarks directly in this folder", "Its bookmarks are in the folders above.")
 			case v.Kind == viewFolder:
 				@ui.EmptyState("This folder is empty", "Tick the folder when you add or edit a bookmark to put it here.")
 			case v.Kind == viewTag:
@@ -523,8 +580,8 @@ func displayDomain(rawURL string) string {
 
 // realFolders returns the folders a bookmark is in, leaving out the root
 // sentinel (-1) every unfiled bookmark carries.
-func realFolders(ids []int64, folders []Folder) []Folder {
-	var out []Folder
+func realFolders(ids []int64, folders []folderNode) []folderNode {
+	var out []folderNode
 	for _, id := range ids {
 		for _, f := range folders {
 			if f.ID == id {
@@ -559,4 +616,32 @@ func formatTime(unix int64, now time.Time) string {
 		return t.Format("Jan 2")
 	}
 	return t.Format("Jan 2, 2006")
+}
+
+// folderCrumbs leads from the bookmarks home through the folders above id.
+func folderCrumbs(tree []folderNode, id int64) []ui.Crumb {
+	crumbs := []ui.Crumb{{Label: "Bookmarks", URL: "/apps/bookmarks/"}}
+	for _, a := range folderAncestors(tree, id) {
+		crumbs = append(crumbs, ui.Crumb{Label: shorten(a.Title, 40), URL: fmt.Sprintf("/apps/bookmarks/folder/%d", a.ID)})
+	}
+	return crumbs
+}
+
+// folderSummary says what a folder holds, for its row in a folder list.
+func folderSummary(f folderNode, bookmarks int) string {
+	var parts []string
+	switch bookmarks {
+	case 0:
+	case 1:
+		parts = append(parts, "1 bookmark")
+	default:
+		parts = append(parts, strconv.Itoa(bookmarks)+" bookmarks")
+	}
+	if f.HasChildren {
+		parts = append(parts, "folders")
+	}
+	if len(parts) == 0 {
+		return "Empty"
+	}
+	return strings.Join(parts, " and ")
 }

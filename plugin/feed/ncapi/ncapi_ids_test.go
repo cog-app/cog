@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -244,4 +245,60 @@ func TestNewsAPI_ItemsPageByID(t *testing.T) {
 	require.Equal(t, []string{"C", "B"}, titles("batchSize=2&offset="+fmtID(float64(ids[3]))))
 	require.Equal(t, []string{"A"}, titles("batchSize=2&offset="+fmtID(float64(ids[1]))))
 	require.Equal(t, []string{"C", "D"}, titles("batchSize=2&oldestFirst=true&offset="+fmtID(float64(ids[1]))))
+}
+
+// Episodes and videos are items like any other, their media the enclosure.
+func TestNewsAPI_Episodes(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := feedPlugin(t, env).DB(alice.Username)
+	require.NoError(t, err)
+
+	subID := createSub(t, db, "https://pod.example/feed.xml", sql.NullInt64{})
+	_, err = db.Exec(`INSERT INTO items (subscription_id, guid, type, title, content_html, media_url, media_mime) VALUES
+		(?1, 'ep1', 'audio', 'Ep 1', '<p>notes</p>', 'https://pod.example/ep1.mp3', 'audio/mpeg'),
+		(?1, 'ep2', 'audio', 'Ep 2', '', 'https://pod.example/ep2.mp3', 'audio/mpeg')`, subID)
+	require.NoError(t, err)
+
+	var resp apiItems
+	env.Get(t, newsAPI+"/items?batchSize=-1&getRead=true&oldestFirst=true", alice.Auth).Status(200).JSON(&resp)
+	require.Equal(t, 2, len(resp.Items))
+	it := resp.Items[0]
+	require.Equal[any](t, "ep1", it["guid"])
+	require.Equal[any](t, md5Hex("ep1"), it["guidHash"])
+	require.Equal[any](t, "https://pod.example/ep1.mp3", it["enclosureLink"])
+	require.Equal[any](t, "audio/mpeg", it["enclosureMime"])
+
+	doReq(t, env, "PUT", newsAPI+"/items/"+fmtID(float64(subID))+"/"+md5Hex("ep1")+"/star", nil, alice.Auth).Status(200)
+	env.Get(t, newsAPI+"/items?batchSize=-1&getRead=true&oldestFirst=true", alice.Auth).Status(200).JSON(&resp)
+	require.Equal[any](t, true, resp.Items[0]["starred"])
+}
+
+// A video's link is its page in Cog, which plays it; an article's and an
+// episode's stay the original.
+func TestNewsAPI_VideoLinksToCog(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := feedPlugin(t, env).DB(alice.Username)
+	require.NoError(t, err)
+
+	res, err := db.Exec(`INSERT INTO subscriptions (kind, url) VALUES ('youtube', 'https://youtube.com/channel/abc')`)
+	require.NoError(t, err)
+	subID, err := res.LastInsertId()
+	require.NoError(t, err)
+	var video int64
+	require.NoError(t, db.QueryRow(`INSERT INTO items (subscription_id, guid, type, title, url, media_url) VALUES
+		(?, 'v1', 'video', 'Video', 'https://youtube.com/watch?v=v1', 'https://youtube.com/watch?v=v1') RETURNING id`, subID).Scan(&video))
+	insertTextItems(t, db, subID, "A")
+
+	var resp apiItems
+	env.Get(t, newsAPI+"/items?batchSize=-1&getRead=true", alice.Auth).Status(200).JSON(&resp)
+	links := map[string]any{}
+	for _, it := range resp.Items {
+		links[it["title"].(string)] = it["url"]
+	}
+	require.Equal(t, map[string]any{
+		"Video": strings.TrimSuffix(env.Providers.Config.BaseURL, "/") + "/apps/feed/items/" + fmtID(float64(video)),
+		"A":     "https://example.com/A",
+	}, links)
 }

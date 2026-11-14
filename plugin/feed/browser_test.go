@@ -234,7 +234,7 @@ func TestBrowser(t *testing.T) {
 		b.Navigate(t, "/apps/feed/settings/subscriptions")
 		b.WaitVisible(t, "#add-subscription")
 		b.Eval(t, `() => { document.querySelector("#subscription-details").open = true }`)
-		b.WaitVisible(t, "#subscription-list")
+		b.WaitVisible(t, "#bulk-subscriptions")
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})

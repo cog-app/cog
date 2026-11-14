@@ -1,8 +1,8 @@
 // Package ncapi implements the NextCloud News API v1-2 surface for the feed plugin.
 // It exposes the same JSON wire shape (feeds/folders/items) as the rss plugin's
 // newsapi.go but operates on the feed plugin's unified schema:
-//   - "feeds"   → subscriptions WHERE kind='rss'
-//   - "items"   → items WHERE type='text'
+//   - "feeds"   → subscriptions, of every kind
+//   - "items"   → items, of every type; a media item's file is its enclosure
 //   - "folders" → folders (unchanged)
 //
 // Import-cycle resolution: this package defines a Backend interface so that
@@ -27,6 +27,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 )
 
 // Backend is the minimal interface that the feed plugin must satisfy.
@@ -37,6 +38,10 @@ type Backend interface {
 	// TriggerFetch schedules an immediate background fetch for a subscription.
 	// Implementations may treat this as a no-op.
 	TriggerFetch(username string, subID int64)
+	// SyncFilter returns the user's filter for a sync protocol.
+	SyncFilter(db *sql.DB, p syncprefs.Protocol) (syncprefs.Filter, error)
+	// ItemPage returns the absolute address of item id's page in Cog.
+	ItemPage(r *http.Request, id int64) string
 }
 
 // NewsAPI implements the NextCloud News API v1-2 endpoints for the feed plugin.
@@ -57,6 +62,12 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db, err := a.backend.DB(u.Username)
+	if err != nil {
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
+		return
+	}
+	f, err := a.backend.SyncFilter(db, syncprefs.NCNews)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -130,15 +141,15 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "PUT folders/:id/read":
 		if id, ok := pathID(); ok {
-			a.markFolderRead(w, r, db, id)
+			a.markFolderRead(w, r, db, f, id)
 		}
 	case "DELETE folders/:id":
 		if id, ok := pathID(); ok {
 			a.deleteFolder(w, db, id)
 		}
-	// Feeds (subscriptions WHERE kind='rss')
+	// Feeds (subscriptions)
 	case "GET feeds":
-		a.listFeeds(w, r, db)
+		a.listFeeds(w, r, db, f)
 	case "POST feeds":
 		a.createFeed(w, r, db, u.Username)
 	case "DELETE feeds/:id":
@@ -155,23 +166,23 @@ func (a *NewsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "PUT feeds/:id/read":
 		if id, ok := pathID(); ok {
-			a.markFeedRead(w, r, db, id)
+			a.markFeedRead(w, r, db, f, id)
 		}
-	// Items (WHERE type='text')
+	// Items
 	case "GET items":
-		a.getItems(w, r, db)
+		a.getItems(w, r, db, f)
 	case "GET items/:id":
 		if segs[1] != "updated" {
 			plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		a.getUpdatedItems(w, r, db)
+		a.getUpdatedItems(w, r, db, f)
 	case "PUT items/:id":
 		if segs[1] != "read" {
 			plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		a.markAllRead(w, r, db)
+		a.markAllRead(w, r, db, f)
 	default:
 		plugin.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	}
@@ -247,16 +258,16 @@ func (a *NewsAPI) deleteFolder(w http.ResponseWriter, db *sql.DB, id int64) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// --- Feeds (subscriptions WHERE kind='rss') ---
+// --- Feeds (subscriptions) ---
 
-func (a *NewsAPI) listFeeds(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	subs, err := listRSSSubscriptions(db)
+func (a *NewsAPI) listFeeds(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter) {
+	subs, err := listSubscriptions(db, f)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
-	starred, newest, err := feedTotals(db)
+	starred, newest, err := feedTotals(db, f)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -297,9 +308,15 @@ func (a *NewsAPI) createFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 		return
 	}
 
+	// A feed added outside any folder goes in the one the user chose for
+	// news apps.
 	var folderID sql.NullInt64
 	if body.FolderID != nil && *body.FolderID > 0 {
 		folderID = sql.NullInt64{Int64: *body.FolderID, Valid: true}
+	} else if folderID, err = syncprefs.Folder(db, syncprefs.NCNews); err != nil {
+		httperr.Log(r, err)
+		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
+		return
 	}
 	sub, err := createRSSSubscription(db, feedURL, folderID)
 	if err != nil {
@@ -352,13 +369,13 @@ func (a *NewsAPI) renameFeed(w http.ResponseWriter, r *http.Request, db *sql.DB,
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *NewsAPI) markFeedRead(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64) {
-	a.markReadWhere(w, r, db, "subscription_id = ?", id)
+func (a *NewsAPI) markFeedRead(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter, id int64) {
+	a.markReadWhere(w, r, db, f, "subscription_id = ?", id)
 }
 
-// --- Items (WHERE type='text') ---
+// --- Items ---
 
-func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter) {
 	batchSize := queryInt(r, "batchSize", 50)
 	offset := int64(queryInt(r, "offset", 0))
 	typ := queryInt(r, "type", 3)
@@ -366,27 +383,27 @@ func (a *NewsAPI) getItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	getRead := r.URL.Query().Get("getRead") != "false"
 	oldestFirst := r.URL.Query().Get("oldestFirst") == "true"
 
-	items, err := allTextItems(db, batchSize, offset, typ, id, getRead, oldestFirst)
+	items, err := allItems(db, f, batchSize, offset, typ, id, getRead, oldestFirst)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
-	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": a.itemsToAPI(r, items)})
 }
 
-func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func (a *NewsAPI) getUpdatedItems(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter) {
 	lastModified := int64(queryInt(r, "lastModified", 0))
 	typ := queryInt(r, "type", 3)
 	id := int64(queryInt(r, "id", 0))
 
-	items, err := updatedTextItems(db, lastModified, typ, id)
+	items, err := updatedItems(db, f, lastModified, typ, id)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
 		return
 	}
-	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": itemsToAPI(items)})
+	plugin.WriteJSON(w, http.StatusOK, map[string]any{"items": a.itemsToAPI(r, items)})
 }
 
 // itemActions maps the verb at the end of an item path to the column it sets.
@@ -474,18 +491,19 @@ func (a *NewsAPI) updateItems(w http.ResponseWriter, r *http.Request, db *sql.DB
 }
 
 // markAllRead handles PUT /items/read.
-func (a *NewsAPI) markAllRead(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	a.markReadWhere(w, r, db, "1 = 1")
+func (a *NewsAPI) markAllRead(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter) {
+	a.markReadWhere(w, r, db, f, "1 = 1")
 }
 
 // markFolderRead handles PUT /folders/{id}/read.
-func (a *NewsAPI) markFolderRead(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64) {
-	a.markReadWhere(w, r, db, "subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)", id)
+func (a *NewsAPI) markFolderRead(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter, id int64) {
+	a.markReadWhere(w, r, db, f, "subscription_id IN (SELECT id FROM subscriptions WHERE folder_id = ?)", id)
 }
 
-// markReadWhere marks the text items matching cond read, up to the body's
-// newestItemId so that items the client has not seen yet stay unread.
-func (a *NewsAPI) markReadWhere(w http.ResponseWriter, r *http.Request, db *sql.DB, cond string, args ...any) {
+// markReadWhere marks the items matching cond read, up to the body's
+// newestItemId so that items the client has not seen yet stay unread. Items
+// the sync filter keeps from the client are left alone: it never saw them.
+func (a *NewsAPI) markReadWhere(w http.ResponseWriter, r *http.Request, db *sql.DB, f syncprefs.Filter, cond string, args ...any) {
 	var body struct {
 		NewestItemID int64 `json:"newestItemId"`
 	}
@@ -497,6 +515,9 @@ func (a *NewsAPI) markReadWhere(w http.ResponseWriter, r *http.Request, db *sql.
 		cond += " AND id <= ?"
 		args = append(args, body.NewestItemID)
 	}
+	fcond, fargs := f.Cond("id")
+	cond += " AND " + fcond
+	args = append(args, fargs...)
 	if err := markItemsReadWhere(db, cond, args...); err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -544,7 +565,7 @@ func itemIDsByGUIDHash(db *sql.DB, refs []guidRef) ([]int64, error) {
 	}
 	var ids []int64
 	for feedID, hashes := range want {
-		rows, err := db.Query(`SELECT id, guid FROM items WHERE subscription_id = ? AND type = 'text'`, feedID)
+		rows, err := db.Query(`SELECT id, guid FROM items WHERE subscription_id = ?`, feedID)
 		if err != nil {
 			return nil, fmt.Errorf("items by guid hash: %w", err)
 		}
@@ -640,16 +661,14 @@ func renameFolder(db *sql.DB, id int64, name string) error {
 	return execOne(db, "rename folder", `UPDATE folders SET name = ? WHERE id = ?`, name, id)
 }
 
-// deleteFolder deletes a folder and, as NextCloud News does, the RSS feeds in
-// it. Podcast and video subscriptions are not the news API's to delete, so
-// they fall back to the root.
+// deleteFolder deletes a folder and, as NextCloud News does, the feeds in it.
 func deleteFolder(db *sql.DB, id int64) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("delete folder begin: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM subscriptions WHERE folder_id = ? AND kind = 'rss'`, id); err != nil {
+	if _, err := tx.Exec(`DELETE FROM subscriptions WHERE folder_id = ?`, id); err != nil {
 		return fmt.Errorf("delete folder feeds: %w", err)
 	}
 	res, err := tx.Exec(`DELETE FROM folders WHERE id = ?`, id)
@@ -669,7 +688,7 @@ func deleteFolder(db *sql.DB, id int64) error {
 	return nil
 }
 
-// --- DB helpers: subscriptions (kind='rss') ---
+// --- DB helpers: subscriptions ---
 
 type subscription struct {
 	ID          int64
@@ -684,15 +703,19 @@ type subscription struct {
 	UnreadCount int64
 }
 
-func listRSSSubscriptions(db *sql.DB) ([]subscription, error) {
+// listSubscriptions lists the feeds the client sees: those with an item the
+// sync filter lets through, and those not fetched yet.
+func listSubscriptions(db *sql.DB, f syncprefs.Filter) ([]subscription, error) {
+	cond, args := f.Cond("i.id")
 	rows, err := db.Query(`
 		SELECT id, folder_id, url, title, favicon_url, site_url, error_count, last_error, created_at,
-			(SELECT COUNT(*) FROM items i WHERE i.subscription_id = s.id AND i.type = 'text' AND i.is_read = 0)
+			(SELECT COUNT(*) FROM items i WHERE i.subscription_id = s.id AND i.is_read = 0 AND `+cond+`)
 		FROM subscriptions s
-		WHERE kind = 'rss'
-		ORDER BY title`)
+		WHERE EXISTS (SELECT 1 FROM items i WHERE i.subscription_id = s.id AND `+cond+`)
+		   OR NOT EXISTS (SELECT 1 FROM items i WHERE i.subscription_id = s.id)
+		ORDER BY title`, append(append([]any{}, args...), args...)...)
 	if err != nil {
-		return nil, fmt.Errorf("list rss subscriptions: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 	defer rows.Close()
 	return scanSubscriptions(rows)
@@ -722,17 +745,17 @@ func createRSSSubscription(db *sql.DB, rawURL string, folderID sql.NullInt64) (s
 }
 
 func deleteSubscription(db *sql.DB, id int64) error {
-	return execOne(db, "delete subscription", `DELETE FROM subscriptions WHERE id = ? AND kind = 'rss'`, id)
+	return execOne(db, "delete subscription", `DELETE FROM subscriptions WHERE id = ?`, id)
 }
 
 func moveSubscription(db *sql.DB, id int64, folderID sql.NullInt64) error {
 	return execOne(db, "move subscription", `
 		UPDATE subscriptions SET folder_id = ?1
-		WHERE id = ?2 AND kind = 'rss' AND (?1 IS NULL OR ?1 IN (SELECT id FROM folders))`, folderID, id)
+		WHERE id = ?2 AND (?1 IS NULL OR ?1 IN (SELECT id FROM folders))`, folderID, id)
 }
 
 func renameSubscription(db *sql.DB, id int64, title string) error {
-	return execOne(db, "rename subscription", `UPDATE subscriptions SET title = ? WHERE id = ? AND kind = 'rss'`, title, id)
+	return execOne(db, "rename subscription", `UPDATE subscriptions SET title = ? WHERE id = ?`, title, id)
 }
 
 func scanSubscriptions(rows *sql.Rows) ([]subscription, error) {
@@ -751,16 +774,19 @@ func scanSubscriptions(rows *sql.Rows) ([]subscription, error) {
 	return subs, nil
 }
 
-// --- DB helpers: items (type='text') ---
+// --- DB helpers: items ---
 
 type itemWithSub struct {
 	ID          int64
 	SubID       int64
 	GUID        string
+	Type        string
 	Title       string
 	Author      string
 	URL         string
 	ContentHTML string
+	MediaURL    string
+	MediaMIME   string
 	PublishedAt int64
 	FetchedAt   int64
 	IsRead      bool
@@ -768,18 +794,19 @@ type itemWithSub struct {
 	SubTitle    string
 }
 
-// allTextItems pages through text items the way NextCloud News does: offset
+const itemColumns = `i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
+		i.content_html, i.media_url, i.media_mime, i.published_at, i.fetched_at, i.is_read, i.is_starred,
+		s.title`
+
+// allItems pages through items the way NextCloud News does: offset
 // is an item ID, not a row count, and each page continues past the last ID
 // the client received.
-func allTextItems(db *sql.DB, limit int, offset int64, typ int, id int64, getRead, oldestFirst bool) ([]itemWithSub, error) {
-	q := `SELECT i.id, i.subscription_id, i.guid, i.title, i.author, i.url,
-		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred,
-		s.title
-		FROM items i JOIN subscriptions s ON i.subscription_id = s.id
-		WHERE i.type = 'text'`
+func allItems(db *sql.DB, f syncprefs.Filter, limit int, offset int64, typ int, id int64, getRead, oldestFirst bool) ([]itemWithSub, error) {
+	q := `SELECT ` + itemColumns + `
+		FROM items i JOIN subscriptions s ON i.subscription_id = s.id`
 
-	var conditions []string
-	var args []any
+	cond, args := f.Cond("i.id")
+	conditions := []string{cond}
 
 	if !getRead {
 		conditions = append(conditions, "i.is_read = 0")
@@ -813,9 +840,7 @@ func allTextItems(db *sql.DB, limit int, offset int64, typ int, id int64, getRea
 		args = append(args, offset)
 	}
 
-	if len(conditions) > 0 {
-		q += " AND " + strings.Join(conditions, " AND ")
-	}
+	q += " WHERE " + strings.Join(conditions, " AND ")
 
 	q += " ORDER BY i.id " + order + " LIMIT ?"
 	args = append(args, limit)
@@ -823,13 +848,14 @@ func allTextItems(db *sql.DB, limit int, offset int64, typ int, id int64, getRea
 	return queryItems(db, q, args...)
 }
 
-func updatedTextItems(db *sql.DB, lastModified int64, typ int, id int64) ([]itemWithSub, error) {
-	q := `SELECT i.id, i.subscription_id, i.guid, i.title, i.author, i.url,
-		i.content_html, i.published_at, i.fetched_at, i.is_read, i.is_starred,
-		s.title
+func updatedItems(db *sql.DB, f syncprefs.Filter, lastModified int64, typ int, id int64) ([]itemWithSub, error) {
+	q := `SELECT ` + itemColumns + `
 		FROM items i JOIN subscriptions s ON i.subscription_id = s.id
-		WHERE i.type = 'text' AND i.fetched_at >= ?`
+		WHERE i.fetched_at >= ?`
 	args := []any{lastModified}
+	cond, fargs := f.Cond("i.id")
+	q += " AND " + cond
+	args = append(args, fargs...)
 
 	switch typ {
 	case 0: // subscription
@@ -861,8 +887,8 @@ func queryItems(db *sql.DB, q string, args ...any) ([]itemWithSub, error) {
 		var it itemWithSub
 		var isRead, isStarred int
 		if err := rows.Scan(
-			&it.ID, &it.SubID, &it.GUID, &it.Title, &it.Author, &it.URL,
-			&it.ContentHTML, &it.PublishedAt, &it.FetchedAt, &isRead,
+			&it.ID, &it.SubID, &it.GUID, &it.Type, &it.Title, &it.Author, &it.URL,
+			&it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.PublishedAt, &it.FetchedAt, &isRead,
 			&isStarred, &it.SubTitle); err != nil {
 			return nil, fmt.Errorf("scan item: %w", err)
 		}
@@ -876,10 +902,10 @@ func queryItems(db *sql.DB, q string, args ...any) ([]itemWithSub, error) {
 	return items, nil
 }
 
-// markItemsReadWhere marks unread text items matching cond read.
+// markItemsReadWhere marks unread items matching cond read.
 func markItemsReadWhere(db *sql.DB, cond string, args ...any) error {
 	_, err := db.Exec(`UPDATE items SET is_read = 1, fetched_at = unixepoch()
-		WHERE type = 'text' AND is_read = 0 AND `+cond, args...)
+		WHERE is_read = 0 AND `+cond, args...)
 	if err != nil {
 		return fmt.Errorf("mark items read: %w", err)
 	}
@@ -907,10 +933,11 @@ func setItemsBool(db *sql.DB, column string, val int, ids []int64) error {
 
 // feedTotals returns the starred count and newest item ID that accompany the
 // feed list.
-func feedTotals(db *sql.DB) (starred, newest int64, err error) {
+func feedTotals(db *sql.DB, f syncprefs.Filter) (starred, newest int64, err error) {
+	cond, args := f.Cond("id")
 	err = db.QueryRow(`
 		SELECT COALESCE(SUM(is_starred), 0), COALESCE(MAX(id), 0)
-		FROM items WHERE type = 'text'`).Scan(&starred, &newest)
+		FROM items WHERE `+cond, args...).Scan(&starred, &newest)
 	if err != nil {
 		return 0, 0, fmt.Errorf("feed totals: %w", err)
 	}
@@ -965,14 +992,23 @@ func subsToAPI(subs []subscription) []map[string]any {
 
 // itemToAPI serialises an item. NextCloud News derives guidHash from the GUID
 // and fingerprint from the content; clients key and deduplicate on both, so
-// each must differ between items exactly when NextCloud's would.
-func itemToAPI(it itemWithSub) map[string]any {
+// each must differ between items exactly when NextCloud's would. A video's
+// link is its page in Cog, which plays it; its enclosure stays the original.
+func itemToAPI(it itemWithSub, page string) map[string]any {
 	fingerprint := md5Hex(it.Title + it.URL + it.ContentHTML)
+	link := it.URL
+	if it.Type == "video" {
+		link = page
+	}
+	var enclosureMime, enclosureLink any
+	if it.MediaURL != "" {
+		enclosureMime, enclosureLink = it.MediaMIME, it.MediaURL
+	}
 	return map[string]any{
 		"id":               it.ID,
 		"guid":             it.GUID,
 		"guidHash":         md5Hex(it.GUID),
-		"url":              it.URL,
+		"url":              link,
 		"title":            it.Title,
 		"author":           it.Author,
 		"pubDate":          it.PublishedAt,
@@ -983,17 +1019,17 @@ func itemToAPI(it itemWithSub) map[string]any {
 		"lastModified":     it.FetchedAt,
 		"fingerprint":      fingerprint,
 		"contentHash":      fingerprint,
-		"enclosureMime":    nil,
-		"enclosureLink":    nil,
+		"enclosureMime":    enclosureMime,
+		"enclosureLink":    enclosureLink,
 		"mediaThumbnail":   nil,
 		"mediaDescription": nil,
 	}
 }
 
-func itemsToAPI(items []itemWithSub) []map[string]any {
+func (a *NewsAPI) itemsToAPI(r *http.Request, items []itemWithSub) []map[string]any {
 	out := make([]map[string]any, len(items))
 	for i := range items {
-		out[i] = itemToAPI(items[i])
+		out[i] = itemToAPI(items[i], a.backend.ItemPage(r, items[i].ID))
 	}
 	return out
 }
@@ -1032,6 +1068,22 @@ func validateURL(rawURL string) error {
 	host := u.Hostname()
 	if host == "" {
 		return errors.New("empty hostname")
+	}
+	return nil
+}
+
+// Refilter carries a change of the sync filter, from old to new, over to
+// clients. They fetch the feed list whole, so feeds appear and disappear by
+// themselves; but they ask only for items modified since their last sync, so
+// the items new lets through and old held back are marked modified.
+// Articles new holds back stay on clients that have them, as NextCloud News
+// has no way to withdraw an item short of withdrawing its feed.
+func Refilter(tx *sql.Tx, old, new syncprefs.Filter) error {
+	nc, args := new.Cond("id")
+	oc, oargs := old.Cond("id")
+	if _, err := tx.Exec(`UPDATE items SET fetched_at = unixepoch()
+		WHERE `+nc+` AND NOT (`+oc+`)`, append(args, oargs...)...); err != nil {
+		return fmt.Errorf("ncapi: refilter: %w", err)
 	}
 	return nil
 }

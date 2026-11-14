@@ -261,6 +261,13 @@ func HandleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"notes": map[string]any{
 				"api_version": []string{"0.2", "1.3"},
 			},
+			// Floccus reads these before a sync: the folder hashes the
+			// bookmarks API can compute, and that javascript: links are kept
+			// (without it, it probes by creating a bookmark).
+			"bookmarks": map[string]any{
+				"hash-functions":       []string{"sha256", "murmur3a", "xxh32"},
+				"javascript-bookmarks": true,
+			},
 		},
 	})
 }

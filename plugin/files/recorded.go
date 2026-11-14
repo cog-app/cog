@@ -32,14 +32,15 @@ type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
-// forgetRows removes the rows of path and everything beneath it.
+// forgetRows removes the rows of path and everything beneath it, and the
+// locks on them.
 func forgetRows(db execer, path string) error {
 	n, prefix := subtree(path)
 	if _, err := db.Exec(`DELETE FROM files WHERE path = ? OR substr(path, 1, ?) = ?`,
 		path, n, prefix); err != nil {
 		return fmt.Errorf("forget %s: %w", path, err)
 	}
-	return nil
+	return forgetLocks(db, path)
 }
 
 // record brings path's row in step with what fsys holds there, for a change

@@ -2,9 +2,12 @@ package bookmarks
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/mattn/go-sqlite3"
 )
 
 // Bookmark represents a saved URL with metadata.
@@ -28,16 +31,45 @@ type Folder struct {
 	Title     string
 	CreatedAt int64
 	UpdatedAt int64
+	// SortOrder is the folder's place among its parent's children.
+	SortOrder int64
+}
+
+// RootFolder is the id of the folder every other folder descends from. It has
+// no row: a folder at the top has a NULL parent_id, and a bookmark at the top a
+// bookmark_folders row with this folder_id.
+const RootFolder int64 = -1
+
+var (
+	ErrDuplicateURL   = errors.New("another bookmark has that url")
+	ErrFolderNotFound = errors.New("folder not found")
+	ErrFolderCycle    = errors.New("a folder cannot move into itself")
+)
+
+// nextOrderSQL is the sort_order that places a new child after everything in
+// a folder. It takes the folder's parent_id (nil for the root) and its id.
+const nextOrderSQL = `SELECT COALESCE(MAX(o), -1) + 1 FROM (
+	SELECT sort_order AS o FROM folders WHERE parent_id IS ?
+	UNION ALL SELECT sort_order FROM bookmark_folders WHERE folder_id = ?)`
+
+// parentArg is folder as a parent_id: NULL for the root.
+func parentArg(folder int64) any {
+	if folder == RootFolder {
+		return nil
+	}
+	return folder
 }
 
 // --- Bookmark CRUD ---
 
 func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, sortBy string, page, limit int) ([]Bookmark, int, error) {
-	if limit <= 0 || limit > 300 {
+	if limit <= 0 {
 		limit = 10
 	}
+	// Page -1 is every match, as in NextCloud Bookmarks.
+	offset := page * limit
 	if page < 0 {
-		page = 0
+		limit, offset = -1, 0
 	}
 
 	where := []string{"1=1"}
@@ -70,7 +102,14 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 	// Every order ends on the id, so rows that tie (created in the same
 	// second, say) still come back in the same order every time.
 	order := "b.updated_at DESC, b.id DESC"
+	var orderArgs []any
 	switch sortBy {
+	case "position":
+		// A bookmark's place in the folder it is listed from.
+		if folderID != nil {
+			order = "(SELECT sort_order FROM bookmark_folders WHERE bookmark_id = b.id AND folder_id = ?), b.id"
+			orderArgs = []any{*folderID}
+		}
 	case "title":
 		order = "b.title COLLATE NOCASE ASC, b.id ASC"
 	case "clickcount":
@@ -82,7 +121,7 @@ func ListBookmarks(db *sql.DB, folderID *int64, tags []string, search string, so
 	}
 
 	query := fmt.Sprintf("SELECT b.id, b.url, b.title, b.description, b.click_count, b.available, b.created_at, b.updated_at FROM bookmarks b WHERE %s ORDER BY %s LIMIT ? OFFSET ?", whereClause, order)
-	args = append(args, limit, page*limit)
+	args = append(append(args, orderArgs...), limit, offset)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -141,7 +180,7 @@ func CreateBookmark(db *sql.DB, url, title, description string, tags []string, f
 	existing, err := GetBookmarkByURL(db, url)
 	if err == nil {
 		// Upsert: update existing.
-		return UpdateBookmark(db, existing.ID, &title, &description, tags, folders)
+		return UpdateBookmark(db, existing.ID, nil, &title, &description, tags, folders)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("find bookmark by url: %w", err)
@@ -173,12 +212,23 @@ func CreateBookmark(db *sql.DB, url, title, description string, tags []string, f
 	return GetBookmark(db, id)
 }
 
-func UpdateBookmark(db *sql.DB, id int64, title, description *string, tags []string, folders []int64) (*Bookmark, error) {
+// UpdateBookmark changes the fields that are not nil. A URL another bookmark
+// already has is ErrDuplicateURL.
+func UpdateBookmark(db *sql.DB, id int64, url, title, description *string, tags []string, folders []int64) (*Bookmark, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("begin update bookmark: %w", err)
 	}
 	defer tx.Rollback()
+	if url != nil {
+		if _, err := tx.Exec(`UPDATE bookmarks SET url = ?, updated_at = unixepoch() WHERE id = ?`, *url, id); err != nil {
+			var se sqlite3.Error
+			if errors.As(err, &se) && se.ExtendedCode == sqlite3.ErrConstraintUnique {
+				return nil, ErrDuplicateURL
+			}
+			return nil, fmt.Errorf("update bookmark url: %w", err)
+		}
+	}
 	if title != nil {
 		if _, err := tx.Exec(`UPDATE bookmarks SET title = ?, updated_at = unixepoch() WHERE id = ?`, *title, id); err != nil {
 			return nil, fmt.Errorf("update bookmark title: %w", err)
@@ -243,7 +293,7 @@ func RecentBookmarks(db *sql.DB, limit int) ([]Bookmark, error) {
 // --- Folder CRUD ---
 
 func ListFolders(db *sql.DB) ([]Folder, error) {
-	rows, err := db.Query(`SELECT id, parent_id, title, created_at, updated_at FROM folders ORDER BY title COLLATE NOCASE, id`)
+	rows, err := db.Query(`SELECT id, parent_id, title, created_at, updated_at, sort_order FROM folders ORDER BY title COLLATE NOCASE, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +301,7 @@ func ListFolders(db *sql.DB) ([]Folder, error) {
 	var folders []Folder
 	for rows.Next() {
 		var f Folder
-		if err := rows.Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt, &f.SortOrder); err != nil {
 			return nil, err
 		}
 		folders = append(folders, f)
@@ -262,34 +312,178 @@ func ListFolders(db *sql.DB) ([]Folder, error) {
 func GetFolder(db *sql.DB, id int64) (*Folder, error) {
 	var f Folder
 	err := db.QueryRow(
-		`SELECT id, parent_id, title, created_at, updated_at FROM folders WHERE id = ?`, id,
-	).Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt)
+		`SELECT id, parent_id, title, created_at, updated_at, sort_order FROM folders WHERE id = ?`, id,
+	).Scan(&f.ID, &f.ParentID, &f.Title, &f.CreatedAt, &f.UpdatedAt, &f.SortOrder)
 	if err != nil {
 		return nil, err
 	}
 	return &f, nil
 }
 
+// CreateFolder adds a folder after everything already in its parent, or at
+// the top when parentID is nil. A parent that does not exist is
+// ErrFolderNotFound.
 func CreateFolder(db *sql.DB, title string, parentID *int64) (*Folder, error) {
-	res, err := db.Exec(`INSERT INTO folders (title, parent_id) VALUES (?, ?)`, title, parentID)
+	parent := RootFolder
+	if parentID != nil {
+		parent = *parentID
+	}
+	if err := folderExists(db, parent); err != nil {
+		return nil, err
+	}
+	var id int64
+	err := db.QueryRow(`INSERT INTO folders (title, parent_id, sort_order) VALUES (?, ?, (`+nextOrderSQL+`)) RETURNING id`,
+		title, parentArg(parent), parentArg(parent), parent).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("insert folder: %w", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("insert folder id: %w", err)
 	}
 	return GetFolder(db, id)
 }
 
+// UpdateFolder renames a folder and puts it under parentID (nil for the top).
+// A folder that changes parent goes after everything in its new one; moving
+// it into itself or one of its own subfolders is ErrFolderCycle.
 func UpdateFolder(db *sql.DB, id int64, title string, parentID *int64) error {
-	_, err := db.Exec(`UPDATE folders SET title = ?, parent_id = ?, updated_at = unixepoch() WHERE id = ?`, title, parentID, id)
-	return err
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin update folder: %w", err)
+	}
+	defer tx.Rollback()
+
+	var cur sql.NullInt64
+	if err := tx.QueryRow(`SELECT parent_id FROM folders WHERE id = ?`, id).Scan(&cur); err != nil {
+		return err
+	}
+	parent := RootFolder
+	if parentID != nil {
+		parent = *parentID
+	}
+	was := RootFolder
+	if cur.Valid {
+		was = cur.Int64
+	}
+	if parent == was {
+		if _, err := tx.Exec(`UPDATE folders SET title = ?, updated_at = unixepoch() WHERE id = ?`, title, id); err != nil {
+			return fmt.Errorf("rename folder: %w", err)
+		}
+		return tx.Commit()
+	}
+
+	if err := folderExists(tx, parent); err != nil {
+		return err
+	}
+	if parent != RootFolder {
+		var inside bool
+		if err := tx.QueryRow(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id)
+			SELECT EXISTS (SELECT 1 FROM sub WHERE id = ?)`, id, parent).Scan(&inside); err != nil {
+			return fmt.Errorf("check folder move: %w", err)
+		}
+		if inside {
+			return ErrFolderCycle
+		}
+	}
+	if _, err := tx.Exec(`UPDATE folders SET title = ?, parent_id = ?, sort_order = (`+nextOrderSQL+`), updated_at = unixepoch() WHERE id = ?`,
+		title, parentArg(parent), parentArg(parent), parent, id); err != nil {
+		return fmt.Errorf("move folder: %w", err)
+	}
+	return tx.Commit()
 }
 
+// DeleteFolder removes a folder and its subfolders. A bookmark that was only
+// in those folders moves to the root folder.
 func DeleteFolder(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM folders WHERE id = ?`, id)
-	return err
+	return deleteFolder(db, id, true)
+}
+
+// DeleteFolderTree removes a folder, its subfolders, and the bookmarks that
+// were in no other folder, as NextCloud Bookmarks does. A sync client that
+// deletes a folder expects its contents to go with it; kept at the root, they
+// would sync back as new bookmarks.
+func DeleteFolderTree(db *sql.DB, id int64) error {
+	return deleteFolder(db, id, false)
+}
+
+func deleteFolder(db *sql.DB, id int64, keepBookmarks bool) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete folder: %w", err)
+	}
+	defer tx.Rollback()
+
+	var sub string
+	if err := tx.QueryRow(`WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id)
+		SELECT json_group_array(id) FROM sub`, id).Scan(&sub); err != nil {
+		return fmt.Errorf("find subfolders: %w", err)
+	}
+	rows, err := tx.Query(`DELETE FROM bookmark_folders WHERE folder_id IN (SELECT value FROM json_each(?)) RETURNING bookmark_id`, sub)
+	if err != nil {
+		return fmt.Errorf("unlink bookmarks: %w", err)
+	}
+	var unlinked []int64
+	for rows.Next() {
+		var b int64
+		if err := rows.Scan(&b); err != nil {
+			rows.Close()
+			return fmt.Errorf("unlink bookmarks: %w", err)
+		}
+		unlinked = append(unlinked, b)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("unlink bookmarks: %w", err)
+	}
+
+	for _, b := range unlinked {
+		var linked bool
+		if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM bookmark_folders WHERE bookmark_id = ?)`, b).Scan(&linked); err != nil {
+			return fmt.Errorf("check bookmark folders: %w", err)
+		}
+		switch {
+		case linked:
+		case keepBookmarks:
+			if err := linkBookmark(tx, b, RootFolder); err != nil {
+				return err
+			}
+		default:
+			if _, err := tx.Exec(`DELETE FROM bookmarks WHERE id = ?`, b); err != nil {
+				return fmt.Errorf("delete bookmark: %w", err)
+			}
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM folders WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete folder: %w", err)
+	}
+	return tx.Commit()
+}
+
+// folderExists is nil for the root and any folder with a row, and
+// ErrFolderNotFound otherwise.
+func folderExists(q queryer, id int64) error {
+	if id == RootFolder {
+		return nil
+	}
+	var ok bool
+	if err := q.QueryRow(`SELECT EXISTS (SELECT 1 FROM folders WHERE id = ?)`, id).Scan(&ok); err != nil {
+		return fmt.Errorf("find folder: %w", err)
+	}
+	if !ok {
+		return ErrFolderNotFound
+	}
+	return nil
+}
+
+// queryer is a *sql.DB or a *sql.Tx.
+type queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// hasSubfolders reports whether any folder is directly inside id.
+func hasSubfolders(db *sql.DB, id int64) (bool, error) {
+	var has bool
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM folders WHERE parent_id = ?)`, id).Scan(&has); err != nil {
+		return false, fmt.Errorf("find subfolders: %w", err)
+	}
+	return has, nil
 }
 
 // FolderCounts returns how many bookmarks each folder holds, by folder id.
@@ -389,19 +583,23 @@ func loadRelations(db *sql.DB, bm *Bookmark) error {
 
 // loadRelationsBatch fills in the tags, and with folders the folders, of
 // every bookmark in bms with one query each, rather than one per bookmark.
-// Callers pass at most a page (ListBookmarks caps it at 300), well under
-// SQLite's limit on bound parameters.
+// The ids go in as one JSON array, so there is no limit on how many.
 func loadRelationsBatch(db *sql.DB, bms []Bookmark, folders bool) error {
 	if len(bms) == 0 {
 		return nil
 	}
 	byID := make(map[int64]*Bookmark, len(bms))
-	args := make([]any, len(bms))
+	ids := make([]int64, len(bms))
 	for i := range bms {
 		byID[bms[i].ID] = &bms[i]
-		args[i] = bms[i].ID
+		ids[i] = bms[i].ID
 	}
-	in := "(?" + strings.Repeat(",?", len(bms)-1) + ")"
+	idJSON, err := json.Marshal(ids)
+	if err != nil {
+		return fmt.Errorf("encode bookmark ids: %w", err)
+	}
+	args := []any{string(idJSON)}
+	const in = "(SELECT value FROM json_each(?))"
 
 	rows, err := db.Query(`SELECT bookmark_id, tag FROM tags WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, tag`, args...)
 	if err != nil {
@@ -423,7 +621,7 @@ func loadRelationsBatch(db *sql.DB, bms []Bookmark, folders bool) error {
 		return nil
 	}
 
-	frows, err := db.Query(`SELECT bookmark_id, folder_id FROM bookmark_folders WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, sort_order`, args...)
+	frows, err := db.Query(`SELECT bookmark_id, folder_id FROM bookmark_folders WHERE bookmark_id IN `+in+` ORDER BY bookmark_id, rowid`, args...)
 	if err != nil {
 		return fmt.Errorf("load folders: %w", err)
 	}
@@ -459,7 +657,7 @@ func loadTags(db *sql.DB, bookmarkID int64) ([]string, error) {
 }
 
 func loadFolders(db *sql.DB, bookmarkID int64) ([]int64, error) {
-	rows, err := db.Query(`SELECT folder_id FROM bookmark_folders WHERE bookmark_id = ? ORDER BY sort_order`, bookmarkID)
+	rows, err := db.Query(`SELECT folder_id FROM bookmark_folders WHERE bookmark_id = ? ORDER BY rowid`, bookmarkID)
 	if err != nil {
 		return nil, fmt.Errorf("load folders: %w", err)
 	}
@@ -491,17 +689,37 @@ func setTags(tx *sql.Tx, bookmarkID int64, tags []string) error {
 	return nil
 }
 
+// setFolders puts a bookmark in exactly folders, or the root when there are
+// none. It stays where it was in a folder it was already in, and goes last in
+// one it joins.
 func setFolders(tx *sql.Tx, bookmarkID int64, folders []int64) error {
-	if _, err := tx.Exec(`DELETE FROM bookmark_folders WHERE bookmark_id = ?`, bookmarkID); err != nil {
+	if len(folders) == 0 {
+		folders = []int64{RootFolder}
+	}
+	keep, err := json.Marshal(folders)
+	if err != nil {
+		return fmt.Errorf("encode folders: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM bookmark_folders WHERE bookmark_id = ? AND folder_id NOT IN (SELECT value FROM json_each(?))`, bookmarkID, string(keep)); err != nil {
 		return fmt.Errorf("clear folders: %w", err)
 	}
-	if len(folders) == 0 {
-		folders = []int64{-1} // root folder
-	}
-	for i, f := range folders {
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO bookmark_folders (bookmark_id, folder_id, sort_order) VALUES (?, ?, ?)`, bookmarkID, f, i); err != nil {
-			return fmt.Errorf("add folder %d: %w", f, err)
+	for _, f := range folders {
+		if err := linkBookmark(tx, bookmarkID, f); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// linkBookmark adds a bookmark to the end of a folder it is not already in.
+// A folder that does not exist is ErrFolderNotFound.
+func linkBookmark(tx *sql.Tx, bookmarkID, folder int64) error {
+	if err := folderExists(tx, folder); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO bookmark_folders (bookmark_id, folder_id, sort_order) VALUES (?, ?, (`+nextOrderSQL+`))`,
+		bookmarkID, folder, parentArg(folder), folder); err != nil {
+		return fmt.Errorf("add folder %d: %w", folder, err)
 	}
 	return nil
 }
