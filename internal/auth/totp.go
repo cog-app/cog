@@ -11,6 +11,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/user"
 
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
@@ -233,7 +234,7 @@ func (s *TOTPStore) regenerateBackupCodes(userID, also string) ([]string, error)
 		if ids[i], err = generateToken(16); err != nil {
 			return nil, err
 		}
-		if hashes[i], err = bcrypt.GenerateFromPassword([]byte(c), bcrypt.DefaultCost); err != nil {
+		if hashes[i], err = password.Hash(c); err != nil {
 			return nil, fmt.Errorf("hash backup code: %w", err)
 		}
 	}

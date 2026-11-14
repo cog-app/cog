@@ -13,23 +13,73 @@ workflow:
 default:
   interruptible: true
 
-test:
-  image: golang:1.26-alpine
-  stage: test
-  before_script:
-    # chromium runs the browser tests, which otherwise skip themselves and
-    # leave every page in the app untested here. Safe to run in CI because a
-    # snapshot asserts on the DOM: the runner's browser build no longer has to
-    # match the one that produced the goldens.
-    - apk add --no-cache gcc musl-dev chromium
+variables:
+  # The test and pages jobs run in $CI_REGISTRY_IMAGE/ci, built from the
+  # Dockerfile's ci stage. master's is tagged latest; a branch that changes
+  # what goes into it builds its own, tagged with the branch
+  # (.ci-image-changes).
+  CI_IMAGE_TAG: latest
+  # Inside the project directory, which is the only place GitLab caches.
+  GOCACHE: $CI_PROJECT_DIR/.cache/go-build
+  FF_USE_FASTZIP: "true"
+  CACHE_COMPRESSION_LEVEL: fastest
+
+# When the CI image has to be rebuilt: on master when a push changed its
+# inputs, and on a branch whose inputs differ from master's at all, so every
+# pipeline on that branch, not only the push that changed them, uses its own.
+.ci-image-changes:
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    changes: &ci-image-inputs
+      - Dockerfile
+      - go.mod
+      - go.sum
+  - if: $CI_COMMIT_BRANCH
+    changes:
+      paths: *ci-image-inputs
+      compare_to: refs/heads/master
+    variables:
+      CI_IMAGE_TAG: $CI_COMMIT_REF_SLUG
+
+# The Go build cache, which also holds test results: go test replays a
+# package's passing result while nothing it depends on has changed, so a
+# pipeline only runs the tests a change can affect. Entries are addressed
+# by content, so every branch shares one cache. go tool stamp keeps the
+# files tests read from looking changed in every fresh checkout.
+.go-cache: &go-cache
+  key: go-build
+  paths:
+    - .cache/go-build
+
+ci-image:
+  stage: .pre
+  rules:
+    - !reference [.ci-image-changes]
   script:
-    - CGO_ENABLED=1 go generate ./...
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+    - docker build --target ci -t "$CI_REGISTRY_IMAGE/ci:$CI_IMAGE_TAG" .
+    - docker push "$CI_REGISTRY_IMAGE/ci:$CI_IMAGE_TAG"
+
+test:
+  image: $CI_REGISTRY_IMAGE/ci:$CI_IMAGE_TAG
+  stage: test
+  needs:
+    - job: ci-image
+      optional: true
+  rules:
+    - !reference [.ci-image-changes]
+    - when: on_success
+  cache:
+    <<: *go-cache
+    # A failed run still compiled everything and passed most packages.
+    when: always
+  script:
+    - go generate ./...
+    - go tool stamp
     # A package's browser tests wait for a Chrome slot (WEBTEST_PARALLEL,
     # CLAUDE.md) while other packages hold them, and the wait counts against
-    # go test's per-package timeout: internal/web needs about ten minutes of
-    # wall time here, which is the default limit.
+    # go test's per-package timeout.
     - nproc
-    - CGO_ENABLED=1 go test -timeout 30m ./...
+    - go test -timeout 30m ./...
   artifacts:
     # A failing snapshot writes <TestName>.actual.html and .png beside its
     # golden; without them a CI-only difference can't be read.
@@ -48,12 +98,13 @@ build:
     - docker push "$CI_REGISTRY_IMAGE"
 
 pages:
-  image: golang:1.26-alpine
+  image: $CI_REGISTRY_IMAGE/ci:$CI_IMAGE_TAG
   stage: build
-  before_script:
-    - apk add --no-cache gcc musl-dev
+  cache:
+    <<: *go-cache
+    policy: pull
   script:
-    - CGO_ENABLED=1 go tool docs
+    - go tool docs
   artifacts:
     paths:
       - public

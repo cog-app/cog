@@ -114,7 +114,8 @@ func closeIdleBrowser(t *time.Timer) {
 // Engine manages a test HTTP server and opens tabs on the shared Chrome process.
 type Engine struct {
 	handler      http.Handler
-	dateOverride string // ISO date injected as JS Date override
+	dateOverride string        // ISO date injected as JS Date override
+	sessions     SessionMinter // the handler, when it can start sessions
 
 	mu      sync.Mutex
 	server  *httptest.Server
@@ -125,9 +126,11 @@ type Engine struct {
 
 // New creates an Engine that serves the given handler.
 // If the handler implements a Now() time.Time method (e.g. cogtest.Env),
-// the browser's Date object is monkey-patched to return that time.
+// the browser's Date object is monkey-patched to return that time. If it is
+// a SessionMinter, Login signs in without the form.
 func New(handler http.Handler) *Engine {
 	e := &Engine{handler: handler}
+	e.sessions, _ = handler.(SessionMinter)
 	type clock interface{ Now() time.Time }
 	if c, ok := handler.(clock); ok {
 		e.dateOverride = c.Now().Format(time.RFC3339)
@@ -179,8 +182,9 @@ func (e *Engine) start() (*Browser, error) {
 	}
 
 	return &Browser{
-		page:    page,
-		baseURL: e.server.URL,
+		page:     page,
+		baseURL:  e.server.URL,
+		sessions: e.sessions,
 	}, nil
 }
 

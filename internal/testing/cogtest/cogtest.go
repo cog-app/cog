@@ -22,11 +22,13 @@ import (
 
 	"log/slog"
 
+	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/clock"
 	"git.duckfam.us/jj-software/cog/internal/config"
 	"git.duckfam.us/jj-software/cog/internal/db"
 	"git.duckfam.us/jj-software/cog/internal/logbuf"
 	"git.duckfam.us/jj-software/cog/internal/maildev"
+	"git.duckfam.us/jj-software/cog/internal/password"
 	"git.duckfam.us/jj-software/cog/internal/search"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/settings"
@@ -34,6 +36,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // HTTPOpt configures an outgoing request. Pass to Get, Post, Head, etc.
@@ -89,10 +92,19 @@ func (e *Env) Now() time.Time { return e.Clock.Now() }
 //
 // COG_SANDBOX=off is set for the same reason: the admin pages warn when
 // converters run unsandboxed, and whether they can depends on the machine.
+//
+// Secrets are hashed at bcrypt's minimum cost. Every request a test signs
+// with Basic auth checks the password, and at the default cost that made
+// bcrypt most of the suite's CPU. A test about the cost itself sets it back.
+//
+// Databases do not wait for the disk at each commit (db.Synchronous): a
+// test's data does not outlive it, and the syncs were most of its time.
 func init() {
 	os.Setenv("TZ", "UTC")
 	os.Setenv("COG_SANDBOX", "off")
 	time.Local = time.UTC
+	password.Cost = bcrypt.MinCost
+	db.Synchronous = "OFF"
 }
 
 // New creates a fresh test environment with its own DB and temp data dir.
@@ -225,6 +237,32 @@ type User struct {
 func (u *User) Seed(t testing.TB) *User {
 	require.NoError(t, u.e.Providers.SeedPlugins(u.Username))
 	return u
+}
+
+// BrowserSession starts a session for username as signing in through the
+// form would, recording userAgent and a loopback address as the client's,
+// and returns its cookie. It returns nil, as the form would not sign the
+// user straight in, for a wrong password or a user with a second factor.
+// It makes cogtest.Env a webtest.SessionMinter.
+func (e *Env) BrowserSession(username, password, userAgent string) (*http.Cookie, error) {
+	u, err := e.Providers.Users.Authenticate(username, password)
+	if errors.Is(err, user.ErrAuthFailed) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("authenticate %q: %w", username, err)
+	}
+	if u.MFAMethod != "" {
+		return nil, nil
+	}
+	r := httptest.NewRequest(http.MethodPost, "/login", nil)
+	r.Header.Set("User-Agent", userAgent)
+	r.RemoteAddr = "127.0.0.1:1"
+	sess, err := e.Providers.Sessions.Start(u.ID, r)
+	if err != nil {
+		return nil, fmt.Errorf("start session for %q: %w", username, err)
+	}
+	return &http.Cookie{Name: auth.SessionCookieName, Value: sess.ID}, nil
 }
 
 // CreateUser creates a test user and returns a TestUser with embedded auth.

@@ -120,6 +120,10 @@ Key helpers:
 - HTTP options: `cogtest.Auth(user)`, `cogtest.BasicAuth(user, pass)`, `cogtest.Header(k, v)`
 - Response assertions: `.Status(code)`, `.JSON(&v)`, `.Contains("text")`, `.Equals("text")`
 
+cogtest makes tests cheap in two ways that production does not: secrets are hashed at bcrypt's minimum cost (`password.Cost`) and databases do not sync at commit (`db.Synchronous`). Hash secrets with `password.Hash`, never bcrypt directly, or a test pays full cost on every Basic-auth request. In browser tests `b.Login` mints the session directly; use `b.LoginForm` only to test the form.
+
+CI caches the Go build cache, so `go test` replays results for packages a change cannot affect; `go tool stamp` sets file times from content so a fresh checkout does not look changed. A test that depends on something go test cannot see (a binary it builds with `go build`, say) must open those sources itself, as `testplugins.Build` does, or its cached result goes stale.
+
 Custom assertion packages at `internal/testing/assert` (non-fatal) and `internal/testing/require` (fatal) — similar API to testify but lightweight. Don't ignore errors; use `require.NoError(t, err)`.
 
 ### Browser snapshots

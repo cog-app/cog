@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,9 +50,10 @@ func Mobile(cfg *snapshotConfig) {
 
 // Browser controls a single browser tab.
 type Browser struct {
-	page    *rod.Page
-	baseURL string
-	timeout time.Duration
+	page     *rod.Page
+	baseURL  string
+	timeout  time.Duration
+	sessions SessionMinter // nil when the handler cannot start sessions
 }
 
 // defaultTimeout bounds one action: a navigation, a wait, a click. It is
@@ -89,8 +91,10 @@ func (b *Browser) tp() *rod.Page {
 // from in-flight navigations.
 func (b *Browser) el(sel string) (*rod.Element, error) {
 	// Wait for the page to settle (no DOM mutations or network activity for
-	// 300ms) so we don't grab element handles from a page that is about to
-	// be replaced by a navigation redirect.
+	// 100ms) so we don't grab element handles from a page that is about to
+	// be replaced by a navigation redirect. A redirect or an HTMX swap is a
+	// request in flight, which the wait covers however long it takes, so the
+	// quiet period only has to outlast the scripts that run when one lands.
 	//
 	// This gets its own budget. Sharing the action timeout means a page that
 	// never goes quiet — which is what a machine running the whole test suite
@@ -100,7 +104,7 @@ func (b *Browser) el(sel string) (*rod.Element, error) {
 	//
 	// A page that never settles is not a failure in itself: the lookup below
 	// waits for the element and reports if it is not there.
-	_ = b.page.Timeout(5 * time.Second).WaitStable(300 * time.Millisecond)
+	_ = waitQuiet(b.page.Timeout(5*time.Second), 100*time.Millisecond)
 
 	return b.firstVisible(sel)
 }
@@ -450,8 +454,55 @@ func (b *Browser) Screenshot(t testing.TB, path string) {
 	}
 }
 
-// Login navigates to /login, fills in credentials, and submits.
+// SessionMinter is implemented by a handler that can start a signed-in
+// session itself (cogtest.Env does). BrowserSession checks the password and
+// returns the session cookie, recording userAgent as the browser's, or nil
+// when the form would not have signed the user straight in: a wrong
+// password, or a second factor still to give.
+type SessionMinter interface {
+	BrowserSession(username, password, userAgent string) (*http.Cookie, error)
+}
+
+// Login signs the browser in as user and opens the page the login form
+// would have landed on.
+//
+// When the handler is a SessionMinter the session is started directly and
+// its cookie set: a sign-in through the form is five actions and three page
+// loads, and nearly every browser test begins with one. Otherwise, or when
+// the minter declines, it is LoginForm, so a wrong password or an MFA user
+// behaves exactly as the form does.
 func (b *Browser) Login(t testing.TB, user, pass string) {
+	t.Helper()
+	if b.sessions != nil {
+		ua, err := b.page.Eval(`() => navigator.userAgent`)
+		if err != nil {
+			t.Fatalf("webtest: login: user agent: %v", err)
+		}
+		c, err := b.sessions.BrowserSession(user, pass, ua.Value.Str())
+		if err != nil {
+			t.Fatalf("webtest: login: %v", err)
+		}
+		if c != nil {
+			if _, err := (proto.NetworkSetCookie{
+				Name:     c.Name,
+				Value:    c.Value,
+				URL:      b.baseURL,
+				HTTPOnly: true,
+				SameSite: proto.NetworkCookieSameSiteLax,
+			}).Call(b.page); err != nil {
+				t.Fatalf("webtest: login: set cookie: %v", err)
+			}
+			b.Navigate(t, "/")
+			return
+		}
+	}
+	b.LoginForm(t, user, pass)
+}
+
+// LoginForm navigates to /login, fills in credentials, and submits. Use it
+// in a test of the form itself; Login is quicker for one that only needs to
+// be signed in.
+func (b *Browser) LoginForm(t testing.TB, user, pass string) {
 	t.Helper()
 	b.Navigate(t, "/login")
 	b.Type(t, "#username", user)
@@ -511,7 +562,7 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	if cfg.width > 0 && cfg.height > 0 {
 		b.page.MustSetViewport(cfg.width, cfg.height, 0, false)
 		defer b.page.MustSetViewport(1280, 720, 0, false)
-		// A resize reflows without mutating the DOM, so WaitStable below has
+		// A resize reflows without mutating the DOM, so waitQuiet below has
 		// nothing to observe and can return before the new layout is painted.
 		if err := b.page.Timeout(b.actionTimeout()).WaitRepaint(); err != nil {
 			t.Logf("webtest: snapshot: repaint after resize: %v", err)
@@ -527,7 +578,7 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	}
 	// Wait for the page to settle before capturing. A page that never
 	// settles is still captured, and the golden will say what moved.
-	if err := b.tp().WaitStable(300 * time.Millisecond); err != nil {
+	if err := waitQuiet(b.tp(), 300*time.Millisecond); err != nil {
 		t.Logf("webtest: snapshot: page did not settle: %v", err)
 	}
 	// A lazy image does not hold up the load event, and on a loaded machine
@@ -537,7 +588,7 @@ func (b *Browser) Snapshot(t testing.TB, opts ...SnapshotOption) {
 	// for what its handlers do. Lazy images out of view never start.
 	if err := b.tp().Wait(rod.Eval(imagesSettledJS)); err != nil {
 		t.Logf("webtest: snapshot: images did not finish loading: %v", err)
-	} else if err := b.tp().WaitStable(100 * time.Millisecond); err != nil {
+	} else if err := waitQuiet(b.tp(), 100*time.Millisecond); err != nil {
 		t.Logf("webtest: snapshot: page did not settle after images: %v", err)
 	}
 
