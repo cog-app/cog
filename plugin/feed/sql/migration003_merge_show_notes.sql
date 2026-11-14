@@ -24,6 +24,26 @@ DELETE FROM temp.feed_show_notes_merge WHERE media_id IS NULL;
 
 -- Children move while the text item is still text, so the GPodder triggers
 -- on playback find no episode for it and leave the stored plays alone.
+--
+-- Both halves can have been played (the reader recorded progress on the
+-- notes too). They become one: finished if either was, at the position of
+-- whichever was played last. The episode's download is the one with media,
+-- so it replaces any the notes had.
+UPDATE playback SET
+    completed = MAX(playback.completed, e.completed),
+    progress_sec = CASE WHEN e.last_played_at > playback.last_played_at THEN e.progress_sec ELSE playback.progress_sec END,
+    last_played_at = MAX(playback.last_played_at, e.last_played_at)
+FROM temp.feed_show_notes_merge m JOIN playback e ON e.item_id = m.media_id
+WHERE playback.item_id = m.text_id;
+
+DELETE FROM playback WHERE item_id IN (
+    SELECT m.media_id FROM temp.feed_show_notes_merge m
+    WHERE EXISTS (SELECT 1 FROM playback t WHERE t.item_id = m.text_id));
+
+DELETE FROM downloads WHERE item_id IN (
+    SELECT m.text_id FROM temp.feed_show_notes_merge m
+    WHERE EXISTS (SELECT 1 FROM downloads d WHERE d.item_id = m.media_id));
+
 UPDATE downloads SET item_id = (SELECT text_id FROM temp.feed_show_notes_merge WHERE media_id = downloads.item_id)
 WHERE item_id IN (SELECT media_id FROM temp.feed_show_notes_merge);
 
