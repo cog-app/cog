@@ -41,6 +41,16 @@ func TestMergeShowNotesMigration(t *testing.T) {
 	require.NoError(t, store.AddTag(ep, "later"))
 	require.NoError(t, store.AddTag(notes, "news"))
 
+	// Both halves played and downloaded: the reader recorded progress on the
+	// notes too. This is what failed with "UNIQUE constraint failed:
+	// playback.item_id" in a real database.
+	notes3 := item("ep3", "text", "", "<p>notes 3</p>", false, false)
+	ep3 := item("ep3#0123456789ab", "audio", "https://pod.example/ep3.mp3", "", false, false)
+	_, err = db.Exec(`INSERT INTO playback (item_id, progress_sec, completed, last_played_at) VALUES (?1, 100, 0, 1000), (?2, 50, 1, 2000)`, notes3, ep3)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO downloads (item_id, state, local_path) VALUES (?1, 'error', ''), (?2, 'ready', 'ep3.mp3')`, notes3, ep3)
+	require.NoError(t, err)
+
 	_, err = db.Exec(`DELETE FROM _cog_migrations WHERE name = 'sql/migration003_merge_show_notes.sql'`)
 	require.NoError(t, err)
 	require.NoError(t, plugin.Migrate(db, os.DirFS(".")))
@@ -65,6 +75,19 @@ func TestMergeShowNotesMigration(t *testing.T) {
 	require.Equal(t, 30.0, progress)
 	// Reading the notes before the merge was not listening.
 	require.False(t, completed)
+
+	// Finished if either half was, at the position of the half played last;
+	// the episode's download, which has the media.
+	require.NoError(t, db.QueryRow(`SELECT progress_sec, completed FROM playback WHERE item_id = ?`, notes3).Scan(&progress, &completed))
+	require.Equal(t, 50.0, progress)
+	require.True(t, completed)
+	var state, path string
+	require.NoError(t, db.QueryRow(`SELECT state, local_path FROM downloads WHERE item_id = ?`, notes3).Scan(&state, &path))
+	require.Equal(t, "ready", state)
+	require.Equal(t, "ep3.mp3", path)
+	var left int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM playback WHERE item_id = ?`, ep3).Scan(&left))
+	require.Equal(t, 0, left)
 
 	for id, guid := range map[int64]string{second: "ep1#ba9876543210", bare: "ep2", post: "post"} {
 		it, err := store.GetItem(id)
