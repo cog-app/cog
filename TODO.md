@@ -164,11 +164,11 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       credential was a redirect to the login page instead of 401
       (`TestItemMediaServesTheDownloadedFile`,
       `TestItemMediaRefusesWithoutCredentials`).
-- [ ] `ResolveMedia(item, variant, max_height)`: the URL to play from, with
-      headers and expiry. Cog's media URL for downloaded or cleaned media and
-      RSS enclosures; for YouTube a resolved stream — `bestaudio` for the
-      audio variant, best video up to `max_height` otherwise — cached until it
-      expires. Generalises `api/stream-url/{id}`.
+- [x] `ResolveMedia(item, variant)`: the media route for media Cog holds,
+      a resolved YouTube stream (`bestaudio` for the audio variant) with the
+      expiry its URL carries, the origin for other enclosures
+      (`TestResolveMedia*`). Still open: `max_height`, and caching a resolved
+      stream until it expires.
 - [ ] `?variant=audio` on the media route for a downloaded video: an audio
       sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
       download, so background play and audio-only offline copies do not move

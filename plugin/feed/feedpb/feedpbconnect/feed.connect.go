@@ -134,8 +134,10 @@ type FeedServiceClient interface {
 	// Client-timestamped; the server keeps the newest by `at`.
 	ReportProgress(context.Context, *connect.Request[feedpb.ReportProgressRequest]) (*connect.Response[feedpb.Playback], error)
 	// --- Media ---------------------------------------------------------------
-	// Where to play an item from, for a variant. Cog's /items/{id}/media for
-	// downloaded or RSS media; a resolved stream (with expiry) for YouTube.
+	// Where to play an item from, for a variant: Cog's /items/{id}/media for
+	// media Cog holds, a resolved stream (with expiry) for a YouTube video it
+	// does not, and the origin for any other enclosure. FailedPrecondition
+	// when the item has no media.
 	ResolveMedia(context.Context, *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error)
 	// Skip (silence) and mute (profanity) ranges.
 	GetRanges(context.Context, *connect.Request[feedpb.GetRangesRequest]) (*connect.Response[feedpb.Ranges], error)
@@ -562,8 +564,10 @@ type FeedServiceHandler interface {
 	// Client-timestamped; the server keeps the newest by `at`.
 	ReportProgress(context.Context, *connect.Request[feedpb.ReportProgressRequest]) (*connect.Response[feedpb.Playback], error)
 	// --- Media ---------------------------------------------------------------
-	// Where to play an item from, for a variant. Cog's /items/{id}/media for
-	// downloaded or RSS media; a resolved stream (with expiry) for YouTube.
+	// Where to play an item from, for a variant: Cog's /items/{id}/media for
+	// media Cog holds, a resolved stream (with expiry) for a YouTube video it
+	// does not, and the origin for any other enclosure. FailedPrecondition
+	// when the item has no media.
 	ResolveMedia(context.Context, *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error)
 	// Skip (silence) and mute (profanity) ranges.
 	GetRanges(context.Context, *connect.Request[feedpb.GetRangesRequest]) (*connect.Response[feedpb.Ranges], error)
