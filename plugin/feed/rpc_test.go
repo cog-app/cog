@@ -125,7 +125,7 @@ func TestFeedServiceUnimplementedRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")
 	_, err := feedClient(t, env, u.AppPassword(t, "phone")).
-		ResolveMedia(context.Background(), connect.NewRequest(&feedpb.ResolveMediaRequest{}))
+		RequestDownload(context.Background(), connect.NewRequest(&feedpb.RequestDownloadRequest{}))
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 }
 

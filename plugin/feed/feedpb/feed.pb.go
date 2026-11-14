@@ -2191,8 +2191,10 @@ func (x *ResolveMediaRequest) GetMaxHeight() int32 {
 }
 
 type MediaSource struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`                                                                                   // absolute; may be Cog's /items/{id}/media or an origin URL
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Absolute, or a path on this server (the item's media route), which the
+	// client fetches with the credentials it calls Cog with.
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	Headers       map[string]string      `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // to send with the request (auth for Cog URLs)
 	Mime          string                 `protobuf:"bytes,3,opt,name=mime,proto3" json:"mime,omitempty"`
 	Variant       Variant                `protobuf:"varint,4,opt,name=variant,proto3,enum=cogfeed.v1.Variant" json:"variant,omitempty"`

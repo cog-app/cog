@@ -43,8 +43,10 @@ service FeedService {
   rpc ReportProgress(ReportProgressRequest) returns (Playback);
 
   // --- Media ---------------------------------------------------------------
-  // Where to play an item from, for a variant. Cog's /items/{id}/media for
-  // downloaded or RSS media; a resolved stream (with expiry) for YouTube.
+  // Where to play an item from, for a variant: Cog's /items/{id}/media for
+  // media Cog holds, a resolved stream (with expiry) for a YouTube video it
+  // does not, and the origin for any other enclosure. FailedPrecondition
+  // when the item has no media.
   rpc ResolveMedia(ResolveMediaRequest) returns (MediaSource) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -308,7 +310,9 @@ message ResolveMediaRequest {
 }
 
 message MediaSource {
-  string url = 1; // absolute; may be Cog's /items/{id}/media or an origin URL
+  // Absolute, or a path on this server (the item's media route), which the
+  // client fetches with the credentials it calls Cog with.
+  string url = 1;
   map<string, string> headers = 2; // to send with the request (auth for Cog URLs)
   string mime = 3;
   Variant variant = 4;
