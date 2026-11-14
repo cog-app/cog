@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -48,26 +49,50 @@ func TestRSSWithAudioEnclosure(t *testing.T) {
 	out, err := fetcher.Fetch(context.Background(), feed.Subscription{Kind: "rss", URL: srv.URL})
 	require.NoError(t, err)
 
-	var textCount, audioCount int
+	// An episode is one item: the enclosure, carrying the show notes when the
+	// entry has any. No separate text item.
+	if len(out.Items) != 2 {
+		t.Fatalf("want 2 items, got %d: %+v", len(out.Items), out.Items)
+	}
 	for _, it := range out.Items {
-		switch it.Type {
-		case "text":
-			textCount++
-			if it.ContentHTML == "" {
-				t.Error("text item missing content")
-			}
-		case "audio":
-			audioCount++
-			if it.MediaURL == "" {
-				t.Error("audio item missing media_url")
-			}
-			if it.MediaMIME != "audio/mpeg" {
-				t.Errorf("audio mime: got %q", it.MediaMIME)
-			}
+		if it.Type != "audio" || it.MediaMIME != "audio/mpeg" || it.MediaURL == "" {
+			t.Errorf("%s: want an audio/mpeg episode, got type %q mime %q url %q", it.Title, it.Type, it.MediaMIME, it.MediaURL)
 		}
 	}
-	if textCount != 1 || audioCount != 1 {
-		t.Fatalf("want 1 text + 1 audio, got %d text %d audio", textCount, audioCount)
+	// The episode is its entry, by the entry's GUID.
+	if got := out.Items[0].GUID; got != "https://example.com/podcast/ep1" {
+		t.Errorf("episode one GUID: got %q", got)
+	}
+	if got := out.Items[0].ContentHTML; !strings.Contains(got, "Episode one show notes.") {
+		t.Errorf("episode one notes: got %q", got)
+	}
+	if got := out.Items[1].ContentHTML; got != "" {
+		t.Errorf("episode two has no notes, got %q", got)
+	}
+}
+
+// Only the first of an entry's enclosures is the entry, with its GUID and
+// body; a further one is named by its URL's hash.
+func TestRSSNotesOnFirstEnclosure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>x</title>
+			<item><title>Ep</title><guid>ep</guid><description>notes</description>
+			<enclosure url="https://example.com/ep.mp3" type="audio/mpeg"/>
+			<enclosure url="https://example.com/ep.mp4" type="video/mp4"/></item>
+			</channel></rss>`))
+	}))
+	defer srv.Close()
+
+	out, err := fetcher.Fetch(context.Background(), feed.Subscription{Kind: "rss", URL: srv.URL})
+	require.NoError(t, err)
+	if len(out.Items) != 2 {
+		t.Fatalf("want 2 items, got %+v", out.Items)
+	}
+	if out.Items[0].Type != "audio" || out.Items[0].ContentHTML != "notes" || out.Items[0].GUID != "ep" {
+		t.Errorf("first enclosure: %+v", out.Items[0])
+	}
+	if out.Items[1].Type != "video" || out.Items[1].ContentHTML != "" || !strings.HasPrefix(out.Items[1].GUID, "ep#") {
+		t.Errorf("second enclosure: %+v", out.Items[1])
 	}
 }
 

@@ -108,39 +108,53 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 		title := strings.TrimSpace(entry.Title)
 		itemURL := strings.TrimSpace(entry.Link)
 
-		// Text item: produce one if there is body content.
 		content := entry.Content
 		if content == "" {
 			content = entry.Description
 		}
 		if content != "" {
-			sanitized := sanitizer.Sanitize(content)
+			content = sanitizer.Sanitize(content)
+		}
+
+		// One item per enclosure. The first is the entry: it carries the
+		// entry's GUID and body (an episode's show notes), so an episode and
+		// its notes are one item with one read state. Any further enclosure
+		// is named by the entry's GUID and its URL's hash.
+		media := false
+		for _, enc := range entry.Enclosures {
+			if enc.URL == "" {
+				continue
+			}
+			guid := entryGUID
+			if media {
+				guid = enclosureGUID(entryGUID, enc.URL)
+			}
+			it := feed.Item{
+				GUID:        guid,
+				Type:        enclosureMediaType(enc.Type),
+				Title:       title,
+				Author:      author,
+				URL:         itemURL,
+				MediaURL:    enc.URL,
+				MediaMIME:   enc.Type,
+				PublishedAt: publishedAt,
+			}
+			if !media {
+				it.ContentHTML = content
+			}
+			items = append(items, it)
+			media = true
+		}
+
+		// An entry without media is an article, if it has a body.
+		if !media && content != "" {
 			items = append(items, feed.Item{
 				GUID:        entryGUID,
 				Type:        "text",
 				Title:       title,
 				Author:      author,
 				URL:         itemURL,
-				ContentHTML: sanitized,
-				PublishedAt: publishedAt,
-			})
-		}
-
-		// Media items: one per enclosure.
-		for _, enc := range entry.Enclosures {
-			if enc.URL == "" {
-				continue
-			}
-			mediaType := enclosureMediaType(enc.Type)
-			guid := enclosureGUID(entryGUID, enc.URL)
-			items = append(items, feed.Item{
-				GUID:        guid,
-				Type:        mediaType,
-				Title:       title,
-				Author:      author,
-				URL:         itemURL,
-				MediaURL:    enc.URL,
-				MediaMIME:   enc.Type,
+				ContentHTML: content,
 				PublishedAt: publishedAt,
 			})
 		}

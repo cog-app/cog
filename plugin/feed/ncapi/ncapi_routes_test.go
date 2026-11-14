@@ -53,7 +53,7 @@ func TestNewsAPI_BadAndMissingIDs(t *testing.T) {
 
 // The news API manages RSS feeds only; podcast and video subscriptions share
 // the table but are not its to change.
-func TestNewsAPI_LeavesOtherKindsAlone(t *testing.T) {
+func TestNewsAPI_ManagesEveryKind(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
 	db, err := feedPlugin(t, env).DB(alice.Username)
@@ -65,16 +65,24 @@ func TestNewsAPI_LeavesOtherKindsAlone(t *testing.T) {
 	require.NoError(t, err)
 	id := fmtID(float64(ytID))
 
-	doReq(t, env, "PUT", newsAPI+"/feeds/"+id+"/rename", map[string]any{"feedTitle": "x"}, alice.Auth).Status(404)
-	doReq(t, env, "DELETE", newsAPI+"/feeds/"+id, nil, alice.Auth).Status(404)
+	var feeds struct {
+		Feeds []map[string]any `json:"feeds"`
+	}
+	env.Get(t, newsAPI+"/feeds", alice.Auth).Status(200).JSON(&feeds)
+	require.Equal(t, 1, len(feeds.Feeds))
 
+	doReq(t, env, "PUT", newsAPI+"/feeds/"+id+"/rename", map[string]any{"feedTitle": "x"}, alice.Auth).Status(200)
 	var title string
 	require.NoError(t, db.QueryRow(`SELECT title FROM subscriptions WHERE id = ?`, ytID).Scan(&title))
-	require.Equal(t, "Channel", title)
+	require.Equal(t, "x", title)
+
+	doReq(t, env, "DELETE", newsAPI+"/feeds/"+id, nil, alice.Auth).Status(200)
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&n))
+	require.Equal(t, 0, n)
 }
 
-// Deleting a folder deletes its feeds, as in NextCloud News, but only the RSS
-// ones.
+// Deleting a folder deletes its feeds, as in NextCloud News, of every kind.
 func TestNewsAPI_DeleteFolderDeletesFeeds(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	alice := env.CreateUser(t, "alice", "pass")
@@ -92,11 +100,9 @@ func TestNewsAPI_DeleteFolderDeletesFeeds(t *testing.T) {
 
 	doReq(t, env, "DELETE", newsAPI+"/folders/"+fmtID(float64(folderID)), nil, alice.Auth).Status(200)
 
-	var rss, yt int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE kind = 'rss'`).Scan(&rss))
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE kind = 'youtube' AND folder_id IS NULL`).Scan(&yt))
-	require.Equal(t, 0, rss)
-	require.Equal(t, 1, yt)
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&n))
+	require.Equal(t, 0, n)
 }
 
 // Moving into a folder that does not exist is a 404, not a constraint error.

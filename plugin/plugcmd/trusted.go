@@ -155,6 +155,7 @@ func (t *trustedRegistrar) GroupStore() cogplugin.GroupStore     { return nil }
 func (t *trustedRegistrar) FilesAccess() cogplugin.FilesAccess   { return nil }
 func (t *trustedRegistrar) VolumeAccess() cogplugin.VolumeAccess { return nil }
 func (t *trustedRegistrar) Cookies() cogplugin.CookieConfig      { return cogplugin.CookieConfig{} }
+func (t *trustedRegistrar) BaseURL() string                      { return "" }
 
 // QuotaRemaining reports no limit: quota is enforced host-side.
 func (t *trustedRegistrar) QuotaRemaining(username string) (int64, error) { return -1, nil }

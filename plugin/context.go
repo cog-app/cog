@@ -74,6 +74,10 @@ type PluginContext interface {
 
 	// Cookies returns the cookie configuration (Secure flag) for this deployment.
 	Cookies() CookieConfig
+	// BaseURL returns the address the deployment is reached at, without a
+	// trailing slash, for links that leave the browser (sync clients, mail).
+	// It is empty when none is configured.
+	BaseURL() string
 
 	// Optional service accessors — return nil if the service is unavailable.
 	ShareStore() ShareStore
