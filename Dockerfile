@@ -4,13 +4,15 @@ ARG BUILD_BASE
 # The image the test and pages jobs run in (docker build --target ci): the Go
 # toolchain, a C compiler for go-sqlite3, Chromium for the browser tests, git
 # for go tool stamp, and every module go.sum names, so a job neither installs
-# packages nor downloads modules. The ci-image job rebuilds it when this file,
-# go.mod or go.sum changes (.gitlab-ci.yml).
+# packages nor downloads modules. ffmpeg is for the feed packager's tests
+# (plugin/feed/pipeline/package_test.go), which fail without it in CI. The
+# ci-image job rebuilds it when this file, go.mod or go.sum changes
+# (.gitlab-ci.yml).
 #
 # It is the first stage because the legacy builder builds every stage above
 # the target, whether the target needs it or not.
 FROM golang:1.26-alpine AS ci
-RUN apk add --no-cache gcc musl-dev chromium git
+RUN apk add --no-cache gcc musl-dev chromium git ffmpeg
 WORKDIR /tmp/modules
 COPY go.mod go.sum ./
 RUN go mod download && rm -rf /tmp/modules

@@ -2,11 +2,13 @@ package feed
 
 import (
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // Space is where the feed keeps one user's files. Downloaded media,
@@ -63,4 +65,27 @@ func (s Space) Keep(name, tmp string) (int64, error) {
 		return 0, fmt.Errorf("feed: keep %q: not a media or captions name", name)
 	}
 	return s.Own.Take(path.Clean(name), s.Cache, tmp)
+}
+
+// Track reads the fragment index of a stored track file (hls.ReadTrack),
+// which reads only the head of the file, and returns it with the file's size.
+func (s Space) Track(stored string) (hls.Track, int64, error) {
+	f, err := s.Own.Open(Name(stored))
+	if err != nil {
+		return hls.Track{}, 0, fmt.Errorf("open track: %w", err)
+	}
+	defer f.Close()
+	ra, ok := f.(io.ReaderAt)
+	if !ok {
+		return hls.Track{}, 0, fmt.Errorf("track %s: storage file %T cannot be read at an offset", stored, f)
+	}
+	st, err := f.Stat()
+	if err != nil {
+		return hls.Track{}, 0, fmt.Errorf("stat track: %w", err)
+	}
+	t, err := hls.ReadTrack(ra, st.Size())
+	if err != nil {
+		return hls.Track{}, 0, fmt.Errorf("track %s: %w", stored, err)
+	}
+	return t, st.Size(), nil
 }
