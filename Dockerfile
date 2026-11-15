@@ -29,8 +29,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	libstdc++6 \
 	wget \
-	yt-dlp \
+	unzip \
 	&& rm -rf /var/lib/apt/lists/*
+# yt-dlp from its own releases, not Debian's: YouTube changes often enough
+# that a distribution's copy stops resolving streams long before the
+# distribution updates it. deno is the JavaScript runtime yt-dlp runs
+# YouTube's player code in; without one it finds fewer formats, or none.
+# Bump both when YouTube breaks.
+ARG YTDLP_VERSION=2026.10.26
+ARG DENO_VERSION=v2.9.8
+RUN set -eux; \
+	case "$(uname -m)" in \
+		x86_64) YTDLP_ASSET=yt-dlp_linux; DENO_ARCH=x86_64 ;; \
+		aarch64) YTDLP_ASSET=yt-dlp_linux_aarch64; DENO_ARCH=aarch64 ;; \
+		*) echo "unsupported arch"; exit 1 ;; \
+	esac; \
+	wget -q "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}" -O /usr/local/bin/yt-dlp && \
+	chmod 755 /usr/local/bin/yt-dlp && \
+	wget -q "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${DENO_ARCH}-unknown-linux-gnu.zip" -O /tmp/deno.zip && \
+	unzip -q /tmp/deno.zip -d /usr/local/bin && \
+	rm /tmp/deno.zip && \
+	yt-dlp --version && deno --version
 # ONNX Runtime for image recognition
 ARG ONNXRUNTIME_VERSION=1.24.3
 RUN set -eux; \

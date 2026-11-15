@@ -56,7 +56,11 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	if err != nil {
 		return d.fail(itemID, err)
 	}
-	file := strconv.FormatInt(itemID, 10) + extForMIME(it.MediaMIME, it.Type)
+	ext := extForMIME(it.MediaMIME, it.Type)
+	if sub.Kind == "youtube" {
+		ext = youtubeExt(it.Type)
+	}
+	file := strconv.FormatInt(itemID, 10) + ext
 	tmp := "downloads/" + file
 	dst, err := d.space.Cache.LocalPath(tmp)
 	if err != nil {
@@ -69,7 +73,7 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	}
 	switch sub.Kind {
 	case "youtube":
-		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{filepath.Dir(dst)}, "-o", dst)
+		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{filepath.Dir(dst)}, append(youtubeFormat(it.Type), "-o", dst)...)
 		if err != nil {
 			return d.fail(itemID, err)
 		}
@@ -91,6 +95,28 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 		return fmt.Errorf("mark ready: %w", err)
 	}
 	return nil
+}
+
+// youtubeFormat is what yt-dlp downloads of a YouTube item. YouTube serves a
+// video's picture and sound apart, so a video is H.264 up to 1080p and AAC
+// merged into an mp4, which phones and browsers play; failing those, the best
+// it has, merged the same way. An audio item is its m4a audio alone.
+func youtubeFormat(typ string) []string {
+	if typ == "audio" {
+		return []string{"--format", "ba[ext=m4a]/ba"}
+	}
+	return []string{
+		"--format", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
+		"--merge-output-format", "mp4",
+	}
+}
+
+// youtubeExt names a YouTube download for what youtubeFormat makes of it.
+func youtubeExt(typ string) string {
+	if typ == "audio" {
+		return ".m4a"
+	}
+	return ".mp4"
 }
 
 func (d *Downloader) fail(itemID int64, err error) error {

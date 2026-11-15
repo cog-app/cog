@@ -1470,8 +1470,10 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StreamURL returns the direct stream URL for a YouTube item; with
-// ?variant=audio, its best audio-only stream.
+// StreamURL answers where the player plays a YouTube item from: with
+// ?variant=audio, or for an audio item, its best audio-only stream; a video
+// from its download, which it queues, answering {"downloading": true} with
+// why until the download is ready.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1488,7 +1490,27 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL, r.URL.Query().Get("variant") == "audio")
+	// A video plays from its download: YouTube serves picture and sound
+	// apart (ResolveMedia).
+	if r.URL.Query().Get("variant") != "audio" && it.Type != "audio" {
+		dl, err := store.FindDownload(id)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if dl.State == "ready" && dl.LocalPath != "" {
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
+			return
+		}
+		why, err := queueVideo(store, h.plugin, plugin.Username(r), id, dl)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		return
+	}
+	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL, true)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
