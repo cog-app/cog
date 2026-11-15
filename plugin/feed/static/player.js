@@ -32,6 +32,20 @@
 		});
 	}
 
+	// The hls.js instance of the player on the page. A player swapped in for
+	// another destroys it, so the old item's MediaSource does not linger.
+	var activeHls = null;
+
+	// whenHls calls fn once hls.js has loaded, which a player fragment swapped
+	// in by HTMX may be ahead of.
+	function whenHls(fn) {
+		if (window.Hls) { fn(); return; }
+		var s = document.querySelector("script[data-hls-js]");
+		if (!s) { fn(); return; }
+		s.addEventListener("load", fn, { once: true });
+		s.addEventListener("error", fn, { once: true });
+	}
+
 	function init() {
 		var root = document.getElementById("feed-player");
 		if (!root || root.dataset.bound === "1") return;
@@ -49,6 +63,7 @@
 			csrf: root.dataset.csrf,
 			title: root.dataset.title || "",
 			subscription: root.dataset.subscription || "",
+			hls: root.dataset.hls || "",
 			artwork: root.dataset.artwork || "",
 			speed: parseFloat(root.dataset.speed) || 1,
 			skipBack: parseInt(root.dataset.skipBack, 10) || 15,
@@ -96,23 +111,71 @@
 		if (volRange) volRange.value = String(el.volume);
 		if (speedBtn) speedBtn.textContent = cfg.speed + "×";
 
-		// --- source loading (YouTube resolves a stream URL) ---
-		if (cfg.sourceKind === "youtube") {
-			// A video plays from Cog's download of it, which the server
-			// queues; until it is ready the answer says why, shown in the
-			// player, and the player asks again.
-			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
-			var note = null;
-			var showNote = function (text) {
-				if (!note) {
-					note = document.createElement("div");
-					note.className = "player-note text-muted";
-					note.style.cssText = "padding:0.5rem 0.75rem;font-size:0.9rem";
-					root.insertBefore(note, root.firstChild);
+		// --- notes shown above the player (downloading, errors) ---
+		var note = null;
+		function showNote(text) {
+			if (!note) {
+				if (!text) return;
+				note = document.createElement("div");
+				note.className = "player-note text-muted";
+				note.style.cssText = "padding:0.5rem 0.75rem;font-size:0.9rem";
+				root.insertBefore(note, root.firstChild);
+			}
+			note.textContent = text;
+			note.hidden = !text;
+		}
+
+		// playHLS plays a master playlist: through hls.js where the browser
+		// has Media Source Extensions, else natively (Safari on iOS). The
+		// player's data-hls-state says "loaded" once the playlist is read, or
+		// "error".
+		function playHLS(url) {
+			if (activeHls) { activeHls.destroy(); activeHls = null; }
+			whenHls(function () {
+				if (!document.body.contains(root)) return;
+				if (window.Hls && Hls.isSupported()) {
+					var hls = new Hls({ startPosition: cfg.resume > 0 ? cfg.resume : -1 });
+					activeHls = hls;
+					hls.on(Hls.Events.MANIFEST_PARSED, function () {
+						root.dataset.hlsState = "loaded";
+						el.play().catch(function () {});
+					});
+					hls.on(Hls.Events.ERROR, function (_, data) {
+						if (!data.fatal) return;
+						console.error("feed: hls", data);
+						root.dataset.hlsState = "error";
+						showNote("Couldn't play: " + data.details);
+						hls.destroy();
+						if (activeHls === hls) activeHls = null;
+					});
+					hls.loadSource(url);
+					hls.attachMedia(el);
+				} else if (el.canPlayType("application/vnd.apple.mpegurl")) {
+					el.addEventListener("loadedmetadata", function () {
+						root.dataset.hlsState = "loaded";
+						if (cfg.resume > 0) el.currentTime = cfg.resume;
+						el.play().catch(function () {});
+					}, { once: true });
+					el.addEventListener("error", function () {
+						root.dataset.hlsState = "error";
+						showNote("Couldn't play this video.");
+					}, { once: true });
+					el.src = url;
+				} else {
+					root.dataset.hlsState = "error";
+					showNote("This browser can't play this video.");
 				}
-				note.textContent = text;
-				note.hidden = !text;
-			};
+			});
+		}
+
+		// --- source loading ---
+		if (cfg.hls) {
+			playHLS(cfg.hls);
+		} else if (cfg.sourceKind === "youtube") {
+			// A video plays from Cog's download of it, which the server
+			// queues and then packages for HLS; until it is ready the answer
+			// says why, shown in the player, and the player asks again.
+			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
 			var loadSource = function () {
 				fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
 					headers: { "X-CSRF-Token": cfg.csrf },
@@ -124,7 +187,10 @@
 							if (document.body.contains(root)) setTimeout(loadSource, 5000);
 							return;
 						}
-						if (d.url) {
+						if (d.hls) {
+							showNote("");
+							playHLS(d.hls);
+						} else if (d.url) {
 							showNote("");
 							el.src = d.url;
 							if (cfg.resume > 0) el.currentTime = cfg.resume;
@@ -137,6 +203,7 @@
 			};
 			loadSource();
 		} else {
+			if (activeHls) { activeHls.destroy(); activeHls = null; }
 			el.addEventListener("loadedmetadata", function () {
 				if (cfg.resume > 0) el.currentTime = cfg.resume;
 				el.play().catch(function () {});

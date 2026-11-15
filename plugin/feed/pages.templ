@@ -1541,6 +1541,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			</button>
 		</div>
 		<div id="player-upnext" class="text-muted" style="display:none;font-size:0.8rem;margin-top:0.5rem">Up next&hellip;</div>
+		<script src={ ui.Static.URL("vendor/hls.min.js") } data-hls-js defer></script>
 		<script src={ playerAssetURL() } defer></script>
 	</div>
 }

@@ -3,6 +3,7 @@ package feed_test
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +160,22 @@ func TestBrowser(t *testing.T) {
 		_, err := lists.CreatePlaylist(pl)
 		require.NoError(t, err)
 	}
+
+	env.CreateUser(t, "hls", "pass")
+	hlsItem := packagedItem(t, env, "hls", true)
+
+	// A packaged video plays over HLS: through hls.js where the browser has
+	// Media Source Extensions (a blob: source), natively where it plays HLS
+	// itself. The state is the assertion, not a snapshot: Chromium builds
+	// differ in which codecs they decode.
+	t.Run("HLS", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hls", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", hlsItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		src, _ := b.Eval(t, `document.querySelector("#player-el").src`).(string)
+		require.True(t, strings.HasPrefix(src, "blob:") || strings.Contains(src, "master.m3u8"), "player source %q", src)
+	})
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)
