@@ -22,6 +22,13 @@ const minCue = 0.050
 
 var vttTag = regexp.MustCompile(`<[^>]*>`)
 
+// vttUnescape undoes WebVTT's character references in one pass, so "&amp;lt;"
+// becomes "&lt;", not "<". VTTSegment escapes again on the way out.
+var vttUnescape = strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&nbsp;", " ")
+
+// vttEscape escapes cue text for a WebVTT segment.
+var vttEscape = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // ParseVTT reads a WebVTT file. Times are HH:MM:SS.mmm or MM:SS.mmm.
 // An error only for input that is not WebVTT (no "WEBVTT" header) or a
 // read failure; a malformed cue is skipped.
@@ -124,7 +131,7 @@ func parseBlock(b []string) (Cue, bool) {
 	}
 	var lines []string
 	for _, l := range b[ti+1:] {
-		l = strings.TrimSpace(vttTag.ReplaceAllString(l, ""))
+		l = strings.TrimSpace(vttUnescape.Replace(vttTag.ReplaceAllString(l, "")))
 		if l != "" {
 			lines = append(lines, l)
 		}
@@ -170,7 +177,7 @@ func VTTSegment(cues []Cue, start, end float64, mpegts int64) string {
 			continue
 		}
 		fmt.Fprintf(&b, "%s --> %s\n%s\n\n", vttStamp(c.Start), vttStamp(c.End),
-			strings.ReplaceAll(c.Text, "-->", "--&gt;"))
+			vttEscape.Replace(c.Text))
 	}
 	return b.String()
 }

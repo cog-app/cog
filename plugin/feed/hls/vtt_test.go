@@ -159,3 +159,13 @@ func TestParseVTTStrictHeader(t *testing.T) {
 	_, err := hls.ParseVTT(strings.NewReader("WEBVTTX\n\n00:01.000 --> 00:02.000\nx\n"))
 	assert.True(t, err != nil, "WEBVTTX is not WebVTT")
 }
+
+func TestParseVTTUnescapes(t *testing.T) {
+	got := parseTexts(t, "WEBVTT\n\n00:01.000 --> 00:02.000\na &amp; b &lt;c&gt;&nbsp;d\n")
+	assert.Equal(t, []string{"a & b <c> d"}, got)
+}
+
+func TestVTTSegmentEscapesText(t *testing.T) {
+	s := hls.VTTSegment([]hls.Cue{{Start: 1, End: 2, Text: "x < 5 & y"}}, 0, 6, 0)
+	assert.True(t, strings.Contains(s, "x &lt; 5 &amp; y\n"), s)
+}
