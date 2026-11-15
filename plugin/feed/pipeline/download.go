@@ -56,40 +56,21 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	if err != nil {
 		return d.fail(itemID, err)
 	}
-	ext := extForMIME(it.MediaMIME, it.Type)
-	if sub.Kind == "youtube" {
-		ext = youtubeExt(it.Type)
-	}
-	file := strconv.FormatInt(itemID, 10) + ext
-	tmp := "downloads/" + file
-	dst, err := d.space.Cache.LocalPath(tmp)
-	if err != nil {
-		return d.fail(itemID, err)
-	}
-
 	// The media URL is whatever the feed wrote.
 	if err := feed.CheckURL(it.MediaURL); err != nil {
 		return d.fail(itemID, err)
 	}
-	switch sub.Kind {
-	case "youtube":
-		cmd, err := feed.YTDLP(ctx, it.MediaURL, []string{filepath.Dir(dst)}, append(youtubeFormat(it.Type), "-o", dst)...)
-		if err != nil {
-			return d.fail(itemID, err)
-		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return d.fail(itemID, fmt.Errorf("yt-dlp: %w: %s", err, string(out)))
-		}
-	default:
-		if err := httpFetch(ctx, it.MediaURL, dst); err != nil {
-			return d.fail(itemID, err)
-		}
+	id := strconv.FormatInt(itemID, 10)
+	if sub.Kind == "youtube" && it.Type != "audio" {
+		return d.youtubeVideo(ctx, itemID, it.MediaURL, id)
 	}
-
-	name := "media/" + file
-	size, err := d.space.Keep(name, tmp)
+	ext := extForMIME(it.MediaMIME, it.Type)
+	if sub.Kind == "youtube" {
+		ext = ".m4a"
+	}
+	name, size, err := d.fetch(ctx, sub.Kind, it.MediaURL, id+ext, youtubeAudio)
 	if err != nil {
-		return d.fail(itemID, errors.Join(err, d.space.Cache.Remove(tmp)))
+		return d.fail(itemID, err)
 	}
 	if err := d.store.MarkDownloadReady(itemID, name, size); err != nil {
 		return fmt.Errorf("mark ready: %w", err)
@@ -97,27 +78,64 @@ func (d *Downloader) processOne(ctx context.Context, itemID int64) error {
 	return nil
 }
 
-// youtubeFormat is what yt-dlp downloads of a YouTube item. YouTube serves a
-// video's picture and sound apart, so a video is H.264 up to 1080p and AAC
-// merged into an mp4, which phones and browsers play; failing those, the best
-// it has, merged the same way. An audio item is its m4a audio alone.
-func youtubeFormat(typ string) []string {
-	if typ == "audio" {
-		return []string{"--format", "ba[ext=m4a]/ba"}
+// youtubeVideo downloads a YouTube video's picture and sound as the two
+// tracks YouTube serves, media/<id>.video.mp4 and media/<id>.m4a.
+func (d *Downloader) youtubeVideo(ctx context.Context, itemID int64, src, id string) error {
+	video, videoSize, err := d.fetch(ctx, "youtube", src, id+".video.mp4", youtubeVideo)
+	if err != nil {
+		return d.fail(itemID, err)
 	}
-	return []string{
-		"--format", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
-		"--merge-output-format", "mp4",
+	audio, audioSize, err := d.fetch(ctx, "youtube", src, id+".m4a", youtubeAudio)
+	if err != nil {
+		return d.fail(itemID, errors.Join(err, d.space.Own.Remove(video)))
 	}
+	if err := d.store.MarkVideoDownloadReady(itemID, audio, video, videoSize+audioSize); err != nil {
+		return fmt.Errorf("mark ready: %w", err)
+	}
+	return nil
 }
 
-// youtubeExt names a YouTube download for what youtubeFormat makes of it.
-func youtubeExt(typ string) string {
-	if typ == "audio" {
-		return ".m4a"
+// fetch downloads src into the cache as file, with yt-dlp and format for a
+// YouTube item, and keeps it as media/<file>.
+func (d *Downloader) fetch(ctx context.Context, kind, src, file string, format []string) (string, int64, error) {
+	tmp := "downloads/" + file
+	dst, err := d.space.Cache.LocalPath(tmp)
+	if err != nil {
+		return "", 0, err
 	}
-	return ".mp4"
+	switch kind {
+	case "youtube":
+		cmd, err := feed.YTDLP(ctx, src, []string{filepath.Dir(dst)}, append(format, "-o", dst)...)
+		if err != nil {
+			return "", 0, err
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", 0, errors.Join(fmt.Errorf("yt-dlp: %w: %s", err, string(out)), d.space.Cache.Remove(tmp))
+		}
+	default:
+		if err := httpFetch(ctx, src, dst); err != nil {
+			return "", 0, err
+		}
+	}
+	name := "media/" + file
+	size, err := d.space.Keep(name, tmp)
+	if err != nil {
+		return "", 0, errors.Join(err, d.space.Cache.Remove(tmp))
+	}
+	return name, size, nil
 }
+
+// youtubeVideo and youtubeAudio are what yt-dlp downloads of a YouTube
+// item. YouTube serves a video's picture and sound apart, as fragmented MP4
+// tracks with an index; they stay apart as YouTube serves them, and the
+// packager presents them together over HLS. The picture is H.264 up to
+// 1080p, failing that the best up to 1080p; the sound is its m4a audio.
+// --fixup never keeps yt-dlp from remuxing an m4a into a plain MP4, which
+// would lose the index.
+var (
+	youtubeVideo = []string{"--fixup", "never", "--format", "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"}
+	youtubeAudio = []string{"--fixup", "never", "--format", "ba[ext=m4a]/ba"}
+)
 
 func (d *Downloader) fail(itemID int64, err error) error {
 	if dbErr := d.store.MarkDownloadError(itemID, err.Error()); dbErr != nil {
