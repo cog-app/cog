@@ -35,6 +35,17 @@ func feedPlugin(t *testing.T, env *cogtest.Env) *feed.Plugin {
 // with a video track when withVideo, and returns its ID.
 func packagedItem(t *testing.T, env *cogtest.Env, username string, withVideo bool) int64 {
 	t.Helper()
+	video := ""
+	if withVideo {
+		video = "video.mp4"
+	}
+	return packagedItemFrom(t, env, username, "audio.m4a", video)
+}
+
+// packagedItemFrom is packagedItem with the fixtures named: videoFixture is
+// empty for an audio-only item.
+func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, videoFixture string) int64 {
+	t.Helper()
 	p := feedPlugin(t, env)
 	store := feedStore(t, env, username)
 	space, err := p.Space(username)
@@ -52,11 +63,11 @@ func packagedItem(t *testing.T, env *cogtest.Env, username string, withVideo boo
 		return n
 	}
 	audio := "media/" + strconv.FormatInt(id, 10) + ".m4a"
-	size := put("audio.m4a", audio)
+	size := put(audioFixture, audio)
 	video := ""
-	if withVideo {
+	if videoFixture != "" {
 		video = "media/" + strconv.FormatInt(id, 10) + ".video.mp4"
-		size += put("video.mp4", video)
+		size += put(videoFixture, video)
 	}
 	require.NoError(t, store.MarkVideoDownloadReady(id, audio, video, size))
 	require.NoError(t, store.SavePackage(id, audio, video, size))
@@ -223,7 +234,18 @@ const testVTT = "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n\n00:00:0
 // captions file.
 func captionedItem(t *testing.T, env *cogtest.Env, username string, withVideo bool, vtt string) int64 {
 	t.Helper()
-	id := packagedItem(t, env, username, withVideo)
+	video := ""
+	if withVideo {
+		video = "video.mp4"
+	}
+	return captionedItemFrom(t, env, username, "audio.m4a", video, vtt)
+}
+
+// captionedItemFrom is captionedItem with the fixtures named, as
+// packagedItemFrom does.
+func captionedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, videoFixture, vtt string) int64 {
+	t.Helper()
+	id := packagedItemFrom(t, env, username, audioFixture, videoFixture)
 	space, err := feedPlugin(t, env).Space(username)
 	require.NoError(t, err)
 	name := "captions/" + strconv.FormatInt(id, 10) + ".vtt"

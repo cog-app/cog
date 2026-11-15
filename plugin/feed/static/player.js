@@ -130,7 +130,7 @@
 		// rendition. hls.js keeps captions off until asked; Safari's native
 		// player lists them as text tracks. data-captions mirrors the button.
 		var captionsOn = false;
-		root.dataset.captions = "off";
+		if (ccBtn) root.dataset.captions = "off";
 		function setCaptions(on, apply) {
 			captionsOn = on;
 			root.dataset.captions = on ? "on" : "off";
@@ -169,6 +169,7 @@
 						if (!data.fatal) return;
 						console.error("feed: hls", data);
 						root.dataset.hlsState = "error";
+						if (ccBtn) ccBtn.hidden = true;
 						showNote("Couldn't play: " + data.details);
 						hls.destroy();
 						if (activeHls === hls) activeHls = null;
