@@ -231,3 +231,15 @@ func TestMasterTwoAudio(t *testing.T) {
 	assert.True(t, strings.Contains(pl, `NAME="Clean",DEFAULT=YES`), pl)
 	assert.True(t, strings.HasSuffix(pl, "\nclean.m3u8\n"), pl)
 }
+
+// Subtitles without video: the audio-only variant names the group, so the group must be defined.
+func TestMasterSubtitlesAudioOnly(t *testing.T) {
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{
+		Audio:     []hls.Rendition{{Name: "Original", URI: "audio.m3u8", Default: true, Track: &a}},
+		Subtitles: []hls.Rendition{{Name: "Captions", URI: "subs.m3u8"}},
+	})
+	assert.True(t, strings.Contains(pl, `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Captions",DEFAULT=NO,AUTOSELECT=YES,URI="subs.m3u8"`+"\n"), pl)
+	assert.False(t, strings.Contains(pl, "TYPE=AUDIO"), pl)
+	assert.True(t, strings.Contains(pl, `SUBTITLES="subs"`+"\naudio.m3u8\n"), pl)
+}

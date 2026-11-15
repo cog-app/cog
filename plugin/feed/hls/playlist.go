@@ -175,22 +175,23 @@ func Master(p Presentation) string {
 		subs = ",SUBTITLES=\"subs\""
 	}
 	aPeak, aAvg := bandwidth(audio)
+	media := func(typ, group string, r Rendition) {
+		fmt.Fprintf(&b, "#EXT-X-MEDIA:TYPE=%s,GROUP-ID=%q,NAME=%q", typ, group, r.Name)
+		if r.Language != "" {
+			fmt.Fprintf(&b, ",LANGUAGE=%q", r.Language)
+		}
+		fmt.Fprintf(&b, ",DEFAULT=%s,AUTOSELECT=YES,URI=%q\n", yesNo(r.Default), r.URI)
+	}
+	if p.Video != nil {
+		for _, r := range p.Audio {
+			media("AUDIO", "audio", r)
+		}
+	}
+	for _, r := range p.Subtitles {
+		media("SUBTITLES", "subs", r)
+	}
 	if p.Video != nil {
 		video := p.Video
-		for _, r := range p.Audio {
-			fmt.Fprintf(&b, "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=%q", r.Name)
-			if r.Language != "" {
-				fmt.Fprintf(&b, ",LANGUAGE=%q", r.Language)
-			}
-			fmt.Fprintf(&b, ",DEFAULT=%s,AUTOSELECT=YES,URI=%q\n", yesNo(r.Default), r.URI)
-		}
-		for _, r := range p.Subtitles {
-			fmt.Fprintf(&b, "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=%q", r.Name)
-			if r.Language != "" {
-				fmt.Fprintf(&b, ",LANGUAGE=%q", r.Language)
-			}
-			fmt.Fprintf(&b, ",DEFAULT=%s,AUTOSELECT=YES,URI=%q\n", yesNo(r.Default), r.URI)
-		}
 		vPeak, vAvg := bandwidth(*video)
 		fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AVERAGE-BANDWIDTH=%d", vPeak+aPeak, vAvg+aAvg)
 		if video.Codecs != "" && audio.Codecs != "" {
