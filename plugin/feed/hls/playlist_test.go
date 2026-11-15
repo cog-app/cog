@@ -1,11 +1,14 @@
 package hls_test
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
@@ -132,4 +135,99 @@ func TestMasterPlaylistUnknownCodec(t *testing.T) {
 		assert.False(t, strings.Contains(line[1], "CODECS="), line[1])
 		assert.True(t, strings.Contains(line[1], "RESOLUTION=160x90"), line[1])
 	}
+}
+
+// golden compares got with testdata/golden/<name>.m3u8; WRITE_GOLDEN=1 rewrites it.
+func golden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", "golden", name+".m3u8")
+	if os.Getenv("WRITE_GOLDEN") != "" {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(got), 0o644))
+	}
+	want, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), got, name)
+}
+
+// Phase 1's playlists are pinned byte for byte; WRITE_GOLDEN=1 rewrites them.
+func TestPhase1Golden(t *testing.T) {
+	video := videoTrack()
+	for name, got := range map[string]string{
+		"media-audio":  hls.MediaPlaylist(audioTrack(), "audio.m4a?sig=x"),
+		"media-video":  hls.MediaPlaylist(video, "video.mp4?sig=x"),
+		"master-video": hls.MasterPlaylist(audioTrack(), &video, "audio.m3u8?sig=x", "video.m3u8?sig=x"),
+		"master-audio": hls.MasterPlaylist(audioTrack(), nil, "audio.m3u8?sig=x", "video.m3u8?sig=x"),
+	} {
+		golden(t, name, got)
+	}
+}
+
+func TestPlaylistEntries(t *testing.T) {
+	pl := hls.Playlist([]hls.Entry{
+		{URI: "a.m4a", Offset: 800, Length: 30, Duration: 6, Init: hls.Init{URI: "a.m4a", Length: 700}},
+		{URI: "e.mp4", Offset: 0, Length: 0, Duration: 1.5, Init: hls.Init{URI: "e.mp4", Length: 600}, Discontinuity: true},
+		{URI: "a.m4a", Offset: 900, Length: 10, Duration: 2, Init: hls.Init{URI: "a.m4a", Length: 700}, Discontinuity: true},
+		{URI: "s-3.vtt", Duration: 2},
+	})
+	assert.Equal(t, 3, strings.Count(pl, "#EXT-X-MAP:"), pl)
+	assert.Equal(t, 2, strings.Count(pl, "#EXT-X-DISCONTINUITY\n"), pl)
+	assert.True(t, strings.Contains(pl, "#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI=\"e.mp4\",BYTERANGE=\"600@0\"\n#EXTINF:1.500,\ne.mp4\n"), pl)
+	assert.True(t, strings.Contains(pl, "#EXTINF:2.000,\ns-3.vtt\n"), pl)
+}
+
+func TestPlaylistNoInit(t *testing.T) {
+	pl := hls.Playlist([]hls.Entry{{URI: "subs-0.vtt", Duration: 6}, {URI: "subs-1.vtt", Duration: 2}})
+	assert.False(t, strings.Contains(pl, "#EXT-X-MAP"), pl)
+	assert.True(t, strings.Contains(pl, "#EXT-X-TARGETDURATION:6\n"), pl)
+}
+
+// 6.4996 prints as 6.500, which rounds to 7: the target must be 7.
+func TestMediaPlaylistTargetDurationAsPrinted(t *testing.T) {
+	tr := hls.Track{Kind: hls.Video, InitLength: 10, Fragments: offsetsFrom(10, frag(6.4996, true), frag(2, true))}
+	assert.True(t, strings.Contains(hls.MediaPlaylist(tr, "v"), "#EXT-X-TARGETDURATION:7\n"))
+}
+
+func TestTrackSegmentsStart(t *testing.T) {
+	segs := hls.TrackSegments(audioTrack())
+	assert.Equal(t, []float64{0, 6}, []float64{segs[0].Start, segs[1].Start})
+}
+
+func TestMasterSubtitles(t *testing.T) {
+	video := videoTrack()
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{
+		Audio: []hls.Rendition{{Name: "Original", URI: "audio.m3u8?q", Default: true, Track: &a}},
+		Video: &video, VideoURI: "video.m3u8?q",
+		Subtitles: []hls.Rendition{{Name: "Captions", URI: "subs.m3u8?q"}},
+	})
+	assert.True(t, strings.Contains(pl, `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Captions",DEFAULT=NO,AUTOSELECT=YES,URI="subs.m3u8?q"`+"\n"), pl)
+	assert.Equal(t, 2, strings.Count(pl, `SUBTITLES="subs"`), pl)
+}
+
+func TestMasterSessionData(t *testing.T) {
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{
+		Audio:       []hls.Rendition{{Name: "Original", URI: "audio.m3u8", Default: true, Track: &a}},
+		SessionData: [][2]string{{"us.duckfam.cog.edits", "abc"}},
+	})
+	assert.True(t, strings.Contains(pl, `#EXT-X-SESSION-DATA:DATA-ID="us.duckfam.cog.edits",VALUE="abc"`+"\n"), pl)
+}
+
+// Two audio renditions (phase 3's clean track): both listed, the default
+// one drives the audio-only variant.
+func TestMasterTwoAudio(t *testing.T) {
+	video := videoTrack()
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{
+		Audio: []hls.Rendition{
+			{Name: "Original", URI: "audio.m3u8", Track: &a},
+			{Name: "Clean", URI: "clean.m3u8", Default: true, Track: &a},
+		},
+		Video: &video, VideoURI: "video.m3u8",
+	})
+	assert.Equal(t, 2, strings.Count(pl, "TYPE=AUDIO"), pl)
+	assert.True(t, strings.Contains(pl, `NAME="Original",DEFAULT=NO`), pl)
+	assert.True(t, strings.Contains(pl, `NAME="Clean",DEFAULT=YES`), pl)
+	assert.True(t, strings.HasSuffix(pl, "\nclean.m3u8\n"), pl)
 }
