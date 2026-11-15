@@ -158,6 +158,12 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Media
 
+- [ ] **Feed media over HLS** (next; `DESIGN/plugins/feed_hls.md`): video
+      and audio as separate fragmented-MP4 tracks, byte-range playlists written
+      per request, mute (clean rendition) and skip (dropped segments, edge
+      transcodes) applied server-side for any player, captions as a WebVTT
+      rendition, and signed URLs and M3Us for external players like mpv.
+      Replaces the merged-mp4 YouTube download.
 - [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
       a request that was not HTMX went through `shellMiddleware`, which
       buffered the whole file and wrapped it in the HTML shell, and a missing
