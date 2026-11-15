@@ -185,6 +185,7 @@ func subscriptionPB(sub Subscription) (*feedpb.Subscription, error) {
 		Description:     sub.Description,
 		SiteUrl:         sub.SiteURL,
 		ImageUrl:        sub.ImageURL,
+		FaviconUrl:      sub.FaviconURL,
 		PollIntervalSec: sub.PollIntervalSec,
 		Paused:          sub.Paused,
 		LastError:       sub.LastError,

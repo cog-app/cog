@@ -40,7 +40,8 @@ func TestGetLibraryOverGRPC(t *testing.T) {
 	require.NoError(t, err)
 	subID, err := store.CreateSubscription(feed.Subscription{
 		Kind: "rss", URL: "https://news.example.com/feed", Title: "Daily",
-		FolderID: sql.NullInt64{Int64: folderID, Valid: true},
+		FaviconURL: "https://news.example.com/favicon.ico",
+		FolderID:   sql.NullInt64{Int64: folderID, Valid: true},
 	})
 	require.NoError(t, err)
 	var ids []int64
@@ -72,6 +73,7 @@ func TestGetLibraryOverGRPC(t *testing.T) {
 	assert.Equal(t, feedpb.SubscriptionKind_SUBSCRIPTION_KIND_RSS, sub.Kind)
 	assert.Equal(t, folderID, sub.GetFolderId())
 	assert.Equal(t, int64(2), sub.Unread)
+	assert.Equal(t, "https://news.example.com/favicon.ico", sub.FaviconUrl)
 	require.Equal(t, 1, len(lib.Playlists))
 	assert.Equal(t, "type:audio", lib.Playlists[0].Query)
 	require.Equal(t, 1, len(lib.Tags))
