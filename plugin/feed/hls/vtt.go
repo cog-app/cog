@@ -68,7 +68,7 @@ func ParseVTT(r io.Reader) ([]Cue, error) {
 		if first {
 			first = false
 			line = strings.TrimPrefix(line, "\xef\xbb\xbf")
-			if !strings.HasPrefix(line, "WEBVTT") {
+			if rest, ok := strings.CutPrefix(line, "WEBVTT"); !ok || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
 				return nil, fmt.Errorf("not WebVTT: missing WEBVTT header")
 			}
 			header = true
@@ -135,20 +135,23 @@ func parseBlock(b []string) (Cue, bool) {
 	return Cue{Start: start, End: end, Text: strings.Join(lines, "\n")}, true
 }
 
+// vttTimeRe is WebVTT's timestamp: digits only, an optional fraction on the
+// seconds.
+var vttTimeRe = regexp.MustCompile(`^(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$`)
+
 // vttTime parses HH:MM:SS.mmm or MM:SS.mmm.
 func vttTime(s string) (float64, bool) {
-	parts := strings.Split(s, ":")
-	if len(parts) < 2 || len(parts) > 3 {
+	m := vttTimeRe.FindStringSubmatch(s)
+	if m == nil {
 		return 0, false
 	}
 	var secs float64
-	for i, p := range parts {
-		last := i == len(parts)-1
-		if !last && strings.Contains(p, ".") {
-			return 0, false
+	for _, p := range m[1:] {
+		if p == "" {
+			continue
 		}
 		v, err := strconv.ParseFloat(p, 64)
-		if err != nil || v < 0 {
+		if err != nil {
 			return 0, false
 		}
 		secs = secs*60 + v

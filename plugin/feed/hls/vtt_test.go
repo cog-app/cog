@@ -141,3 +141,21 @@ func TestParseVTTFoldsLeadingRepeat(t *testing.T) {
 	got := parseTexts(t, "WEBVTT\n\n00:01.000 --> 00:02.000\nA\n\n00:02.000 --> 00:03.000\nA\nB\n")
 	assert.Equal(t, []string{"A", "B"}, got)
 }
+
+func TestParseVTTStrictTimes(t *testing.T) {
+	for _, ts := range []string{"00:NaN", "00:Inf", "00:0x1p3", "00:+1", "00:-1", "00:1e1", "00:1_0", "00:00:01.", "00:00:.5", "00:00:01.5x"} {
+		got := parseTexts(t, "WEBVTT\n\n00:00:01.000 --> "+ts+"\nBad\n\n00:04.000 --> 00:05.000\nGood\n")
+		assert.Equal(t, []string{"Good"}, got, ts)
+	}
+	got := parseTexts(t, "WEBVTT\n\n00:01.5 --> 01:00:02.250\nOK\n")
+	assert.Equal(t, []string{"OK"}, got)
+}
+
+func TestParseVTTStrictHeader(t *testing.T) {
+	for _, h := range []string{"WEBVTT", "WEBVTT - title", "WEBVTT\ttitle"} {
+		_, err := hls.ParseVTT(strings.NewReader(h + "\n\n00:01.000 --> 00:02.000\nx\n"))
+		assert.NoError(t, err, h)
+	}
+	_, err := hls.ParseVTT(strings.NewReader("WEBVTTX\n\n00:01.000 --> 00:02.000\nx\n"))
+	assert.True(t, err != nil, "WEBVTTX is not WebVTT")
+}
