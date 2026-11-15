@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -154,4 +155,47 @@ func vttTime(s string) (float64, bool) {
 		secs = secs*60 + v
 	}
 	return secs, true
+}
+
+// VTTSegment is one WebVTT segment: the cues overlapping [start, end),
+// with their own times, under an X-TIMESTAMP-MAP that puts caption time 0
+// at MPEG-TS time mpegts (90 kHz).
+func VTTSegment(cues []Cue, start, end float64, mpegts int64) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:00:00:00.000\n\n", mpegts)
+	for _, c := range cues {
+		if c.End <= start || c.Start >= end {
+			continue
+		}
+		fmt.Fprintf(&b, "%s --> %s\n%s\n\n", vttStamp(c.Start), vttStamp(c.End),
+			strings.ReplaceAll(c.Text, "-->", "--&gt;"))
+	}
+	return b.String()
+}
+
+// vttStamp formats seconds as HH:MM:SS.mmm.
+func vttStamp(s float64) string {
+	ms := int64(math.Round(s * 1000))
+	if ms < 0 {
+		ms = 0
+	}
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", ms/3600000, ms/60000%60, ms/1000%60, ms%1000)
+}
+
+// TimestampMap is the MPEGTS value for a track: its first fragment's Start × 90000, rounded.
+func TimestampMap(t Track) int64 {
+	if len(t.Fragments) == 0 {
+		return 0
+	}
+	return int64(math.Round(t.Fragments[0].Start * 90000))
+}
+
+// SubtitleEntries lists one VTT segment per segment of the audio track; uri(n) names segment n.
+func SubtitleEntries(audio Track, uri func(n int) string) []Entry {
+	segs := TrackSegments(audio)
+	entries := make([]Entry, len(segs))
+	for i, s := range segs {
+		entries[i] = Entry{URI: uri(i), Duration: s.Duration}
+	}
+	return entries
 }

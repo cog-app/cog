@@ -1,6 +1,7 @@
 package hls_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -60,4 +61,42 @@ func TestParseVTTSkipsMalformed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(cues))
 	assert.Equal(t, "Good", cues[0].Text)
+}
+
+func TestVTTSegmentOverlap(t *testing.T) {
+	cues := []hls.Cue{{Start: 1, End: 2, Text: "a"}, {Start: 5.5, End: 7, Text: "b"}, {Start: 8, End: 9, Text: "c"}}
+	s0 := hls.VTTSegment(cues, 0, 6, 0)
+	s1 := hls.VTTSegment(cues, 6, 12, 0)
+	assert.True(t, strings.HasPrefix(s0, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n"), s0)
+	assert.True(t, strings.Contains(s0, "00:00:01.000 --> 00:00:02.000\na\n"), s0)
+	assert.True(t, strings.Contains(s0, "00:00:05.500 --> 00:00:07.000\nb\n"), s0) // crosses into s1, unclipped
+	assert.True(t, strings.Contains(s1, "00:00:05.500 --> 00:00:07.000\nb\n"), s1)
+	assert.False(t, strings.Contains(s0, "\nc\n"), s0)
+}
+
+func TestVTTSegmentEmpty(t *testing.T) {
+	assert.Equal(t, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n", hls.VTTSegment(nil, 0, 6, 0))
+}
+
+func TestVTTSegmentEscapesArrow(t *testing.T) {
+	s := hls.VTTSegment([]hls.Cue{{Start: 1, End: 2, Text: "a --> b"}}, 0, 6, 0)
+	assert.True(t, strings.Contains(s, "a --&gt; b\n"), s)
+}
+
+func TestVTTSegmentTimestampMap(t *testing.T) {
+	tr := audioTrack()
+	for i := range tr.Fragments {
+		tr.Fragments[i].Start += 1.5
+	}
+	assert.Equal(t, int64(135000), hls.TimestampMap(tr))
+	assert.True(t, strings.Contains(hls.VTTSegment(nil, 0, 6, hls.TimestampMap(tr)), "MPEGTS:135000,"))
+}
+
+func TestSubtitleEntries(t *testing.T) {
+	es := hls.SubtitleEntries(audioTrack(), func(n int) string { return fmt.Sprintf("subs-%d.vtt?sig=x", n) })
+	assert.Equal(t, 2, len(es)) // the 4 × 2 s audio track makes segments of 6 s and 2 s
+	assert.Equal(t, "subs-1.vtt?sig=x", es[1].URI)
+	assert.InDelta(t, 2.0, es[1].Duration, 1e-9)
+	assert.Equal(t, int64(0), es[0].Length)
+	assert.Equal(t, "", es[0].Init.URI)
 }
