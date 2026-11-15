@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -301,4 +302,78 @@ func TestStreamURLVideoDownloadsFirst(t *testing.T) {
 	if want := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"; ready.URL != want || ready.Downloading {
 		t.Errorf("after the download: %+v, want url %q", ready, want)
 	}
+}
+
+// twoTrackDownload is a YouTube video downloaded as two tracks, not packaged yet.
+func twoTrackDownload(t *testing.T, store *feed.Store) int64 {
+	t.Helper()
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/UC9", Title: "Talks"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v9", Type: "video", Title: "Talk", MediaURL: "https://www.youtube.com/watch?v=v9"})
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkVideoDownloadReady(id, "media/1.m4a", "media/1.video.mp4", 2))
+	return id
+}
+
+func streamURL(t *testing.T, env *cogtest.Env, u *cogtest.User, id int64) map[string]any {
+	t.Helper()
+	var got map[string]any
+	env.Get(t, "/apps/feed/api/stream-url/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).JSON(&got)
+	return got
+}
+
+func TestStreamURLPackaged(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pw")
+	id := packagedItem(t, env, "alice", true)
+	got := streamURL(t, env, u, id)
+	hlsURL, _ := got["hls"].(string)
+	assert.True(t, strings.HasPrefix(hlsURL, "/apps/feed/hls/alice/"+strconv.FormatInt(id, 10)+"/master.m3u8?sig="), got)
+}
+
+func TestStreamURLPreparing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pw")
+	id := twoTrackDownload(t, feedStore(t, env, "alice"))
+	got := streamURL(t, env, u, id)
+	assert.Equal(t, true, got["downloading"])
+	assert.Equal(t, "Preparing the video", got["message"])
+}
+
+func TestStreamURLPackageError(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	id := twoTrackDownload(t, store)
+	require.NoError(t, store.MarkPackageError(id, "ffmpeg: boom"))
+	assert.Equal(t, map[string]any{"error": "Couldn't prepare the video: ffmpeg: boom"}, streamURL(t, env, u, id))
+
+	// A merged download from before tracks were kept apart still plays as it is.
+	merged := seedAudioItem(t, store, "https://cdn.example.com/talk.mp4")
+	_, err := store.DB().Exec(`UPDATE items SET type = 'video' WHERE id = ?`, merged)
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(merged))
+	require.NoError(t, store.MarkDownloadReady(merged, "media/2.mp4", 1))
+	require.NoError(t, store.MarkPackageError(merged, "ffmpeg: boom"))
+	assert.Equal(t, map[string]any{"url": "/apps/feed/items/" + strconv.FormatInt(merged, 10) + "/media"}, streamURL(t, env, u, merged))
+}
+
+func TestPlayerFragmentHLS(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pw")
+	id := packagedItem(t, env, "alice", true)
+	body := env.Get(t, "/apps/feed/items/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, `data-hls="/apps/feed/hls/alice/`), "no data-hls")
+	video := regexp.MustCompile(`<video[^>]*id="player-el"[^>]*>`).FindString(body)
+	assert.True(t, video != "" && !strings.Contains(video, "src="), video)
+
+	// One not packaged yet keeps playing its download.
+	store := feedStore(t, env, "alice")
+	plain := seedAudioItem(t, store, "https://cdn.example.com/talk.mp4")
+	_, err := store.DB().Exec(`UPDATE items SET type = 'video' WHERE id = ?`, plain)
+	require.NoError(t, err)
+	body = env.Get(t, "/apps/feed/items/"+strconv.FormatInt(plain, 10), u.Auth).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, "data-hls="), "data-hls on an unpackaged item")
+	assert.True(t, strings.Contains(body, `src="/apps/feed/items/`+strconv.FormatInt(plain, 10)+`/media"`), "no src")
 }

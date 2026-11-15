@@ -1251,6 +1251,9 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		data-item-id={ strconv.FormatInt(ip.ID, 10) }
 		data-media-type={ playerType(ip, nav) }
 		data-source-kind={ ip.SourceKind }
+		if ip.HLSURL != "" && playerType(ip, nav) == "video" {
+			data-hls={ ip.HLSURL }
+		}
 		if nav.ListenOnly {
 			data-variant="audio"
 		}
@@ -1465,7 +1468,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 					id="player-el"
 					preload="metadata"
 					playsinline
-					if ip.SourceKind != "youtube" {
+					if ip.SourceKind != "youtube" && ip.HLSURL == "" {
 						src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 					}
 				></video>

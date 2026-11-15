@@ -2,6 +2,7 @@ package feed_test
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -121,4 +122,47 @@ func TestResolveMediaYouTubeVideoDownloads(t *testing.T) {
 	d, err = store.GetDownload(id)
 	require.NoError(t, err)
 	assert.Equal(t, "queued", d.State)
+}
+
+// A packaged video plays from its signed HLS master playlist, which needs
+// no credentials and does not expire.
+func TestResolveMediaPackagedVideo(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	id := packagedItem(t, env, "alice", true)
+
+	res, err := feedClient(t, env, u.AppPassword(t, "phone")).ResolveMedia(context.Background(),
+		connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_VIDEO}))
+	require.NoError(t, err)
+	assert.Equal(t, "application/vnd.apple.mpegurl", res.Msg.Mime)
+	assert.Equal(t, feedpb.Variant_VARIANT_VIDEO, res.Msg.Variant)
+	assert.True(t, strings.HasPrefix(res.Msg.Url, "/apps/feed/hls/alice/"+strconv.FormatInt(id, 10)+"/master.m3u8?sig="), res.Msg.Url)
+	assert.True(t, res.Msg.ExpiresAt == nil)
+	env.Get(t, res.Msg.Url, cogtest.StopRedirect).Status(http.StatusOK)
+}
+
+// Its audio alone plays from the media route, which serves the audio track.
+func TestResolveMediaPackagedAudio(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	id := packagedItem(t, env, "alice", true)
+
+	res, err := feedClient(t, env, u.AppPassword(t, "phone")).ResolveMedia(context.Background(),
+		connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_AUDIO}))
+	require.NoError(t, err)
+	assert.Equal(t, "/apps/feed/items/"+strconv.FormatInt(id, 10)+"/media", res.Msg.Url)
+	assert.Equal(t, feedpb.Variant_VARIANT_AUDIO, res.Msg.Variant)
+}
+
+// A video downloaded as two tracks waits for the packager.
+func TestResolveMediaPreparing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, "alice")
+	id := twoTrackDownload(t, store)
+
+	_, err := feedClient(t, env, u.AppPassword(t, "phone")).ResolveMedia(context.Background(),
+		connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_VIDEO}))
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	assert.True(t, strings.Contains(err.Error(), "Preparing the video"), err.Error())
 }

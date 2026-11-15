@@ -1195,6 +1195,10 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
+	if err := h.setHLSURL(r, store, &ip); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	// Text items are "read" once viewed. Audio/video are only considered
 	// read when fully played (see MarkComplete).
 	if ip.Type == "text" {
@@ -1423,6 +1427,20 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// setHLSURL gives a packaged video its signed master playlist, which the
+// player plays in place of the media route.
+func (h *Pages) setHLSURL(r *http.Request, store *Store, ip *ItemPlayback) error {
+	if !ip.Packaged || !ip.HasVideo {
+		return nil
+	}
+	master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), ip.ID)
+	if err != nil {
+		return err
+	}
+	ip.HLSURL = master
+	return nil
+}
+
 // renderPlayerFragment renders the feedPlayer fragment for itemID, returning
 // true on success. On any error it writes nothing and returns false, leaving
 // the caller to send a fallback (empty body / 204).
@@ -1430,6 +1448,10 @@ func renderPlayerFragment(w http.ResponseWriter, r *http.Request, h *Pages, stor
 	ip, err := store.GetItemPlayback(itemID)
 	if err != nil {
 		slog.Error("feed: player fragment playback", "item_id", itemID, "err", err)
+		return false
+	}
+	if err := h.setHLSURL(r, store, &ip); err != nil {
+		slog.Error("feed: player fragment hls", "item_id", itemID, "err", err)
 		return false
 	}
 	prefs, perr := store.LoadPlayerPrefs()
@@ -1515,7 +1537,21 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if dl.State == "ready" && dl.LocalPath != "" {
-			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
+			switch videoPlayOf(dl) {
+			case playHLS:
+				master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), id)
+				if err != nil {
+					httperr.Internal(w, r, err)
+					return
+				}
+				plugin.WriteJSON(w, http.StatusOK, map[string]string{"hls": master})
+			case playPreparing:
+				plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": preparingVideo})
+			case playPackageFailed:
+				plugin.WriteJSON(w, http.StatusOK, map[string]string{"error": packageFailed(dl)})
+			default:
+				plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
+			}
 			return
 		}
 		why, err := queueVideo(store, h.plugin, plugin.Username(r), id, dl)

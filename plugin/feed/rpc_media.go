@@ -18,14 +18,16 @@ import (
 // resolveStream turns a YouTube watch URL into a stream URL; tests replace it.
 var resolveStream = ResolveYouTubeStreamURL
 
-// ResolveMedia says where a client plays an item from. Media Cog holds (a
-// download, or its profanity-cleaned audio) plays from the item's media
-// route, a path on this server the client fetches with its own credentials.
-// A YouTube item Cog has not downloaded plays its audio from a resolved
-// stream. Its video is downloaded first: YouTube serves picture and sound
-// apart, and only a download merges them, so asking for it queues the
-// download and answers Unavailable until it is ready, which a client asks
-// again on. Any other enclosure plays from its origin.
+// ResolveMedia says where a client plays an item from. A downloaded video
+// whose tracks are packaged plays from its signed HLS master playlist, which
+// needs no credentials. Other media Cog holds (a download's audio, or its
+// profanity-cleaned audio) plays from the item's media route, a path on this
+// server the client fetches with its own credentials. A YouTube item Cog has
+// not downloaded plays its audio from a resolved stream. Its video is
+// downloaded first: YouTube serves picture and sound apart, and only HLS
+// presents them together, so asking for it queues the download and answers
+// Unavailable until it is downloaded and packaged, which a client asks again
+// on. Any other enclosure plays from its origin.
 func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error) {
 	store, err := s.store(ctx)
 	if err != nil {
@@ -48,13 +50,31 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 		kind = feedpb.Variant_VARIANT_AUDIO
 	}
 	if dl.State == "ready" && (dl.LocalPath != "" || dl.CleanAudioPath != "") {
+		if kind == feedpb.Variant_VARIANT_VIDEO && req.Msg.Variant != feedpb.Variant_VARIANT_AUDIO && dl.CleanAudioPath == "" {
+			switch videoPlayOf(dl) {
+			case playHLS:
+				master, err := s.plugin.HLSMasterURL(store, plugin.UserFromContext(ctx).Username, id)
+				if err != nil {
+					return nil, err
+				}
+				return connect.NewResponse(&feedpb.MediaSource{
+					Url: master, Mime: hlsMIME, Variant: feedpb.Variant_VARIANT_VIDEO, Bytes: dl.Bytes,
+				}), nil
+			case playPreparing:
+				return nil, connect.NewError(connect.CodeUnavailable, errors.New(preparingVideo))
+			case playPackageFailed:
+				return nil, connect.NewError(connect.CodeUnavailable, errors.New(packageFailed(dl)))
+			}
+		}
 		src := &feedpb.MediaSource{
 			Url:     "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media",
 			Variant: kind,
 			Cleaned: dl.CleanAudioPath != "",
 			Bytes:   dl.Bytes,
 		}
-		if src.Cleaned {
+		// Cleaned audio is audio, and so is the media route's file once
+		// the download is tracks apart.
+		if src.Cleaned || dl.PackageState == "done" || dl.VideoPath != "" {
 			src.Variant = feedpb.Variant_VARIANT_AUDIO
 		}
 		return connect.NewResponse(src), nil
@@ -78,6 +98,45 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 		src.Variant = feedpb.Variant_VARIANT_AUDIO
 	}
 	return connect.NewResponse(src), nil
+}
+
+// hlsMIME is the media type of an HLS playlist.
+const hlsMIME = "application/vnd.apple.mpegurl"
+
+// preparingVideo is why a downloaded video cannot play while the packager
+// has yet to make it HLS.
+const preparingVideo = "Preparing the video"
+
+func packageFailed(dl Download) string {
+	return "Couldn't prepare the video: " + dl.PackageError
+}
+
+// videoPlay is how a ready download's video plays.
+type videoPlay int
+
+const (
+	// playFile: from the media route, as downloaded (a merged MP4 from
+	// before tracks were kept apart, or a podcast's video).
+	playFile videoPlay = iota
+	// playHLS: from the signed master playlist.
+	playHLS
+	// playPreparing: not yet; the packager has the download's tracks to look at.
+	playPreparing
+	// playPackageFailed: not at all; the tracks could not be made HLS, and
+	// there is no single file with both picture and sound to fall back to.
+	playPackageFailed
+)
+
+func videoPlayOf(dl Download) videoPlay {
+	switch {
+	case dl.PackageState == "done" && dl.VideoPath != "":
+		return playHLS
+	case dl.VideoPath == "":
+		return playFile
+	case dl.PackageState == "error":
+		return playPackageFailed
+	}
+	return playPreparing
 }
 
 // downloadFirst queues an item's video and answers why it cannot play yet.
