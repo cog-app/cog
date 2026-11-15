@@ -100,3 +100,26 @@ func TestSubtitleEntries(t *testing.T) {
 	assert.Equal(t, int64(0), es[0].Length)
 	assert.Equal(t, "", es[0].Init.URI)
 }
+
+func TestSegmentCaptionBoundsOffsetStart(t *testing.T) {
+	// The audio starts at 1.5 s of media time; caption time 0 is its first
+	// sample, so segment 1 (media 7.5 s) covers captions 6 s to 12 s.
+	var frags []hls.Fragment
+	for i := 0; i < 4; i++ {
+		frags = append(frags, hls.Fragment{Start: 1.5 + 3*float64(i), Duration: 3, Offset: int64(i) * 100, Length: 100})
+	}
+	audio := hls.Track{Kind: hls.Audio, Fragments: frags}
+	start, end, ok := hls.SegmentCaptionBounds(audio, 1)
+	require.True(t, ok)
+	assert.Equal(t, 6.0, start)
+	assert.Equal(t, 12.0, end)
+	_, _, ok = hls.SegmentCaptionBounds(audio, 2)
+	assert.False(t, ok)
+	_, _, ok = hls.SegmentCaptionBounds(audio, -1)
+	assert.False(t, ok)
+
+	cues := []hls.Cue{{Start: 5, End: 5.5, Text: "early"}, {Start: 7, End: 8, Text: "inside"}}
+	seg := hls.VTTSegment(cues, start, end, hls.TimestampMap(audio))
+	assert.True(t, strings.Contains(seg, "inside"), seg)
+	assert.False(t, strings.Contains(seg, "early"), seg)
+}

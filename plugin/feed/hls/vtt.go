@@ -199,3 +199,15 @@ func SubtitleEntries(audio Track, uri func(n int) string) []Entry {
 	}
 	return entries
 }
+
+// SegmentCaptionBounds is segment n of the audio track's span in caption
+// time, where 0 is the track's first sample. ok is false when there is no
+// segment n.
+func SegmentCaptionBounds(audio Track, n int) (start, end float64, ok bool) {
+	segs := TrackSegments(audio)
+	if n < 0 || n >= len(segs) {
+		return 0, 0, false
+	}
+	start = segs[n].Start - audio.Fragments[0].Start
+	return start, start + segs[n].Duration, true
+}

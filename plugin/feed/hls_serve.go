@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/internal/user"
@@ -93,7 +94,31 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			}
 			video = &v
 		}
-		writePlaylist(w, r, hls.MasterPlaylist(audio, video, "audio.m3u8"+query, "video.m3u8"+query))
+		pres := hls.Presentation{
+			Audio: []hls.Rendition{{Name: "Original", URI: "audio.m3u8" + query, Default: true, Track: &audio}},
+			Video: video, VideoURI: "video.m3u8" + query,
+		}
+		if d.CaptionsPath != "" {
+			if _, err := readCaptions(space, d.CaptionsPath); err != nil {
+				slog.Warn("feed hls: captions", "item", itemID, "err", err)
+			} else {
+				pres.Subtitles = []hls.Rendition{{Name: "Captions", URI: "subs.m3u8" + query}}
+			}
+		}
+		writePlaylist(w, r, hls.Master(pres))
+	case "subs.m3u8":
+		if d.CaptionsPath == "" {
+			http.NotFound(w, r)
+			return
+		}
+		audio, _, err := space.Track(d.LocalPath)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		writePlaylist(w, r, hls.Playlist(hls.SubtitleEntries(audio, func(n int) string {
+			return "subs-" + strconv.Itoa(n) + ".vtt" + query
+		})))
 	case "audio.m3u8", "video.m3u8":
 		stored, media := d.LocalPath, "audio.m4a"
 		if file == "video.m3u8" {
@@ -137,12 +162,70 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "private, max-age=86400")
 		http.ServeContent(w, r, "", st.ModTime(), f)
 	default:
-		http.NotFound(w, r)
+		n, ok := subsSegment(file)
+		if !ok || d.CaptionsPath == "" {
+			http.NotFound(w, r)
+			return
+		}
+		audio, _, err := space.Track(d.LocalPath)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		start, end, ok := hls.SegmentCaptionBounds(audio, n)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		cues, err := readCaptions(space, d.CaptionsPath)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		writeVTT(w, r, hls.VTTSegment(cues, start, end, hls.TimestampMap(audio)))
 	}
 }
 
+// subsSegment is the segment number of a file named subs-<n>.vtt.
+func subsSegment(file string) (int, bool) {
+	num, ok := strings.CutPrefix(file, "subs-")
+	if !ok {
+		return 0, false
+	}
+	num, ok = strings.CutSuffix(num, ".vtt")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(num)
+	return n, err == nil && n >= 0
+}
+
+// readCaptions parses the item's stored captions file.
+func readCaptions(space Space, stored string) ([]hls.Cue, error) {
+	f, err := space.Own.Open(Name(stored))
+	if err != nil {
+		return nil, fmt.Errorf("open captions: %w", err)
+	}
+	cues, err := hls.ParseVTT(f)
+	if cerr := f.Close(); cerr != nil {
+		err = errors.Join(err, fmt.Errorf("close captions: %w", cerr))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read captions: %w", err)
+	}
+	return cues, nil
+}
+
 func writePlaylist(w http.ResponseWriter, r *http.Request, body string) {
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	writeText(w, r, "application/vnd.apple.mpegurl", body)
+}
+
+func writeVTT(w http.ResponseWriter, r *http.Request, body string) {
+	writeText(w, r, "text/vtt; charset=utf-8", body)
+}
+
+func writeText(w http.ResponseWriter, r *http.Request, contentType, body string) {
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodHead {

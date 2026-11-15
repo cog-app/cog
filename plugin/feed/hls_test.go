@@ -216,3 +216,82 @@ func TestHLSNoKeyWritesNothing(t *testing.T) {
 	require.NoError(t, feedStore(t, env, "alice").DB().QueryRow(`SELECT count(*) FROM feed_settings WHERE key = 'hls_key'`).Scan(&n))
 	assert.Equal(t, 0, n)
 }
+
+const testVTT = "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n\n00:00:08.000 --> 00:00:09.000\nLater\n"
+
+// captionedItem is packagedItem with captions: vtt is stored as the item's
+// captions file.
+func captionedItem(t *testing.T, env *cogtest.Env, username string, withVideo bool, vtt string) int64 {
+	t.Helper()
+	id := packagedItem(t, env, username, withVideo)
+	space, err := feedPlugin(t, env).Space(username)
+	require.NoError(t, err)
+	name := "captions/" + strconv.FormatInt(id, 10) + ".vtt"
+	_, err = space.Own.Put(name, strings.NewReader(vtt))
+	require.NoError(t, err)
+	require.NoError(t, feedStore(t, env, username).SetCaptionsPath(id, name))
+	return id
+}
+
+func TestHLSSubtitlesInMaster(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	plain := packagedItem(t, env, "alice", true)
+	captioned := captionedItem(t, env, "alice", true, testVTT)
+	body := env.Get(t, masterURL(t, env, "alice", plain)).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, "TYPE=SUBTITLES"), body)
+	body = env.Get(t, masterURL(t, env, "alice", captioned)).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, `TYPE=SUBTITLES,GROUP-ID="subs",NAME="Captions",DEFAULT=NO,AUTOSELECT=YES,URI="subs.m3u8?sig=`), body)
+	assert.Equal(t, 2, strings.Count(body, `SUBTITLES="subs"`), body)
+}
+
+func TestHLSSubsPlaylistAndSegments(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItem(t, env, "alice", false, testVTT)
+	m := masterURL(t, env, "alice", id)
+	pl := env.Get(t, sibling(m, "subs.m3u8")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(pl, "\nsubs-0.vtt?sig="), pl)
+	assert.False(t, strings.Contains(pl, "#EXT-X-MAP"), pl)
+	r := env.Get(t, sibling(m, "subs-0.vtt")).Status(http.StatusOK)
+	assert.Equal(t, "text/vtt; charset=utf-8", r.Header.Get("Content-Type"))
+	assert.Equal(t, "private, no-cache", r.Header.Get("Cache-Control"))
+	seg := r.ReadBody()
+	assert.True(t, strings.Contains(seg, "X-TIMESTAMP-MAP=MPEGTS:"), seg)
+	assert.True(t, strings.Contains(seg, "00:00:03.000 --> 00:00:05.000\nHello there\n"), seg)
+	// The 12 s audio fixture has 2 s fragments: segments 0–6 s and 6–12 s.
+	seg1 := env.Get(t, sibling(m, "subs-1.vtt")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(seg1, "Later"), seg1)
+	assert.False(t, strings.Contains(seg1, "Hello there"), seg1)
+}
+
+func TestHLSSubsBadSegment(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItem(t, env, "alice", false, testVTT)
+	m := masterURL(t, env, "alice", id)
+	for _, f := range []string{"subs-99.vtt", "subs--1.vtt", "subs-x.vtt", "subs-.vtt"} {
+		env.Get(t, sibling(m, f)).Status(http.StatusNotFound)
+	}
+	env.Get(t, sibling(masterURL(t, env, "alice", packagedItem(t, env, "alice", false)), "subs.m3u8")).Status(http.StatusNotFound)
+}
+
+func TestHLSSubsNeedSignature(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItem(t, env, "alice", false, testVTT)
+	bad := regexp.MustCompile(`sig=[^&]+`).ReplaceAllString(sibling(masterURL(t, env, "alice", id), "subs-0.vtt"), "sig=AAAA")
+	env.Get(t, bad).Status(http.StatusForbidden)
+}
+
+func TestHLSCaptionsFileMissing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItem(t, env, "alice", true, testVTT)
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	require.NoError(t, space.Own.Remove("captions/"+strconv.FormatInt(id, 10)+".vtt"))
+	body := env.Get(t, masterURL(t, env, "alice", id)).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, "TYPE=SUBTITLES"), body)
+	assert.True(t, strings.Contains(body, "\nvideo.m3u8?sig="), body)
+}
