@@ -24,7 +24,7 @@
 - Video tracks are stream-copied, never transcoded. Audio is copied when it is AAC, else encoded `-c:a aac -b:a 128k`.
 - Signed links do not expire: a leaked link plays one item, which costs little. Revoking the user's key is what kills links.
 - A file is not copied or rewritten when it is already what HLS needs.
-- ffmpeg is installed on the dev machine (`/usr/sbin/ffmpeg`), and it writes a `sidx` with Task 1's flags (checked 2026-11-15).
+- ffmpeg and yt-dlp 2026.10.26 (with deno) are installed on the dev machine. ffmpeg writes a `sidx` with Task 1's flags, and yt-dlp with `--fixup never` keeps YouTube's tracks as indexed single-track fMP4 (both checked 2026-11-15).
 
 ## Decisions this plan makes (record them in the design in Task 9)
 
@@ -320,7 +320,7 @@ func TestDownloadYouTubeAudioFails(t *testing.T) // stub variant: exit 1 when ar
 
 - [ ] **Step 4: Run** `go test ./plugin/feed/pipeline/` — PASS.
 
-- [ ] **Step 5: Check a real download.** yt-dlp is not on the dev machine. Install the pinned one (`2026.10.26`, with deno `v2.9.8`) into the project's `tmp/`, or run it in the Cog image. Download one public video's two tracks with the exact arguments above, then confirm with `ffprobe` and `grep -obUa sidx` that each file is single-track fragmented MP4 with a `sidx`. If either is not, record what yt-dlp gives in the report. The packager still remuxes such files (Task 5), so only the "used as it is" saving is lost.
+- [ ] **Step 5: Recheck a real download.** Checked on 2026-11-15 with yt-dlp 2026.10.26 (installed at `/usr/sbin/yt-dlp`, with deno). With the arguments above, both tracks came out as `ftyp`, `moov` with one `trak`, `sidx`, then `moof`/`mdat` fragments: video H.264 Main, audio AAC-LC. Repeat that check (`ffprobe`, `grep -obUaE "moov|trak|sidx"`) on one public video after implementing, and report it.
 
 - [ ] **Step 6: Commit** `feed: download YouTube video and audio as separate tracks`.
 
