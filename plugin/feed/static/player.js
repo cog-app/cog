@@ -89,6 +89,7 @@
 		var handle = root.querySelector("#player-handle");
 		var markers = root.querySelector("#player-markers");
 		var speedBtn = root.querySelector("#player-speed");
+		var ccBtn = root.querySelector("#player-cc");
 		var volBtn = root.querySelector("#player-mute");
 		var volRange = root.querySelector("#player-volume");
 		var gearBtn = root.querySelector("#player-gear");
@@ -125,6 +126,23 @@
 			note.hidden = !text;
 		}
 
+		// --- captions (video only): the CC button toggles the HLS subtitle
+		// rendition. hls.js keeps captions off until asked; Safari's native
+		// player lists them as text tracks. data-captions mirrors the button.
+		var captionsOn = false;
+		root.dataset.captions = "off";
+		function setCaptions(on, apply) {
+			captionsOn = on;
+			root.dataset.captions = on ? "on" : "off";
+			if (ccBtn) ccBtn.setAttribute("aria-pressed", on ? "true" : "false");
+			apply(on);
+		}
+		function offerCaptions(apply) {
+			if (!ccBtn) return;
+			ccBtn.hidden = false;
+			ccBtn.onclick = function () { setCaptions(!captionsOn, apply); };
+		}
+
 		// playHLS plays a master playlist: through hls.js where the browser
 		// has Media Source Extensions, else natively (Safari on iOS). The
 		// player's data-hls-state says "loaded" once the playlist is read, or
@@ -134,11 +152,18 @@
 			whenHls(function () {
 				if (!document.body.contains(root)) return;
 				if (window.Hls && Hls.isSupported()) {
-					var hls = new Hls({ startPosition: cfg.resume > 0 ? cfg.resume : -1 });
+					var hls = new Hls({ startPosition: cfg.resume > 0 ? cfg.resume : -1, subtitleDisplay: false });
 					activeHls = hls;
 					hls.on(Hls.Events.MANIFEST_PARSED, function () {
 						root.dataset.hlsState = "loaded";
 						el.play().catch(function () {});
+					});
+					hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, function (_, data) {
+						if (!data.subtitleTracks || data.subtitleTracks.length === 0) return;
+						offerCaptions(function (on) {
+							hls.subtitleDisplay = on;
+							hls.subtitleTrack = on ? 0 : -1;
+						});
 					});
 					hls.on(Hls.Events.ERROR, function (_, data) {
 						if (!data.fatal) return;
@@ -151,7 +176,15 @@
 					hls.loadSource(url);
 					hls.attachMedia(el);
 				} else if (el.canPlayType("application/vnd.apple.mpegurl")) {
+					function nativeCaptions() {
+						if (el.textTracks.length === 0) return;
+						offerCaptions(function (on) {
+							el.textTracks[0].mode = on ? "showing" : "disabled";
+						});
+					}
+					el.textTracks.addEventListener("addtrack", nativeCaptions);
 					el.addEventListener("loadedmetadata", function () {
+						nativeCaptions();
 						root.dataset.hlsState = "loaded";
 						if (cfg.resume > 0) el.currentTime = cfg.resume;
 						el.play().catch(function () {});

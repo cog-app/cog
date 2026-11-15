@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
@@ -163,6 +164,8 @@ func TestBrowser(t *testing.T) {
 
 	env.CreateUser(t, "hls", "pass")
 	hlsItem := packagedItem(t, env, "hls", true)
+	env.CreateUser(t, "hlscc", "pass")
+	ccItem := captionedItem(t, env, "hlscc", true, "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 
 	// A packaged video plays over HLS: through hls.js where the browser has
 	// Media Source Extensions (a blob: source), natively where it plays HLS
@@ -175,6 +178,29 @@ func TestBrowser(t *testing.T) {
 		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
 		src, _ := b.Eval(t, `document.querySelector("#player-el").src`).(string)
 		require.True(t, strings.HasPrefix(src, "blob:") || strings.Contains(src, "master.m3u8"), "player source %q", src)
+	})
+
+	// Captions arrive as an HLS subtitle rendition. The CC button turns them on,
+	// and hls.js places the cue at the item time it names: the X-TIMESTAMP-MAP
+	// ties caption time 0 to the audio track's first fragment.
+	t.Run("HLSCaptions", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlscc", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", ccItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#player-cc:not([hidden])`)
+		b.Click(t, "#player-cc")
+		b.WaitVisible(t, `#feed-player[data-captions="on"]`)
+		const cueStart = `() => { for (const x of document.querySelector("#player-el").textTracks) if (x.cues && x.cues.length) return x.cues[0].startTime; return -1 }`
+		var start float64
+		for deadline := time.Now().Add(20 * time.Second); ; {
+			start, _ = b.Eval(t, cueStart).(float64)
+			if start >= 0 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		assert.InDelta(t, 3.0, start, 0.1)
 	})
 
 	t.Run("EmptyState", func(t *testing.T) {

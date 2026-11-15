@@ -1514,6 +1514,9 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			<button id="player-fwd" class="btn btn-outline btn-sm" title="Skip forward" type="button">&#8631;</button>
 			<span id="player-time" class="text-muted" style="font-size:0.85rem;font-variant-numeric:tabular-nums">0:00 / 0:00</span>
 			<span style="margin-left:auto"></span>
+			if playerType(ip, nav) == "video" {
+				<button id="player-cc" class="btn btn-outline btn-sm" title="Captions" type="button" aria-pressed="false" hidden>CC</button>
+			}
 			<button id="player-speed" class="btn btn-outline btn-sm" title="Speed" type="button">1&times;</button>
 			<button id="player-mute" class="btn btn-outline btn-sm" title="Mute" type="button">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
