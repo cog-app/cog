@@ -187,3 +187,21 @@ func ytdlpArgs(t *testing.T, space feed.Space, name string) string {
 	require.NoError(t, err)
 	return string(b)
 }
+
+// Collect keeps the video a row names.
+func TestCollectKeepsVideoPath(t *testing.T) {
+	s, space := newPipeline(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/channel"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v", Type: "video", MediaURL: "https://www.youtube.com/watch?v=v"})
+	require.NoError(t, err)
+	require.NoError(t, s.EnqueueDownload(id))
+	for _, name := range []string{"media/7.hls-audio.m4a", "media/7.hls-video.mp4"} {
+		_, err = space.Own.Put(name, strings.NewReader("x"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, s.MarkVideoDownloadReady(id, "media/7.hls-audio.m4a", "media/7.hls-video.mp4", 2))
+	require.NoError(t, pipeline.Collect(s, space))
+	_, err = space.Own.Stat("media/7.hls-video.mp4")
+	require.NoError(t, err)
+}

@@ -561,6 +561,9 @@ type Download struct {
 	NeedsTranscribe bool
 	SilenceRanges   string // JSON array of Range (action="skip"); empty when unknown
 	SilenceState    string // "" = unknown, "done" = computed (may be empty result)
+	VideoPath       string // the video track, as downloaded or as packaged
+	PackageState    string // "" pending, "done", "error" (pipeline/package.go)
+	PackageError    string
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -760,7 +763,8 @@ func (s *Store) EnqueueDownload(itemID int64) error {
 func (s *Store) PendingDownloads(limit int) ([]Download, error) {
 	rows, err := s.db.Query(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
-		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe
+		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
+		       video_path, package_state, package_error
 		FROM downloads WHERE state = 'queued' ORDER BY item_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending downloads: %w", err)
@@ -779,11 +783,23 @@ func (s *Store) MarkDownloadStart(itemID int64) error {
 	return nil
 }
 
-// MarkDownloadReady transitions a download to state 'ready' with path and byte count.
+// MarkDownloadReady transitions a download to state 'ready' with path and
+// byte count. The packager looks at it again.
 func (s *Store) MarkDownloadReady(itemID int64, path string, bytes int64) error {
+	return s.markReady(itemID, path, "", bytes)
+}
+
+// MarkVideoDownloadReady is MarkDownloadReady for a download that came as
+// an audio and a video file.
+func (s *Store) MarkVideoDownloadReady(itemID int64, audioPath, videoPath string, bytes int64) error {
+	return s.markReady(itemID, audioPath, videoPath, bytes)
+}
+
+func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64) error {
 	_, err := s.db.Exec(`
-		UPDATE downloads SET state = 'ready', local_path = ?, bytes = ?, completed_at = unixepoch()
-		WHERE item_id = ?`, path, bytes, itemID)
+		UPDATE downloads SET state = 'ready', local_path = ?, video_path = ?, bytes = ?,
+			completed_at = unixepoch(), package_state = '', package_error = ''
+		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
 	if err != nil {
 		return fmt.Errorf("mark download ready: %w", err)
 	}
@@ -810,10 +826,11 @@ func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
 	return nil
 }
 
-// DownloadFiles returns every file a download row names: media, cleaned
-// audio and captions.
+// DownloadFiles returns every file a download row names: media (audio and
+// video tracks), cleaned audio and captions.
 func (s *Store) DownloadFiles() ([]string, error) {
 	rows, err := s.db.Query(`SELECT local_path FROM downloads WHERE local_path != ''
+		UNION SELECT video_path FROM downloads WHERE video_path != ''
 		UNION SELECT clean_audio_path FROM downloads WHERE clean_audio_path != ''
 		UNION SELECT captions_path FROM downloads WHERE captions_path != ''`)
 	if err != nil {
@@ -857,11 +874,11 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 	err := s.db.QueryRow(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
-		       silence_ranges, silence_state
+		       silence_ranges, silence_state, video_path, package_state, package_error
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
-		&d.SilenceRanges, &d.SilenceState,
+		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
@@ -1028,6 +1045,7 @@ func scanDownloads(rows *sql.Rows) ([]Download, error) {
 		if err := rows.Scan(
 			&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 			&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
+			&d.VideoPath, &d.PackageState, &d.PackageError,
 		); err != nil {
 			return nil, fmt.Errorf("scan download: %w", err)
 		}
@@ -1112,6 +1130,9 @@ type ItemPlayback struct {
 	DownloadError     string // why the last download failed, when DownloadState is "error"
 	HasCleanAudio     bool
 	SourceKind        string // subscription.kind
+	Packaged          bool   // the download is packaged for HLS
+	HasVideo          bool   // the download has a video track apart from its audio
+	HLSURL            string // the signed master playlist; set by handlers, not the store
 }
 
 // GetItemPlayback returns an ItemPlayback for a single item by ID, joining
@@ -1135,7 +1156,9 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 			COALESCE(pb.completed, 0),
 			COALESCE(d.state, ''),
 			COALESCE(d.error, ''),
-			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END
+			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END,
+			COALESCE(d.package_state = 'done', 0),
+			COALESCE(d.video_path != '', 0)
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id
 		LEFT JOIN playback pb ON pb.item_id = i.id
@@ -1151,6 +1174,8 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 		&downloadState,
 		&ip.DownloadError,
 		&hasClean,
+		&ip.Packaged,
+		&ip.HasVideo,
 	)
 	if err != nil {
 		return ItemPlayback{}, fmt.Errorf("get item playback: %w", err)

@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS downloads (
     needs_profanity INTEGER NOT NULL DEFAULT 0,
     needs_transcribe INTEGER NOT NULL DEFAULT 0,
     silence_ranges TEXT NOT NULL DEFAULT '',
-    silence_state TEXT NOT NULL DEFAULT ''
+    silence_state TEXT NOT NULL DEFAULT '',
+    video_path TEXT NOT NULL DEFAULT '',
+    package_state TEXT NOT NULL DEFAULT '',
+    package_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (
