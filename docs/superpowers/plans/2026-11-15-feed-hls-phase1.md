@@ -4,7 +4,7 @@
 
 **Goal:** A downloaded feed item plays as an HLS presentation (separate video and audio fMP4 tracks, byte-range playlists written per request) from signed URLs that need no cookie, and the web player plays it through hls.js.
 
-**Architecture:** The downloader fetches YouTube video and audio as two files. A new pipeline worker, the packager, remuxes every ready download (new or old) with ffmpeg into fragmented MP4 tracks that carry a `sidx`, reads each track's fragment index with a small Go box parser, and stores it in the feed database. An unauthenticated route under `/apps/feed/hls/` checks an HMAC signature made with a per-user key and writes master and media playlists from the stored index, or serves the track files with byte ranges. Mute and skip stay client-side in this phase (phases 3 and 4).
+**Architecture:** The downloader fetches YouTube video and audio as two files, left as YouTube made them. A new pipeline worker, the packager, makes sure every ready download (new or old) is fragmented MP4 tracks that carry a `sidx`. A file that already is one, such as a YouTube DASH track, is used as it is. Anything else is remuxed with ffmpeg, and podcast audio is transcoded to AAC. The `sidx` inside each track file is the index, so nothing about fragments goes in the database. An unauthenticated route under `/apps/feed/hls/` checks an HMAC signature made with a per-user key. It reads the tracks' `moov` and `sidx` (a few KB) to write master and media playlists, or serves the track files with byte ranges. Mute and skip stay client-side in this phase (phases 3 and 4).
 
 **Tech Stack:** Go 1.26, SQLite (per-user plugin DB), ffmpeg/ffprobe through `internal/sandbox`, yt-dlp, templ, hls.js (vendored), cogtest and webtest.
 
@@ -18,18 +18,22 @@
 - Tests go through `cogtest`; use `internal/testing/require` and `assert`, never testify.
 - Programs run through `sandbox.CommandContext` with the narrowest `Spec` (`Read` the inputs, `Write` the output directory, no network).
 - A plugin never builds a path or DSN; files go through `feed.Space` (`Own`, `Cache`, `Keep`).
-- Schema changes go in a new `sql/migration005_media_tracks.sql`; `go generate ./plugin/feed` regenerates `sql/schema.sql` (`go tool migratesql`).
+- Schema changes go in a new `sql/migration005_package.sql`; `go generate ./plugin/feed` regenerates `sql/schema.sql` (`go tool migratesql`).
 - Format with `go fmt ./...` and `go tool templ fmt .`; check builds with `go install ./...`, not `go build`.
 - Decided, not to reopen: separate video and audio tracks (no merged mp4); podcast audio is transcoded once to AAC in fMP4; external players get pre-signed URLs; a player that can skip silence or change speed does it itself.
 - Video tracks are stream-copied, never transcoded. Audio is copied when it is AAC, else encoded `-c:a aac -b:a 128k`.
-- Signed links live 24 hours (`hlsLinkTTL = 24 * time.Hour`).
+- Signed links do not expire: a leaked link plays one item, which costs little. Revoking the user's key is what kills links.
+- A file is not copied or rewritten when it is already what HLS needs.
+- ffmpeg is installed on the dev machine (`/usr/sbin/ffmpeg`), and it writes a `sidx` with Task 1's flags (checked 2026-11-15).
 
 ## Decisions this plan makes (record them in the design in Task 9)
 
-- **Packaging is the mp4 muxer with a global `sidx`, not ffmpeg's HLS muxer.** The `sidx` is what makes a fragmented MP4 seekable when played progressively (Media3 needs it for `items/{id}/media`, which the app plays), and it is the whole fragment index, so one Go parser covers YouTube's DASH tracks and ours alike.
-- **The index stores fragments, not segments.** Fragments (one per keyframe for video, 2 s for audio) are grouped into ~6 s HLS segments when the playlist is written. Phase 4 cuts at fragment boundaries.
-- **After packaging, `downloads.local_path` is the audio track** (`media/<id>.hls-audio.m4a`) and `downloads.video_path` the video track (`media/<id>.hls-video.mp4`). Silence, transcribe, profanity and `items/{id}/media` keep reading `local_path` unchanged. The original file goes to `Collect`.
-- **URL form** `/apps/feed/hls/{user}/{item}/{file}?exp=<unix>&sig=<b64url>`. The user is in the path because the route has no session. The signature covers user, item, expiry and the option parameters; every URL inside the playlists carries the same `exp` and `sig`, so one grant covers one item's presentation. Phase 1 accepts no options: any other query parameter is a 400.
+- **The index is the track file's own `sidx`. It is not copied into the database or into a pre-baked playlist.** A playlist request reads the track's `moov` and `sidx`: under 25 KB for an hour, at the start of the file. A stored copy could fall out of step with the file. A baked `.m3u8` would also have to change whenever the key is revoked, since its URIs carry the signature, and again for every option set in phases 3 and 4. Phase 5 reads googlevideo's `sidx` with the same parser, over one Range request. If remote reads turn out slow, that is when to add a cache.
+- **Packaging is the mp4 muxer with a global `sidx`, not ffmpeg's HLS muxer.** The `sidx` also makes a fragmented MP4 seekable when it is played straight through. Media3 needs that for `items/{id}/media`, which the app plays.
+- **Fragments are grouped into segments when the playlist is written.** A fragment is one per keyframe for video and 2 s for audio, and segments are about 6 s. Phase 4 cuts at fragment boundaries.
+- **A track that is already single-track fMP4 with a `sidx` is used as it is.** YouTube's DASH tracks qualify when yt-dlp runs with `--fixup never`, which keeps it from remuxing m4a into a plain MP4. This applies when the audio is AAC; a video track's codec is never changed.
+- **After packaging, `downloads.local_path` is the audio track and `downloads.video_path` the video track.** These are the downloaded files when they were used as they are, and otherwise `media/<id>.hls-audio.m4a` and `media/<id>.hls-video.mp4`. Silence, transcribe, profanity and `items/{id}/media` keep reading `local_path` unchanged. `Collect` removes a replaced original.
+- **URL form** `/apps/feed/hls/{user}/{item}/{file}?sig=<b64url>`. The user is in the path because the route has no session. The signature covers user, item and the option parameters. Every URL inside the playlists carries the same `sig`, so one grant covers one item's presentation. Phase 1 accepts no options, and any other query parameter is a 400.
 - **The per-user key** is 32 random bytes in `feed_settings` under `hls_key`, made on first use. "Revoke media links" on the sync settings page replaces it.
 - An item whose packaging fails keeps playing as it did before (progressive `items/{id}/media`); its error is shown, not retried every tick.
 
@@ -39,7 +43,7 @@
 2. **`Collect` must keep packaged tracks and raw YouTube video** (`video_path`). Deleting them would silently break every packaged item on the next tick. (Task 3 `TestCollectKeepsVideoPath`, Task 5 `TestPackageThenCollect`.)
 3. **Packaging that fails leaves the item playable as before**, and is not retried every tick. (Task 5 `TestPackageFailureKeepsMedia`, Task 7 `TestStreamURLPackageError`.)
 4. **A player with no cookie** (mpv, hls.js, Media3) fetching master, media playlist, init and segments with `Range` gets 200/206; HEAD works; a signature for alice's item does not open bob's. (Task 6 tests.)
-5. **Re-downloading an item** (retry after error, or a new download) drops its old tracks, so no playlist points at byte offsets of a file that was replaced. (Task 3 `TestMarkDownloadReadyResetsPackage`.)
+5. **A YouTube track that is not indexed fMP4** must be remuxed, not served as it is. This happens when yt-dlp falls back to a webm, or a format without a `sidx`. Serving it broken would break the playlist. (Task 5 `TestPackageRemuxesUnindexed`.)
 
 ---
 
@@ -70,9 +74,11 @@
   }
   func ReadTrack(r io.ReaderAt, size int64) (Track, error)
   var ErrNoIndex = errors.New("hls: no sidx")
+  var ErrMultiTrack = errors.New("hls: more than one track")
   ```
+  `ReadTrack` reads only what it needs from the start of the file (boxes up to the end of `sidx`), never the media. It is called on every playlist request.
 
-- [ ] **Step 1: Write `make.sh` and make the media.** Needs ffmpeg with libx264. Without one locally, run it in `debian:trixie-slim` with `apt-get install -y ffmpeg` (what the Cog image uses), mounting the directory. Commit the outputs; together they must stay under 300 KB.
+- [ ] **Step 1: Write `make.sh` and make the media** with the local ffmpeg (it has libx264). Commit the outputs; together they must stay under 300 KB.
 
 ```sh
 #!/bin/sh
@@ -92,11 +98,13 @@ $ff -f lavfi -i sine=frequency=440:duration=12 -c:a aac -b:a 32k \
 # podcast episode with cover art.
 $ff -f lavfi -i testsrc=size=160x90:rate=24:duration=6 -f lavfi -i sine=frequency=440:duration=6 \
 	-c:v libx264 -profile:v baseline -g 48 -pix_fmt yuv420p -c:a aac -b:a 32k -movflags +faststart merged.mp4
+# A video track that is not fragmented, as a YouTube download might be.
+$ff -i merged.mp4 -an -c copy -movflags +faststart plain-video.mp4
 $ff -f lavfi -i sine=frequency=440:duration=6 -f lavfi -i color=c=red:size=64x64:duration=1 \
 	-map 0:a -map 1:v -c:a libmp3lame -b:a 32k -c:v mjpeg -frames:v 1 -disposition:v attached_pic -id3v2_version 3 episode.mp3
 ```
 
-If ffmpeg refuses `global_sidx` with `empty_moov`, find the combination that writes a `sidx` (e.g. `+dash+global_sidx`), and use it here and in Task 5's `packageArgs`. `ReadTrack`'s contract (it requires a `sidx`) does not change.
+These flags were checked on 2026-11-15: both packaged files come out as `ftyp`, `moov`, `sidx`, then six `moof` fragments.
 
 - [ ] **Step 2: Write the failing tests** in `plugin/feed/hls/track_test.go` (package `hls_test`), opening files from `../testdata/media/`:
 
@@ -120,12 +128,12 @@ func TestReadTrackAudio(t *testing.T) {
 	for _, f := range tr.Fragments { assert.True(t, f.Duration <= 2.1, f.Duration) }
 	checkContiguous(t, tr)
 }
-// A file without a sidx, such as a merged download or an MP3, has no index.
-func TestReadTrackNoIndex(t *testing.T) {
-	for _, name := range []string{"merged.mp4", "episode.mp3"} {
-		_, err := readTrackErr(t, name)
-		assert.True(t, errors.Is(err, hls.ErrNoIndex), name, err)
-	}
+// A merged download has two tracks; an MP3 has no index.
+func TestReadTrackNotATrack(t *testing.T) {
+	_, err := readTrackErr(t, "merged.mp4")
+	assert.True(t, errors.Is(err, hls.ErrMultiTrack), err)
+	_, err = readTrackErr(t, "episode.mp3")
+	assert.True(t, errors.Is(err, hls.ErrNoIndex), err)
 }
 ```
 
@@ -133,7 +141,7 @@ func TestReadTrackNoIndex(t *testing.T) {
 
 - [ ] **Step 3: Run** `go test ./plugin/feed/hls/` — FAIL (package does not exist).
 
-- [ ] **Step 4: Implement `ReadTrack` in `track.go` and the box reader in `boxes.go`.** Walk top-level boxes (32-bit size, `size==1` → 64-bit largesize, `size==0` → to end of file). Init is `[0, end of moov)`. From `moov/trak/mdia`: `hdlr` handler type `vide`/`soun` → Kind (other → error); `mdhd` timescale is not needed because `sidx` carries its own. From `stsd`'s first sample entry: `avc1`/`avc3` → width/height (uint16 at entry offset 24/26 after the 8-byte box header... per ISO 14496-12 VisualSampleEntry) and `avcC` bytes 1–3 → `fmt.Sprintf("avc1.%02X%02X%02X", ...)`; `mp4a` → `esds` audioObjectType → `"mp4a.40.<aot>"`; anything else → `Codecs = ""`. `sidx` v0/v1: timescale, earliest_presentation_time, first_offset, then per reference `referenced_size` (31 bits; a reference_type of 1, a nested sidx, is an error), `subsegment_duration`, `starts_with_SAP`. First fragment offset = end of the `sidx` box + first_offset. No `sidx` → `ErrNoIndex`; truncated or inconsistent boxes → a wrapped error naming the box.
+- [ ] **Step 4: Implement `ReadTrack` in `track.go` and the box reader in `boxes.go`.** Walk top-level boxes (32-bit size, `size==1` → 64-bit largesize, `size==0` → to end of file). Init is `[0, end of moov)`. More than one `trak` → `ErrMultiTrack`. From `moov/trak/mdia`: `hdlr` handler type `vide`/`soun` → Kind (other → error); `mdhd` timescale is not needed because `sidx` carries its own. From `stsd`'s first sample entry: `avc1`/`avc3` → width/height (uint16 at entry offset 24/26 after the 8-byte box header... per ISO 14496-12 VisualSampleEntry) and `avcC` bytes 1–3 → `fmt.Sprintf("avc1.%02X%02X%02X", ...)`; `mp4a` → `esds` audioObjectType → `"mp4a.40.<aot>"`; anything else → `Codecs = ""`. `sidx` v0/v1: timescale, earliest_presentation_time, first_offset, then per reference `referenced_size` (31 bits; a reference_type of 1, a nested sidx, is an error), `subsegment_duration`, `starts_with_SAP`. First fragment offset = end of the `sidx` box + first_offset. No `sidx` → `ErrNoIndex`; truncated or inconsistent boxes → a wrapped error naming the box.
 
 - [ ] **Step 5: Run** `go test ./plugin/feed/hls/` — PASS.
 
@@ -174,10 +182,10 @@ func TestSegments(t *testing.T) {
 }
 func TestMediaPlaylist(t *testing.T) {
 	tr := hls.Track{Kind: hls.Audio, InitOffset: 0, InitLength: 700, Fragments: offsetsFrom(800, /* 2 s × 4 */)}
-	pl := hls.MediaPlaylist(tr, "audio.m4a?exp=1&sig=x")
+	pl := hls.MediaPlaylist(tr, "audio.m4a?sig=x")
 	for _, want := range []string{
 		"#EXTM3U\n", "#EXT-X-VERSION:7\n", "#EXT-X-PLAYLIST-TYPE:VOD\n", "#EXT-X-TARGETDURATION:6\n",
-		`#EXT-X-MAP:URI="audio.m4a?exp=1&sig=x",BYTERANGE="700@0"` + "\n",
+		`#EXT-X-MAP:URI="audio.m4a?sig=x",BYTERANGE="700@0"` + "\n",
 		"#EXTINF:6.000,\n#EXT-X-BYTERANGE:", "#EXT-X-ENDLIST\n",
 	} { assert.True(t, strings.Contains(pl, want), want) }
 }
@@ -210,28 +218,27 @@ Write the elided bodies out; the comments state their assertions.
 ### Task 3: Schema and store
 
 **Files:**
-- Create: `plugin/feed/sql/migration005_media_tracks.sql`
+- Create: `plugin/feed/sql/migration005_package.sql`
 - Modify: `plugin/feed/sql/schema.sql` (generated), `plugin/feed/store.go` (Download type, download methods, `DownloadFiles`, `GetItemPlayback`)
-- Create: `plugin/feed/store_media.go` (track and key methods)
+- Create: `plugin/feed/store_media.go` (package and key methods)
 - Test: `plugin/feed/store_media_test.go`, `plugin/feed/pipeline/download_test.go` (Collect)
 
 **Interfaces:**
-- Consumes: `hls.Track`, `hls.Fragment`.
 - Produces:
   ```go
   // Download gains:
-  VideoPath    string // YouTube's raw video, then the packaged video track
+  VideoPath    string // YouTube's video track, as downloaded or as packaged
   PackageState string // "" pending, "done", "error"
   PackageError string
   // ItemPlayback gains:
-  Packaged bool // PackageState == "done"
-  HLSURL   string // set by handlers, not the store (Task 7)
+  Packaged  bool // PackageState == "done"
+  HasVideo  bool // VideoPath != ""
+  HLSURL    string // set by handlers, not the store (Task 7)
 
   func (s *Store) MarkVideoDownloadReady(itemID int64, audioPath, videoPath string, bytes int64) error
   func (s *Store) PendingPackage(limit int) ([]int64, error)
-  func (s *Store) SavePackage(itemID int64, audioPath, videoPath string, bytes int64, tracks []hls.Track) error
+  func (s *Store) SavePackage(itemID int64, audioPath, videoPath string, bytes int64) error
   func (s *Store) MarkPackageError(itemID int64, msg string) error
-  func (s *Store) Tracks(itemID int64) (audio hls.Track, video *hls.Track, err error) // sql.ErrNoRows when not packaged
   func (s *Store) HLSKey() ([]byte, error)    // creates on first use
   func (s *Store) RotateHLSKey() error
   ```
@@ -243,43 +250,17 @@ Write the elided bodies out; the comments state their assertions.
 ALTER TABLE downloads ADD COLUMN video_path TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN package_state TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN package_error TEXT NOT NULL DEFAULT '';
-
-CREATE TABLE IF NOT EXISTS media_tracks (
-    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL CHECK(kind IN ('audio','video')),
-    codecs TEXT NOT NULL DEFAULT '',
-    width INTEGER NOT NULL DEFAULT 0,
-    height INTEGER NOT NULL DEFAULT 0,
-    init_offset INTEGER NOT NULL,
-    init_length INTEGER NOT NULL,
-    PRIMARY KEY (item_id, kind)
-);
-
-CREATE TABLE IF NOT EXISTS media_fragments (
-    item_id INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    start REAL NOT NULL,
-    duration REAL NOT NULL,
-    byte_offset INTEGER NOT NULL, -- OFFSET is an SQL keyword
-    byte_length INTEGER NOT NULL,
-    keyframe INTEGER NOT NULL,
-    PRIMARY KEY (item_id, kind, seq),
-    FOREIGN KEY (item_id, kind) REFERENCES media_tracks(item_id, kind) ON DELETE CASCADE
-) WITHOUT ROWID;
 ```
 
-Check the guard comment syntax in `internal/migrate` (it guards the whole file) and how an existing migration with more than one statement is written; follow it. Run `go generate ./plugin/feed` and commit the regenerated `schema.sql`. Add `media_tracks` and `media_fragments` to `TestSchema`'s list.
+Check the guard comment syntax in `internal/migrate` (it guards the whole file). Run `go generate ./plugin/feed` and commit the regenerated `schema.sql`.
 
 - [ ] **Step 2: Write the failing tests** (`store_media_test.go`, package `feed_test`, with the helpers in `rpc_media_test.go`):
 
 ```go
-func TestSavePackageAndTracks(t *testing.T)            // SavePackage with an audio and a video hls.Track (3 fragments each) → Tracks returns them equal, video non-nil; GetDownload has LocalPath/VideoPath/Bytes/PackageState "done"; PendingPackage no longer lists it
-func TestTracksAudioOnly(t *testing.T)                 // SavePackage with only audio → video == nil
-func TestTracksNotPackaged(t *testing.T)               // errors.Is(err, sql.ErrNoRows)
+func TestSavePackage(t *testing.T)                     // SavePackage → GetDownload has LocalPath/VideoPath/Bytes/PackageState "done"; PendingPackage no longer lists it; GetItemPlayback Packaged and HasVideo
 func TestPendingPackage(t *testing.T)                  // lists ready downloads with package_state ''; not queued, not error, not done
 func TestMarkPackageError(t *testing.T)                // PackageState "error", PackageError the message; not pending; LocalPath unchanged
-func TestMarkDownloadReadyResetsPackage(t *testing.T)  // after SavePackage, MarkDownloadReady (and MarkVideoDownloadReady) → PackageState "", Tracks → ErrNoRows, pending again
+func TestMarkDownloadReadyResetsPackage(t *testing.T)  // after SavePackage, MarkDownloadReady (and MarkVideoDownloadReady) → PackageState "", VideoPath as given ("" for MarkDownloadReady), pending again
 func TestHLSKeyStableAndRotates(t *testing.T)          // two HLSKey calls equal, 32 bytes; after RotateHLSKey a different 32 bytes
 ```
 
@@ -290,13 +271,13 @@ And in `pipeline/download_test.go`:
 func TestCollectKeepsVideoPath(t *testing.T) // Put media/7.hls-video.mp4, a row naming it as video_path (MarkVideoDownloadReady) → Collect → Stat succeeds
 ```
 
-- [ ] **Step 3: Run** `go test ./plugin/feed/ -run 'Package|Tracks|HLSKey|Schema'` and `go test ./plugin/feed/pipeline/ -run Collect` — FAIL.
+- [ ] **Step 3: Run** `go test ./plugin/feed/ -run 'Package|HLSKey'` and `go test ./plugin/feed/pipeline/ -run Collect` — FAIL.
 
-- [ ] **Step 4: Implement.** `SavePackage` is one transaction: delete the item's `media_tracks` (fragments cascade), insert tracks and fragments with one prepared statement each, then update `downloads` (`local_path`, `video_path`, `bytes`, `package_state='done'`, `package_error=''`). `MarkDownloadReady` and `MarkVideoDownloadReady` set `package_state=''`, `package_error=''` and delete the item's tracks in the same transaction. `Tracks` is two queries (tracks, then all fragments ordered by kind, seq), not one per track. `GetDownload`, `scanDownloads`/`PendingDownloads`, `DownloadsByItems` select the new columns; `DownloadFiles` adds `video_path`. `GetItemPlayback` selects `d.package_state = 'done'` into `Packaged`. `HLSKey` inserts 32 bytes from `crypto/rand` as hex with `INSERT ... ON CONFLICT DO NOTHING`, then reads it back.
+- [ ] **Step 4: Implement.** `SavePackage` is one UPDATE of `local_path`, `video_path`, `bytes`, `package_state='done'`, `package_error=''`. `MarkDownloadReady` and `MarkVideoDownloadReady` set `package_state=''` and `package_error=''` too. `GetDownload`, `scanDownloads`/`PendingDownloads` and `DownloadsByItems` select the new columns. `DownloadFiles` adds `video_path`. `GetItemPlayback` selects `Packaged` and `HasVideo`. `HLSKey` inserts 32 bytes from `crypto/rand` as hex with `INSERT ... ON CONFLICT DO NOTHING`, then reads it back.
 
 - [ ] **Step 5: Run** `go test ./plugin/feed/...` — PASS (existing tests included).
 
-- [ ] **Step 6: Commit** `feed: store media tracks, their fragments and a key for media links`.
+- [ ] **Step 6: Commit** `feed: record packaged tracks and a key for media links`.
 
 ---
 
@@ -322,7 +303,10 @@ func TestDownloadYouTube(t *testing.T) {
 	assert.True(t, strings.Contains(video, "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"), video)
 	audio := ytdlpArgs(t, space, d.LocalPath)
 	assert.True(t, strings.Contains(audio, "ba[ext=m4a]/ba"), audio)
-	for _, args := range []string{video, audio} { assert.False(t, strings.Contains(args, "merge-output-format"), args) }
+	for _, args := range []string{video, audio} {
+		assert.False(t, strings.Contains(args, "merge-output-format"), args)
+		assert.True(t, strings.Contains(args, "--fixup never"), args) // keep YouTube's fMP4 and its sidx
+	}
 }
 // A failed second fetch fails the download and leaves nothing in storage or cache.
 func TestDownloadYouTubeAudioFails(t *testing.T) // stub variant: exit 1 when args contain "ba[ext=m4a]" (env var read by the stub, e.g. YTDLP_FAIL_AUDIO=1) → State "error", no media/ files, cache downloads/ empty
@@ -332,11 +316,13 @@ func TestDownloadYouTubeAudioFails(t *testing.T) // stub variant: exit 1 when ar
 
 - [ ] **Step 2: Run** `go test ./plugin/feed/pipeline/ -run DownloadYouTube` — FAIL.
 
-- [ ] **Step 3: Implement.** For a YouTube item of type `video`, run yt-dlp twice (video `--format "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"`, audio `--format "ba[ext=m4a]/ba"`), each `-o` its own cache file, `Keep` both, then `MarkVideoDownloadReady`. On any failure remove what was kept or cached (`errors.Join` the removal errors) and `fail`. Audio items and non-YouTube items are unchanged. Update the `youtubeFormat` doc comment: tracks stay apart, the packager makes them HLS.
+- [ ] **Step 3: Implement.** For a YouTube item of type `video`, run yt-dlp twice, each with `--fixup never` and `-o` its own cache file. The video uses `--format "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"` and the audio `--format "ba[ext=m4a]/ba"`. `Keep` both, then `MarkVideoDownloadReady`. On any failure remove what was kept or cached (`errors.Join` the removal errors) and `fail`. YouTube audio items also get `--fixup never`. Non-YouTube items are unchanged. Update the `youtubeFormat` doc comment: tracks stay apart as YouTube serves them, and the packager makes them HLS.
 
 - [ ] **Step 4: Run** `go test ./plugin/feed/pipeline/` — PASS.
 
-- [ ] **Step 5: Commit** `feed: download YouTube video and audio as separate tracks`.
+- [ ] **Step 5: Check a real download.** yt-dlp is not on the dev machine. Install the pinned one (`2026.10.26`, with deno `v2.9.8`) into the project's `tmp/`, or run it in the Cog image. Download one public video's two tracks with the exact arguments above, then confirm with `ffprobe` and `grep -obUa sidx` that each file is single-track fragmented MP4 with a `sidx`. If either is not, record what yt-dlp gives in the report. The packager still remuxes such files (Task 5), so only the "used as it is" saving is lost.
+
+- [ ] **Step 6: Commit** `feed: download YouTube video and audio as separate tracks`.
 
 ---
 
@@ -379,21 +365,23 @@ The flags must match `testdata/media/make.sh`'s for `video.mp4` and `audio.m4a`.
 
 ```go
 // An old merged download becomes a video and an audio track.
-func TestPackageMerged(t *testing.T)        // video item, LocalPath media/1.mp4 = merged.mp4 → RunOnce → PackageState "done"; Tracks: audio Codecs "mp4a.40.2", video Codecs prefix "avc1."; LocalPath "media/<id>.hls-audio.m4a", VideoPath "media/<id>.hls-video.mp4"; both files ReadTrack without error; Bytes = their sizes
-// A YouTube download's two files become two tracks.
-func TestPackageSeparateTracks(t *testing.T) // LocalPath = audio.m4a copy, VideoPath = video.mp4 copy (MarkVideoDownloadReady) → done, both tracks
-func TestPackageMP3WithCover(t *testing.T)   // audio item, episode.mp3 → done; Tracks video == nil; audio Codecs "mp4a.40.2"
+func TestPackageMerged(t *testing.T)        // video item, LocalPath media/1.mp4 = merged.mp4 → RunOnce → PackageState "done"; LocalPath "media/<id>.hls-audio.m4a" (ReadTrack: Audio, "mp4a.40.2"), VideoPath "media/<id>.hls-video.mp4" (ReadTrack: Video, "avc1." prefix); Bytes = their sizes
+// Tracks that are already indexed fMP4, as YouTube's are, are used as they are.
+func TestPackageUsesIndexedTracksAsIs(t *testing.T) // LocalPath media/<id>.m4a = audio.m4a, VideoPath media/<id>.video.mp4 = video.mp4 (MarkVideoDownloadReady) → done; paths unchanged; files byte-identical; no files under media/ but those two; cache package/ empty
+// A downloaded track that is not indexed fMP4 is remuxed.
+func TestPackageRemuxesUnindexed(t *testing.T) // VideoPath = a non-fragmented single-track mp4 (make.sh adds `plain-video.mp4`: merged.mp4 with -an -movflags +faststart) → done, VideoPath "media/<id>.hls-video.mp4", ReadTrack succeeds
+func TestPackageMP3WithCover(t *testing.T)   // audio item, episode.mp3 → done; VideoPath ""; LocalPath ReadTrack: Audio, "mp4a.40.2"
 func TestPackageFailureKeepsMedia(t *testing.T) // LocalPath names a file of junk bytes → PackageState "error", PackageError non-empty, LocalPath unchanged and file still there; a second RunOnce does not try again (PendingPackage empty)
 func TestPackageThenCollect(t *testing.T)    // after TestPackageMerged's RunOnce, Collect removes media/1.mp4 and keeps both hls files
 ```
 
 - [ ] **Step 3: Run** `go test ./plugin/feed/pipeline/ -run Package` — FAIL.
 
-- [ ] **Step 4: Implement `package.go`.** Per pending item: `GetItem` and `GetDownload`; probe each input (`ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_disposition=attached_pic -of json`), sandboxed with `Read: [input]`. The video source is the first non-attached-pic video stream of `VideoPath`, else of `LocalPath`, and only when the item's type is `video`. The audio source is the first audio stream of `LocalPath`, else of `VideoPath`. No audio stream is a packaging error. Transcode audio when its codec is not `aac`. Run ffmpeg with `packageArgs` into the cache (`package/<id>.hls-audio.m4a`, `package/<id>.hls-video.mp4`), sandboxed with `Read: inputs, Write: [cache package dir]`. `ReadTrack` each output, so a file without an index never reaches storage. `Keep` each as `media/<id>.hls-audio.m4a` / `media/<id>.hls-video.mp4`, then `SavePackage` with the sum of `Keep`'s sizes. Any failure: remove what this run cached or kept, then `MarkPackageError` with the error, and return the error, which RunOnce logs like the other workers. `ctx` cancellation returns without recording an error, as `Silence.processOne` does.
+- [ ] **Step 4: Implement `package.go`.** Per pending item: `GetItem` and `GetDownload`. First, for each of `LocalPath` (wanting Audio) and `VideoPath` (wanting Video), `ReadTrack` the stored file. If it succeeds with the wanted kind, and for audio `Codecs` starts with `mp4a.40.`, the file is used as it is: no copy, no ffmpeg. When every needed track is like that, `SavePackage` with the same paths and sizes, and stop. Otherwise probe each input that still needs work (`ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_disposition=attached_pic -of json`), sandboxed with `Read: [input]`. The video source is the first non-attached-pic video stream of `VideoPath`, else of `LocalPath`, and only when the item's type is `video`. The audio source is the first audio stream of `LocalPath`, else of `VideoPath`. No audio stream is a packaging error. Transcode audio when its codec is not `aac`. Run ffmpeg with `packageArgs` into the cache (`package/<id>.hls-audio.m4a`, `package/<id>.hls-video.mp4`), sandboxed with `Read: inputs, Write: [cache package dir]`. `ReadTrack` each output, so a file without an index never reaches storage. `Keep` each as `media/<id>.hls-audio.m4a` / `media/<id>.hls-video.mp4`, then `SavePackage` with the sum of the tracks' sizes. Any failure: remove what this run cached or kept, then `MarkPackageError` with the error, and return the error, which RunOnce logs like the other workers. `ctx` cancellation returns without recording an error, as `Silence.processOne` does.
 
 - [ ] **Step 5: Wire it** in `orchestrator.processUser` after the downloader: `pipeline.NewPackager(store, space).RunOnce(ctx)`, logging its error as `"feed orchestrator: package"`. Add `ffmpeg` to the `ci` stage in the `Dockerfile` with a comment that the packager's tests run it.
 
-- [ ] **Step 6: Run** `go test ./plugin/feed/...` — PASS (with ffmpeg installed locally, or in the container from Task 1 Step 1; say which in the report).
+- [ ] **Step 6: Run** `go test ./plugin/feed/...` — PASS, with no skips (ffmpeg is installed).
 
 - [ ] **Step 7: Commit** `feed: package downloads as fragmented MP4 tracks with an index`.
 
@@ -407,32 +395,32 @@ func TestPackageThenCollect(t *testing.T)    // after TestPackageMerged's RunOnc
 - Test: `plugin/feed/hls_test.go`
 
 **Interfaces:**
-- Consumes: `Store.HLSKey/RotateHLSKey/Tracks/GetDownload`, `hls.MediaPlaylist/MasterPlaylist`, `PluginContext.UserLookup()`, `PluginContext.Now()`.
+- Consumes: `Store.HLSKey/RotateHLSKey/GetDownload`, `hls.ReadTrack/MediaPlaylist/MasterPlaylist`, `PluginContext.UserLookup()`.
 - Produces:
   ```go
-  const hlsLinkTTL = 24 * time.Hour
-  // HLSMasterURL is the signed path of an item's master playlist and when it stops working.
-  func (p *Plugin) HLSMasterURL(store *Store, username string, itemID int64) (string, time.Time, error)
+  // HLSMasterURL is the signed path of an item's master playlist. It works until the user revokes media links.
+  func (p *Plugin) HLSMasterURL(store *Store, username string, itemID int64) (string, error)
   ```
   Route: `GET /apps/feed/hls/{user}/{item}/{file}` with `file` one of `master.m3u8`, `audio.m3u8`, `video.m3u8`, `audio.m4a`, `video.mp4`.
   Action: `POST /apps/feed/settings/media-links/revoke`.
 
-- [ ] **Step 1: Write the failing tests.** Seed a packaged item without ffmpeg: copy `testdata/media/audio.m4a` and `video.mp4` into storage, `hls.ReadTrack` them, `SavePackage`. Requests carry no auth.
+- [ ] **Step 1: Write the failing tests.** Seed a packaged item without ffmpeg: copy `testdata/media/audio.m4a` and `video.mp4` into storage, then `MarkVideoDownloadReady` and `SavePackage` with those paths. Requests carry no auth.
 
 ```go
-func TestHLSMasterNoCookie(t *testing.T)       // GET HLSMasterURL path → 200, Content-Type application/vnd.apple.mpegurl, body has "#EXT-X-STREAM-INF" and `URI="audio.m3u8?exp=` and "video.m3u8?exp="
-func TestHLSMediaAndRanges(t *testing.T)       // GET video.m3u8 (same exp, sig) → every BYTERANGE lies inside video.mp4's size; GET video.mp4 with Range: bytes=<first segment> → 206 and the body equals that slice of the fixture; HEAD master.m3u8 → 200
+func TestHLSMasterNoCookie(t *testing.T)       // GET HLSMasterURL path → 200, Content-Type application/vnd.apple.mpegurl, body has "#EXT-X-STREAM-INF" and `URI="audio.m3u8?sig=` and "video.m3u8?sig="
+func TestHLSMediaAndRanges(t *testing.T)       // GET video.m3u8 (same sig) → every BYTERANGE lies inside video.mp4's size; GET video.mp4 with Range: bytes=<first segment> → 206 and the body equals that slice of the fixture; HEAD master.m3u8 → 200
 func TestHLSAudioOnlyItem(t *testing.T)        // package with audio only → master has no EXT-X-MEDIA; video.m3u8 → 404
-func TestHLSRejects(t *testing.T)              // table: bad sig, sig of another item, alice's sig on bob's path, an extra query parameter (400), unknown file (404), unknown user, expired (env.Clock.Advance(hlsLinkTTL+time.Second)) → 403 unless noted; none of them sets a cookie or redirects to login
+func TestHLSRejects(t *testing.T)              // table: bad sig, sig of another item, alice's sig on bob's path, an extra query parameter (400), unknown file (404), unknown user → 403 unless noted; none of them sets a cookie or redirects to login
+func TestHLSLinkDoesNotExpire(t *testing.T)    // env.Clock.Advance(10 * 365 * 24 * time.Hour) → the same URL still 200
 func TestHLSRevoke(t *testing.T)               // POST settings/media-links/revoke as alice (with CSRF, as other settings tests do) → 303 with flash; the old URL → 403; a new HLSMasterURL → 200
-func TestHLSNotPackaged(t *testing.T)          // a signed URL for an item with no tracks → 404
+func TestHLSNotPackaged(t *testing.T)          // a signed URL for an item whose PackageState is not "done" → 404
 ```
 
 - [ ] **Step 2: Run** `go test ./plugin/feed/ -run HLS` — FAIL.
 
-- [ ] **Step 3: Implement signing** in `hls_links.go`. The MAC is HMAC-SHA256 over `"cog-feed-hls\x00" + user + "\x00" + item + "\x00" + exp` (decimal), base64url without padding. Phase 1 has no options; Phases 3 and 4 append the canonical (sorted) option parameters to the message. Compare with `hmac.Equal`. The URL is `"/apps/feed/hls/" + url.PathEscape(user) + "/" + item + "/master.m3u8?exp=" + exp + "&sig=" + sig`.
+- [ ] **Step 3: Implement signing** in `hls_links.go`. The MAC is HMAC-SHA256 over `"cog-feed-hls\x00" + user + "\x00" + item` (decimal), base64url without padding. Phase 1 has no options; phases 3 and 4 append the canonical (sorted) option parameters to the message. Compare with `hmac.Equal`. The URL is `"/apps/feed/hls/" + url.PathEscape(user) + "/" + item + "/master.m3u8?sig=" + sig`.
 
-- [ ] **Step 4: Implement the handler** in `hls_serve.go`. Reject any query key other than `exp` and `sig` with 400 before anything else. Look up the user through `UserLookup().GetByUsername` (a nil `UserLookup` is a logged 500); an unknown user is 403, so the route never reveals who has an account. Open the store, and treat a missing key as 403. Verify the signature, then the expiry against `p.ctx.Now()`. Then load `Tracks`: `sql.ErrNoRows` → 404. Playlists are written with relative URIs carrying the request's `exp` and `sig`. They are sent with `Cache-Control: private, no-cache`. Track files are served with `http.ServeContent` from `space.Own.Open(Name(path))`, with `Content-Type` `video/mp4` or `audio/mp4` and `Cache-Control: private, max-age=86400`. Register it with `priv.RegisterRoute("GET /apps/feed/hls/{user}/{item}/{file}", ...)`. If the server's global middleware still redirects this unauthenticated route to login, find where `internal/web` exempts ncapi/gpodder, and exempt this prefix the same way.
+- [ ] **Step 4: Implement the handler** in `hls_serve.go`. Reject any query key other than `sig` with 400 before anything else. Look up the user through `UserLookup().GetByUsername` (a nil `UserLookup` is a logged 500); an unknown user is 403, so the route never reveals who has an account. Open the store, and treat a missing key as 403. Verify the signature. Then `GetDownload`; anything but `PackageState == "done"` → 404. For a playlist, open the track file(s) from storage and `ReadTrack` them; this reads only the head of each file. If the opened file is not an `io.ReaderAt`, that is a wrapped error, not a fallback that reads the whole file. Playlists are written with relative URIs carrying the request's `sig`. They are sent with `Cache-Control: private, no-cache`. Track files are served with `http.ServeContent` from `space.Own.Open(Name(path))`, with `Content-Type` `video/mp4` or `audio/mp4` and `Cache-Control: private, max-age=86400`. Register it with `priv.RegisterRoute("GET /apps/feed/hls/{user}/{item}/{file}", ...)`. If the server's global middleware still redirects this unauthenticated route to login, find where `internal/web` exempts ncapi/gpodder, and exempt this prefix the same way.
 
 - [ ] **Step 5: Implement revoke.** Add a "Media links" section to the sync settings page with one POST button. It says that links handed to other players (mpv, the app) stop working. The handler calls `RotateHLSKey`, then `setFlash(w, "success", "Media links revoked.")` and redirects 303 to `settings/sync`.
 
@@ -451,7 +439,7 @@ func TestHLSNotPackaged(t *testing.T)          // a signed URL for an item with 
 **Interfaces:**
 - Consumes: `Plugin.HLSMasterURL` (Task 6), `ItemPlayback.Packaged` (Task 3), `Download.PackageState/PackageError/VideoPath`.
 - Produces:
-  - `ResolveMedia`, VIDEO wanted, packaged with a video track → `MediaSource{Url: <signed master path>, Mime: "application/vnd.apple.mpegurl", Variant: VIDEO, ExpiresAt: <exp>}`.
+  - `ResolveMedia`, VIDEO wanted, packaged with a video track → `MediaSource{Url: <signed master path>, Mime: "application/vnd.apple.mpegurl", Variant: VIDEO}`, with no `ExpiresAt`.
   - `ResolveMedia`, ready download → `items/{id}/media` with `Variant: AUDIO` once packaged (the route now serves the audio track); before packaging, as today.
   - `GET api/stream-url/{id}` (video) → `{"hls": "<signed master path>"}` when packaged; `{"downloading": true, "message": "Preparing the video"}` while ready but pending; `{"error": "Couldn't prepare the video: <PackageError>"}` when packaging failed and there is no progressive file to fall back to (`VideoPath != ""`); a legacy merged download whose packaging failed keeps answering `{"url": ".../media"}`.
   - `ItemPlayback.HLSURL` set by `renderPlayerFragment` and `ItemDetail` when `Packaged`; the templ renders `data-hls={ ip.HLSURL }` and omits `src`.
@@ -459,7 +447,7 @@ func TestHLSNotPackaged(t *testing.T)          // a signed URL for an item with 
 - [ ] **Step 1: Write the failing tests.**
 
 ```go
-func TestResolveMediaPackagedVideo(t *testing.T)   // VARIANT_VIDEO → Mime "application/vnd.apple.mpegurl", Url has prefix "/apps/feed/hls/alice/<id>/master.m3u8?exp=", ExpiresAt ≈ now+24h; fetching that Url with no auth → 200
+func TestResolveMediaPackagedVideo(t *testing.T)   // VARIANT_VIDEO → Mime "application/vnd.apple.mpegurl", Url has prefix "/apps/feed/hls/alice/<id>/master.m3u8?sig=", ExpiresAt nil; fetching that Url with no auth → 200
 func TestResolveMediaPackagedAudio(t *testing.T)   // VARIANT_AUDIO on the same item → Url ".../items/<id>/media", Variant AUDIO
 func TestStreamURLPackaged(t *testing.T)           // {"hls": ...} prefix as above
 func TestStreamURLPreparing(t *testing.T)          // ready, package_state '' → downloading true, message "Preparing the video"
@@ -509,7 +497,7 @@ Existing tests in `rpc_media_test.go` and `pages_player_test.go` must keep passi
 **Files:**
 - Modify: `DESIGN/plugins/feed_hls.md`, `TODO.md`
 
-- [ ] **Step 1:** In the design, set Status to "phase 1 done (date)". Record this plan's decisions where the design leaves them open: packaging with the mp4 muxer and a global `sidx` (in place of the HLS muxer line), fragments stored and segments grouped per request, `local_path` as the audio track, the URL form with the user in the path, one grant per item presentation, the key in `feed_settings` and the revoke button. Under Open questions, add any new ones the work turned up.
+- [ ] **Step 1:** In the design, set Status to "phase 1 done (date)". Record this plan's decisions: the track file's `sidx` is the index (nothing in the database), packaging with the mp4 muxer and a global `sidx` in place of the HLS muxer line, indexed tracks used as they are, `local_path` as the audio track, and the URL form with the user in the path and one grant per item presentation. Signed URLs stop being "expiring": links last until the user revokes them (the key in `feed_settings`, the revoke button), so the Signed URLs section drops expiry and the re-signing redirect. Under Open questions, add any new ones the work turned up.
 - [ ] **Step 2:** In `TODO.md`, tick phase 1 under "Feed media over HLS" and leave phases 2 to 6 as open sub-items.
 - [ ] **Step 3: Run** `go tool verify`. It must pass, or the report says which part did not and why.
 - [ ] **Step 4: Commit** `feed: HLS phase 1 in the design and TODO`.
