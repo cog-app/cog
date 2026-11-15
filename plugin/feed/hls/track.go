@@ -171,17 +171,22 @@ func parseMoov(moov []byte) (Track, error) {
 }
 
 // sampleEntry fills in the codec and picture size from the first sample
-// entry. A codec it does not know leaves Codecs empty.
+// entry. A codec it does not know leaves Codecs empty; a video track's size
+// is read whatever its codec, so a playlist still marks it as video.
 func sampleEntry(t *Track, e memBox) error {
-	switch e.typ {
-	case "avc1", "avc3":
-		// SampleEntry (8) + VisualSampleEntry fields up to width (16).
-		const fixed = 78
-		if len(e.data) < fixed {
+	// A VisualSampleEntry: SampleEntry (8), then 16 bytes, then width and
+	// height, then fields up to byte 78, where its child boxes start.
+	const visualFixed = 78
+	if t.Kind == Video {
+		if len(e.data) < visualFixed {
 			return errors.New("short")
 		}
 		t.Width = int(binary.BigEndian.Uint16(e.data[24:]))
 		t.Height = int(binary.BigEndian.Uint16(e.data[26:]))
+	}
+	switch e.typ {
+	case "avc1", "avc3":
+		const fixed = visualFixed
 		avcC, ok, err := child(e.data[fixed:], "avcC")
 		if err != nil {
 			return err

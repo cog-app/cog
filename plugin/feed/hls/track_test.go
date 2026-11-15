@@ -1,6 +1,7 @@
 package hls_test
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"os"
@@ -89,4 +90,20 @@ func TestReadTrackNotATrack(t *testing.T) {
 	assert.True(t, errors.Is(err, hls.ErrNoIndex), err)
 	_, err = readTrackErr(t, "plain-video.mp4")
 	assert.True(t, errors.Is(err, hls.ErrNoIndex), err)
+}
+
+// A video track in a codec ReadTrack cannot name (VP9, AV1, HEVC) still has
+// its picture size, so the master playlist marks its variant as video.
+func TestReadTrackOtherVideoCodec(t *testing.T) {
+	b, err := os.ReadFile("../testdata/media/video.mp4")
+	require.NoError(t, err)
+	i := bytes.Index(b, []byte("avc1"))
+	require.True(t, i > 0, "no avc1 sample entry")
+	copy(b[i:], "vp09")
+	tr, err := hls.ReadTrack(bytes.NewReader(b), int64(len(b)))
+	require.NoError(t, err)
+	assert.Equal(t, hls.Video, tr.Kind)
+	assert.Equal(t, "", tr.Codecs)
+	assert.Equal(t, 160, tr.Width)
+	assert.Equal(t, 90, tr.Height)
 }
