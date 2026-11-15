@@ -52,13 +52,13 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := NewStore(db)
-	key, err := store.HLSKey()
+	key, err := store.ExistingHLSKey()
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
 	sig := q.Get("sig")
-	if !validHLSSignature(key, username, itemID, sig) {
+	if key == nil || !validHLSSignature(key, username, itemID, sig) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}

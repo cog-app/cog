@@ -205,3 +205,14 @@ func TestHLSNotPackaged(t *testing.T) {
 	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 1))
 	env.Get(t, masterURL(t, env, "alice", id)).Status(http.StatusNotFound)
 }
+
+// Serving a link only reads the key: a request for a user who never signed
+// one finds none, is refused, and writes nothing.
+func TestHLSNoKeyWritesNothing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	env.Get(t, "/apps/feed/hls/alice/1/master.m3u8?sig=AAAA", cogtest.StopRedirect).Status(http.StatusForbidden)
+	var n int
+	require.NoError(t, feedStore(t, env, "alice").DB().QueryRow(`SELECT count(*) FROM feed_settings WHERE key = 'hls_key'`).Scan(&n))
+	assert.Equal(t, 0, n)
+}

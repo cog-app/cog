@@ -2,7 +2,9 @@ package feed
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 )
 
@@ -47,6 +49,9 @@ const hlsKeySetting = "hls_key"
 // HLSKey returns the key the user's media links are signed with, making one
 // the first time.
 func (s *Store) HLSKey() ([]byte, error) {
+	if key, err := s.ExistingHLSKey(); err != nil || key != nil {
+		return key, err
+	}
 	fresh, err := newHLSKey()
 	if err != nil {
 		return nil, err
@@ -59,6 +64,24 @@ func (s *Store) HLSKey() ([]byte, error) {
 	if err := s.db.QueryRow(`SELECT value FROM feed_settings WHERE key = ?`, hlsKeySetting).Scan(&v); err != nil {
 		return nil, fmt.Errorf("hls key: %w", err)
 	}
+	return decodeHLSKey(v)
+}
+
+// ExistingHLSKey returns the key media links are signed with, or nil when
+// none has been made, without writing: links are checked on every segment.
+func (s *Store) ExistingHLSKey() ([]byte, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM feed_settings WHERE key = ?`, hlsKeySetting).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("hls key: %w", err)
+	}
+	return decodeHLSKey(v)
+}
+
+func decodeHLSKey(v string) ([]byte, error) {
 	key, err := hex.DecodeString(v)
 	if err != nil || len(key) != 32 {
 		return nil, fmt.Errorf("hls key: stored key is not 32 hex bytes (%d bytes, %v)", len(key), err)
