@@ -1,8 +1,9 @@
 # Feed media over HLS
 
-Status: design, not started (2026-11-15). Supersedes the merged-mp4 YouTube
-download (`feed: YouTube video plays from a download`, MR !54), which stays
-until this lands.
+Status: phase 1 done (2026-11-15): downloaded items play over HLS from
+signed links, in the web player through hls.js. Phases 2 to 6 are open.
+Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
+download`, MR !54); merged downloads made before are repackaged as tracks.
 
 ## Why
 
@@ -26,7 +27,7 @@ them separate too:
   audio group (original and clean) and a captions group.
 - The server applies mute and skip by writing the playlist, so any HLS
   player gets them.
-- Signed, expiring URLs, so an external player needs no credentials.
+- Signed URLs, so an external player needs no credentials.
 - No transcoding of whole videos. Stream copy wherever possible, and
   transcode only the small pieces an edit needs.
 
@@ -40,9 +41,38 @@ them separate too:
 
 Each source track is kept on its own as a **fragmented MP4** with a segment
 index (start time, duration, byte range, keyframe), so a playlist can address
-any run of segments by byte range out of one file. Packaging is a stream copy
-(`ffmpeg -c copy -f hls -hls_segment_type fmp4 -hls_flags single_file`, or
-the equivalent muxing in Go), and its index is stored in the feed database.
+any run of segments by byte range out of one file.
+
+- **The index is the track file's own `sidx`** (`plugin/feed/hls`,
+  `ReadTrack`). Nothing about fragments goes in the database, and no playlist
+  is baked to disk: a playlist request reads the track's `moov` and `sidx`, a
+  few KB at the head of the file (under 25 KB for an hour). A stored copy
+  could fall out of step with the file, and a baked playlist would change
+  with every revoked key and every option. Phase 5 reads googlevideo's `sidx`
+  with the same parser over one Range request. A cache comes in if remote
+  reads turn out slow.
+- **Packaging** (`pipeline.Packager`, after the downloader) is ffmpeg's mp4
+  muxer with a global `sidx` (`-movflags
+  +frag_keyframe+empty_moov+default_base_moof+global_sidx`; audio in 2 s
+  fragments), not its HLS muxer. The `sidx` also makes the file seekable
+  when it is played straight through, which Media3 needs for the media route.
+  Video is always stream-copied; audio is copied when it is AAC and encoded
+  to AAC at 128k otherwise. Cover art is never a video track.
+- **A file that already is a single-track fMP4 with a `sidx` is used as it
+  is**, not copied: YouTube's DASH tracks qualify when yt-dlp runs with
+  `--fixup never`, which keeps it from remuxing m4a into a plain MP4. Audio
+  qualifies when it is AAC.
+- After packaging, `downloads.local_path` is the audio track and
+  `downloads.video_path` the video track: the downloaded files when they were
+  used as they are, else `media/<id>.hls-audio.m4a` and
+  `media/<id>.hls-video.mp4`. Silence, transcription, profanity and the media
+  route keep reading `local_path`; Collect removes a replaced original.
+- A download that cannot be packaged keeps playing as it did (the media
+  route), its error is shown, and it is not tried again until it is
+  downloaded again.
+- Fragments are grouped into segments of about 6 s, each starting on a
+  keyframe, when the playlist is written. Phase 4 cuts at fragment
+  boundaries.
 
 - **YouTube, downloaded:** yt-dlp fetches the H.264 (≤1080p) video track and
   the m4a audio track separately, with no merge. Both are already fragmented
@@ -122,16 +152,22 @@ Query parameters on the master playlist, carried into every URL it writes:
 
 ## Signed URLs
 
-`/apps/feed/hls/{item}/master.m3u8?exp=…&sig=…` is signed with a per-user key
-over the user, the item, the options and the expiry. Every URL inside the
-playlists carries a token derived from it, so segment and caption requests
-need no cookie or header. Revoking the key (a user setting) kills every link.
+`/apps/feed/hls/{user}/{item}/master.m3u8?sig=…` is an HMAC-SHA256 with a
+per-user key over the user and the item (and, from phases 3 and 4, the
+options in a canonical order). The user is in the path because the route has
+no session. Every URL inside the playlists is relative and carries the same
+`sig`, so one grant covers one item's presentation and segment and caption
+requests need no cookie or header. Any other query parameter is refused until
+a phase defines it.
+
+**Links do not expire.** A link that leaks plays one item, which costs little.
+The key (32 random bytes in `feed_settings`, made on first use) is what ends
+them: "Revoke media links" on the Sync settings page replaces it, and every
+link handed out stops working.
 
 A Cog playlist (or any view) is also an M3U of signed master URLs:
-`/apps/feed/playlists/{id}.m3u?exp=…&sig=…&skip=silence`. A desktop launcher
-is just `mpv <that URL>`. A long expiry suits a personal launcher, and a
-re-signing redirect keeps it working past the expiry of the item URLs inside
-it.
+`/apps/feed/playlists/{id}.m3u?sig=…&skip=silence`. A desktop launcher is just
+`mpv <that URL>`.
 
 ## Clients
 
@@ -164,6 +200,12 @@ it.
 - Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,
   also offer `--sub-file` from the M3U.
 - How to get progress back from external players.
+- YouTube's audio tracks come in fragments of about 10 s, so their segments
+  run longer than 6 s. Fine for VOD; phase 4's cuts are coarser there unless
+  the edge transcode splits a fragment.
+- Packaging works through the backlog 100 downloads per tick, and an MP3
+  podcast is encoded to AAC, tens of seconds per hour of audio. A large
+  library's first packaging run holds up the other workers for a while.
 - Hardware encoding (VAAPI; the compose file needs `/dev/dri` and the render
   group, as Jellyfin's has) once video edges are re-encoded. The bubblewrap
   sandbox must pass `/dev/dri` through as well.

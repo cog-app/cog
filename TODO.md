@@ -158,12 +158,25 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Media
 
-- [ ] **Feed media over HLS** (next; `DESIGN/plugins/feed_hls.md`): video
+- [ ] **Feed media over HLS** (`DESIGN/plugins/feed_hls.md`): video
       and audio as separate fragmented-MP4 tracks, byte-range playlists written
       per request, mute (clean rendition) and skip (dropped segments, edge
       transcodes) applied server-side for any player, captions as a WebVTT
       rendition, and signed URLs and M3Us for external players like mpv.
       Replaces the merged-mp4 YouTube download.
+  - [x] Phase 1: YouTube downloads as separate tracks, the packager
+        (`pipeline.Packager`; tracks indexed by their own `sidx`), master and
+        media playlists, byte-range serving from signed links that need no
+        session (`/apps/feed/hls/…`, revoked from Sync settings), and the web
+        player on hls.js (`TestPackage*`, `TestHLS*`, `TestBrowser/HLS`).
+  - [ ] Phase 2: the captions rendition.
+  - [ ] Phase 3: mute, the clean rendition with spliced re-encoded segments.
+  - [ ] Phase 4: skip, with dropped segments, edge transcodes and the time
+        mapping.
+  - [ ] Phase 5: undownloaded YouTube from googlevideo, after the off-Wi-Fi
+        test, with a proxy fallback.
+  - [ ] Phase 6: M3U of a playlist or view for external players; Android on
+        Media3 HLS with background audio-only.
 - [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
       a request that was not HTMX went through `shellMiddleware`, which
       buffered the whole file and wrapped it in the HTML shell, and a missing
@@ -175,10 +188,9 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       expiry its URL carries, the origin for other enclosures
       (`TestResolveMedia*`). Still open: `max_height`, and caching a resolved
       stream until it expires.
-- [ ] `?variant=audio` on the media route for a downloaded video: an audio
-      sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
-      download, so background play and audio-only offline copies do not move
-      the video bytes.
+- [x] Audio alone for a downloaded video without moving the video bytes:
+      once packaged, the media route serves the audio track, which is a file
+      of its own (HLS phase 1, `TestResolveMediaPackagedAudio`).
 - [x] Ranges that never run ffmpeg in the request. Silence detection is a
       pipeline worker after the downloader (`pipeline.Silence`); the endpoint
       reads the row and answers `pending` until it has run, and the web

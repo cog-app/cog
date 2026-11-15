@@ -12,7 +12,7 @@ type recorder struct {
 	failed bool
 }
 
-func (r *recorder) Helper()       {}
+func (r *recorder) Helper()      {}
 func (r *recorder) Error(...any) { r.failed = true }
 
 func TestInDelta(t *testing.T) {
