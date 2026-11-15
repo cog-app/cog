@@ -175,10 +175,7 @@ func VTTSegment(cues []Cue, start, end float64, mpegts int64) string {
 
 // vttStamp formats seconds as HH:MM:SS.mmm.
 func vttStamp(s float64) string {
-	ms := int64(math.Round(s * 1000))
-	if ms < 0 {
-		ms = 0
-	}
+	ms := max(int64(math.Round(s*1000)), 0)
 	return fmt.Sprintf("%02d:%02d:%02d.%03d", ms/3600000, ms/60000%60, ms/1000%60, ms%1000)
 }
 

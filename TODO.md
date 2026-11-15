@@ -169,7 +169,10 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         media playlists, byte-range serving from signed links that need no
         session (`/apps/feed/hls/…`, revoked from Sync settings), and the web
         player on hls.js (`TestPackage*`, `TestHLS*`, `TestBrowser/HLS`).
-  - [ ] Phase 2: the captions rendition.
+  - [x] Phase 2: the captions rendition (segmented WebVTT with
+        `X-TIMESTAMP-MAP`, YouTube rolling-caption cleanup, `TestParseVTT*`,
+        `TestVTTSegment*`, `TestHLSSubs*`, `TestHLSCaptions*`,
+        `TestBrowser/HLSCaptions*`).
   - [ ] Phase 3: mute, the clean rendition with spliced re-encoded segments.
   - [ ] Phase 4: skip, with dropped segments, edge transcodes and the time
         mapping.

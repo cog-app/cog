@@ -100,7 +100,7 @@ func TestSegmentCaptionBoundsOffsetStart(t *testing.T) {
 	// The audio starts at 1.5 s of media time; caption time 0 is its first
 	// sample, so segment 1 (media 7.5 s) covers captions 6 s to 12 s.
 	var frags []hls.Fragment
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		frags = append(frags, hls.Fragment{Start: 1.5 + 3*float64(i), Duration: 3, Offset: int64(i) * 100, Length: 100})
 	}
 	audio := hls.Track{Kind: hls.Audio, Fragments: frags}

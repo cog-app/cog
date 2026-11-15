@@ -1,7 +1,8 @@
 # Feed media over HLS
 
-Status: phase 1 done (2026-11-15): downloaded items play over HLS from
-signed links, in the web player through hls.js. Phases 2 to 6 are open.
+Status: phases 1 and 2 done (2026-11-15): downloaded items play over HLS from
+signed links, in the web player through hls.js, with a captions rendition.
+Phases 3 to 6 are open.
 Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
 download`, MR !54); merged downloads made before are repackaged as tracks.
 
@@ -92,6 +93,32 @@ any run of segments by byte range out of one file.
 - **Captions:** the VTT Cog already keeps (`downloads.captions_path`: YouTube
   auto-subs or whisper). They are served as segmented WebVTT with
   `X-TIMESTAMP-MAP`, cut to the same segments as the media.
+  - One VTT segment per audio segment, with the audio segment's duration. It
+    holds every cue that overlaps it with the cue's own times, not clipped; a
+    cue that crosses a boundary appears in both, and hls.js and Safari drop a
+    cue they already hold. The cue bounds of a segment are caption time: the
+    segment's start minus the audio track's first fragment start
+    (`hls.SegmentCaptionBounds`).
+  - `X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000`, not the first fragment's
+    `Start` x 90000. hls.js 1.7.4 rebases the timeline so the first sample
+    plays at 0; `TestBrowser/HLSCaptionsOffset` (tracks starting at 1.5 s)
+    put the cue 1.477 s late with the Start-based value and exactly at 3.000
+    with 0. Real packaged and YouTube tracks start at 0, where both agree.
+  - YouTube auto-captions are cleaned when read, not when stored (profanity
+    reads the stored file): cues under 50 ms (YouTube's 10 ms "hold" cues),
+    inline `<...>` tags, blank lines, and leading lines that repeat the end of
+    the previous kept cue (rolling captions) are dropped, and a cue left
+    with no text is dropped.
+  - The rendition is `NAME="Captions"`, `DEFAULT=NO`, `AUTOSELECT=YES`, with
+    no `LANGUAGE`. The SUBTITLES group is listed only when
+    `captions_path != ""`, and then every variant (video and audio-only)
+    names it. A missing file is logged and the master is served without it.
+  - The web player's CC button appears only on the video player, once hls.js
+    (or Safari's native text tracks) reports a subtitle track. It is off by
+    default and not saved as a pref.
+  - `TARGETDURATION` is the longest `EXTINF` as printed, rounded to the
+    nearest integer (RFC 8216), which fixes phase 1's 6.4996-printed-as-6.500
+    against a target of 6.
 
 ## Playlists
 
@@ -183,7 +210,7 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 1. Separate-track downloads and packaging, the segment index, master and
    media playlists for downloaded items, byte-range serving, and signed
    URLs. Web player on hls.js.
-2. The captions rendition.
+2. The captions rendition. Done.
 3. Mute: the clean rendition, with spliced re-encoded segments.
 4. Skip: segments left out, discontinuities, edge transcodes, minimum length
    and merging, the edit-list id and time mapping.
@@ -200,6 +227,11 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   podcasts.
 - Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,
   also offer `--sub-file` from the M3U.
+- Whether iOS Safari's native HLS and Media3 (spec-following, media
+  timeline) show captions early by the track's start offset on a track that
+  does not start at 0, given `MPEGTS:0`. Checked on the phone in phase 6b.
+- A captions language is not recorded: neither source (YouTube, whisper)
+  records one reliably, so the rendition has no `LANGUAGE`.
 - How to get progress back from external players.
 - YouTube's audio tracks come in fragments of about 10 s, so their segments
   run longer than 6 s. Fine for VOD; phase 4's cuts are coarser there unless
