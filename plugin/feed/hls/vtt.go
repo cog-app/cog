@@ -182,14 +182,6 @@ func vttStamp(s float64) string {
 	return fmt.Sprintf("%02d:%02d:%02d.%03d", ms/3600000, ms/60000%60, ms/1000%60, ms%1000)
 }
 
-// TimestampMap is the MPEGTS value for a track: its first fragment's Start × 90000, rounded.
-func TimestampMap(t Track) int64 {
-	if len(t.Fragments) == 0 {
-		return 0
-	}
-	return int64(math.Round(t.Fragments[0].Start * 90000))
-}
-
 // SubtitleEntries lists one VTT segment per segment of the audio track; uri(n) names segment n.
 func SubtitleEntries(audio Track, uri func(n int) string) []Entry {
 	segs := TrackSegments(audio)

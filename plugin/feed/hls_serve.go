@@ -182,7 +182,9 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
-		writeVTT(w, r, hls.VTTSegment(cues, start, end, hls.TimestampMap(audio)))
+		// MPEGTS 0: hls.js rebases the timeline so the first audio sample plays
+		// at 0, and this puts caption time 0 there (TestBrowser/HLSCaptionsOffset).
+		writeVTT(w, r, hls.VTTSegment(cues, start, end, 0))
 	}
 }
 

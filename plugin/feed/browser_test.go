@@ -165,6 +165,7 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "hls", "pass")
 	hlsItem := packagedItem(t, env, "hls", true)
 	env.CreateUser(t, "hlscc", "pass")
+	ccOffsetItem := captionedItemFrom(t, env, "hlscc", "audio-offset.m4a", "video-offset.mp4", "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 	ccItem := captionedItem(t, env, "hlscc", true, "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 
 	// A packaged video plays over HLS: through hls.js where the browser has
@@ -201,6 +202,34 @@ func TestBrowser(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 		}
 		assert.InDelta(t, 3.0, start, 0.1)
+	})
+
+	// The tracks start 1.5 s in. A cue at caption time 3 s must show 3 s after
+	// the first audio sample, which is where the media element's first
+	// buffered range begins: hls.js places the cue with the segment's
+	// X-TIMESTAMP-MAP, and buffered.start(0) is the same timeline's origin.
+	t.Run("HLSCaptionsOffset", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlscc", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", ccOffsetItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#player-cc:not([hidden])`)
+		b.Click(t, "#player-cc")
+		b.WaitVisible(t, `#feed-player[data-captions="on"]`)
+		const probe = `() => { const el = document.querySelector("#player-el"); const b0 = el.buffered.length ? el.buffered.start(0) : -1; for (const x of el.textTracks) if (x.cues && x.cues.length) return [x.cues[0].startTime, b0]; return [-1, b0] }`
+		var cue, buf float64
+		for deadline := time.Now().Add(20 * time.Second); ; {
+			got, _ := b.Eval(t, probe).([]any)
+			require.True(t, len(got) == 2, "probe returned %v", got)
+			cue, _ = got[0].(float64)
+			buf, _ = got[1].(float64)
+			if (cue >= 0 && buf >= 0) || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Logf("cue startTime %.3f, buffered.start(0) %.3f", cue, buf)
+		assert.InDelta(t, 3.0, cue-buf, 0.1)
 	})
 
 	t.Run("EmptyState", func(t *testing.T) {

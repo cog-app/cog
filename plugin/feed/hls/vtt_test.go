@@ -83,13 +83,8 @@ func TestVTTSegmentEscapesArrow(t *testing.T) {
 	assert.True(t, strings.Contains(s, "a --&gt; b\n"), s)
 }
 
-func TestVTTSegmentTimestampMap(t *testing.T) {
-	tr := audioTrack()
-	for i := range tr.Fragments {
-		tr.Fragments[i].Start += 1.5
-	}
-	assert.Equal(t, int64(135000), hls.TimestampMap(tr))
-	assert.True(t, strings.Contains(hls.VTTSegment(nil, 0, 6, hls.TimestampMap(tr)), "MPEGTS:135000,"))
+func TestVTTSegmentCarriesMPEGTS(t *testing.T) {
+	assert.True(t, strings.Contains(hls.VTTSegment(nil, 0, 6, 135000), "X-TIMESTAMP-MAP=MPEGTS:135000,LOCAL:00:00:00.000"))
 }
 
 func TestSubtitleEntries(t *testing.T) {
@@ -119,7 +114,7 @@ func TestSegmentCaptionBoundsOffsetStart(t *testing.T) {
 	assert.False(t, ok)
 
 	cues := []hls.Cue{{Start: 5, End: 5.5, Text: "early"}, {Start: 7, End: 8, Text: "inside"}}
-	seg := hls.VTTSegment(cues, start, end, hls.TimestampMap(audio))
+	seg := hls.VTTSegment(cues, start, end, 0)
 	assert.True(t, strings.Contains(seg, "inside"), seg)
 	assert.False(t, strings.Contains(seg, "early"), seg)
 }
