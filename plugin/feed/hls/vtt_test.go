@@ -118,3 +118,26 @@ func TestSegmentCaptionBoundsOffsetStart(t *testing.T) {
 	assert.True(t, strings.Contains(seg, "inside"), seg)
 	assert.False(t, strings.Contains(seg, "early"), seg)
 }
+
+func parseTexts(t *testing.T, src string) []string {
+	t.Helper()
+	cues, err := hls.ParseVTT(strings.NewReader(src))
+	require.NoError(t, err)
+	texts := make([]string, len(cues))
+	for i, c := range cues {
+		texts[i] = c.Text
+	}
+	return texts
+}
+
+// A word that really was said twice is not folded away.
+func TestParseVTTKeepsRepeatedCue(t *testing.T) {
+	got := parseTexts(t, "WEBVTT\n\n00:01.000 --> 00:02.000\nNo.\n\n00:02.000 --> 00:03.000\nNo.\n")
+	assert.Equal(t, []string{"No.", "No."}, got)
+}
+
+// Repeated leading lines are still folded while a line remains.
+func TestParseVTTFoldsLeadingRepeat(t *testing.T) {
+	got := parseTexts(t, "WEBVTT\n\n00:01.000 --> 00:02.000\nA\n\n00:02.000 --> 00:03.000\nA\nB\n")
+	assert.Equal(t, []string{"A", "B"}, got)
+}

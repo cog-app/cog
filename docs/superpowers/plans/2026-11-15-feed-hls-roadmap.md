@@ -106,7 +106,18 @@ type Presentation struct {
 func Master(p Presentation) string // MasterPlaylist(audio, video, aURI, vURI) is kept as a wrapper until no caller is left
 ```
 
-Phase 2 also produces `hls.Cue{Start, End float64; Text string}`, `hls.ParseVTT(r io.Reader) ([]Cue, error)` (keeping cue text, cleaning up YouTube's rolling auto-captions) and `hls.VTTSegment(cues []Cue, start, end float64, mpegts int64) string`.
+Phase 2 also produces:
+- `hls.Cue{Start, End float64; Text string}`.
+- `hls.ParseVTT(r io.Reader) ([]Cue, error)`, which keeps cue text and folds YouTube's rolling auto-captions.
+- `hls.VTTSegment(cues []Cue, start, end float64, mpegts int64) string`.
+- `hls.SegmentCaptionBounds(audio Track, n int) (start, end float64, ok bool)`, in caption time.
+
+There is no `TimestampMap`.
+
+**As built (phase 2), later phases must know these:**
+- **Captions are written with `X-TIMESTAMP-MAP=MPEGTS:0`, not the track's first `Start`.** hls.js 1.7.4 rebases the timeline so the first sample plays at 0. `TestBrowser/HLSCaptionsOffset` proves this only for a timeline with no discontinuities.
+- **Phase 4 must re-prove caption timing after a cut**, with a browser test of a cue after a dropped run. Cues are in item time; after an `EXT-X-DISCONTINUITY`, each VTT segment's cues must be shifted into presentation time, or given a per-piece MPEGTS.
+- **Phase 2's `Master` writes no `AUDIO` renditions without video**, and the audio-only variant has no `AUDIO=`. Phase 3's audio-only clean presentation changes that branch. Its Task 1 rules on it, and phase 2's goldens and `TestMasterSubtitlesAudioOnly` are updated then.
 
 ### `plugin/feed`: file names served under `/apps/feed/hls/{user}/{item}/`
 

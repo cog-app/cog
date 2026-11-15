@@ -51,11 +51,10 @@ func ParseVTT(r io.Reader) ([]Cue, error) {
 				return
 			}
 			lines := strings.Split(cue.Text, "\n")
-			for len(lines) > 0 && lines[0] == prevLast {
+			// Fold repeated leading lines, but never empty a cue: a word
+			// that really was said twice stays.
+			for len(lines) > 1 && lines[0] == prevLast {
 				lines = lines[1:]
-			}
-			if len(lines) == 0 {
-				return
 			}
 			cue.Text = strings.Join(lines, "\n")
 			prevLast = lines[len(lines)-1]
