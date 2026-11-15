@@ -173,6 +173,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("settings/playlists", http.HandlerFunc(pages.SettingsPlaylists))
 	ctx.RegisterPage("settings/sync", http.HandlerFunc(pages.SettingsSync))
 	ctx.RegisterAction("POST", "settings/sync", http.HandlerFunc(pages.SaveSyncSettings))
+	ctx.RegisterAction("POST", "settings/media-links/revoke", http.HandlerFunc(pages.RevokeMediaLinks))
 	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))
 	ctx.RegisterAction("POST", "subscriptions/bulk", http.HandlerFunc(pages.BulkSubscriptions))
@@ -199,6 +200,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/news/api/", ncapi.New(ncapiBackend{p}))
 		priv.RegisterRoute(gpoddersync.Prefix, gpoddersync.New(ncapiBackend{p}))
+		priv.RegisterRoute(hlsRoute, http.HandlerFunc(p.ServeHLS))
 
 		sub, err := fs.Sub(staticFS, "static")
 		if err != nil {

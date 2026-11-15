@@ -372,6 +372,22 @@ func (h *Pages) SettingsSync(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, feedSettingsSyncPage(sb, settings, folders, plugin.CSRFToken(r)))
 }
 
+// RevokeMediaLinks handles POST /settings/media-links/revoke: every signed
+// media link handed out so far stops working.
+func (h *Pages) RevokeMediaLinks(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if err := store.RotateHLSKey(); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	h.setFlash(w, "success", "Media links revoked.")
+	http.Redirect(w, r, "/apps/feed/settings/sync", http.StatusSeeOther)
+}
+
 // syncSetting is one protocol's settings as the Sync page shows them.
 type syncSetting struct {
 	Query  string

@@ -1076,6 +1076,14 @@ templ feedSettingsSyncPage(sb sidebarData, settings map[syncprefs.Protocol]syncS
 				<button class="btn btn-primary" type="submit">Save</button>
 			</div>
 		</form>
+		<section class="card">
+			<h2 class="card-title">Media links</h2>
+			<p class="card-desc">Players that cannot log in, such as mpv and the app, play from links that carry their own permission. A link lasts until you revoke them all here; then every link handed out stops working.</p>
+			<form method="post" action="/apps/feed/settings/media-links/revoke">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<button class="btn btn-danger" type="submit">Revoke media links</button>
+			</form>
+		</section>
 	}
 }
 
