@@ -347,11 +347,17 @@ func TestStreamURLPackageError(t *testing.T) {
 	store := feedStore(t, env, "alice")
 	id := twoTrackDownload(t, store)
 	require.NoError(t, store.MarkPackageError(id, "ffmpeg: boom"))
-	assert.Equal(t, map[string]any{"error": "Couldn't prepare the video: ffmpeg: boom"}, streamURL(t, env, u, id))
+	// Asking again downloads it again, as for a download that failed.
+	got := streamURL(t, env, u, id)
+	assert.Equal(t, true, got["downloading"])
+	assert.Equal(t, "Downloading the video again; preparing it failed: ffmpeg: boom", got["message"])
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", d.State)
 
 	// A merged download from before tracks were kept apart still plays as it is.
 	merged := seedAudioItem(t, store, "https://cdn.example.com/talk.mp4")
-	_, err := store.DB().Exec(`UPDATE items SET type = 'video' WHERE id = ?`, merged)
+	_, err = store.DB().Exec(`UPDATE items SET type = 'video' WHERE id = ?`, merged)
 	require.NoError(t, err)
 	require.NoError(t, store.EnqueueDownload(merged))
 	require.NoError(t, store.MarkDownloadReady(merged, "media/2.mp4", 1))

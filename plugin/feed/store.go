@@ -670,10 +670,12 @@ const enqueueDownloadSQL = `
 	INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
 	ON CONFLICT(item_id) DO UPDATE SET
 		state = CASE
+			WHEN downloads.state = 'ready' AND downloads.package_state = 'error' AND downloads.video_path != '' THEN 'queued'
 			WHEN downloads.state IN ('ready','downloading') THEN downloads.state
 			ELSE 'queued'
 		END,
 		error = CASE
+			WHEN downloads.state = 'ready' AND downloads.package_state = 'error' AND downloads.video_path != '' THEN ''
 			WHEN downloads.state IN ('ready','downloading') THEN downloads.error
 			ELSE ''
 		END`

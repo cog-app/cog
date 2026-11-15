@@ -1548,7 +1548,12 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			case playPreparing:
 				plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": preparingVideo})
 			case playPackageFailed:
-				plugin.WriteJSON(w, http.StatusOK, map[string]string{"error": packageFailed(dl)})
+				why, err := queueVideo(store, h.plugin, plugin.Username(r), id, dl)
+				if err != nil {
+					httperr.Internal(w, r, err)
+					return
+				}
+				plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
 			default:
 				plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
 			}

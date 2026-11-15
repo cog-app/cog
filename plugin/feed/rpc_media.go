@@ -63,7 +63,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 			case playPreparing:
 				return nil, connect.NewError(connect.CodeUnavailable, errors.New(preparingVideo))
 			case playPackageFailed:
-				return nil, connect.NewError(connect.CodeUnavailable, errors.New(packageFailed(dl)))
+				return nil, s.downloadFirst(ctx, store, id, dl)
 			}
 		}
 		src := &feedpb.MediaSource{
@@ -107,10 +107,6 @@ const hlsMIME = "application/vnd.apple.mpegurl"
 // has yet to make it HLS.
 const preparingVideo = "Preparing the video"
 
-func packageFailed(dl Download) string {
-	return "Couldn't prepare the video: " + dl.PackageError
-}
-
 // videoPlay is how a ready download's video plays.
 type videoPlay int
 
@@ -122,8 +118,9 @@ const (
 	playHLS
 	// playPreparing: not yet; the packager has the download's tracks to look at.
 	playPreparing
-	// playPackageFailed: not at all; the tracks could not be made HLS, and
-	// there is no single file with both picture and sound to fall back to.
+	// playPackageFailed: not until it is downloaded again; the tracks could
+	// not be made HLS, and there is no single file with both picture and
+	// sound to fall back to.
 	playPackageFailed
 )
 
@@ -148,8 +145,8 @@ func (s *FeedService) downloadFirst(ctx context.Context, store *Store, id int64,
 	return connect.NewError(connect.CodeUnavailable, errors.New(why))
 }
 
-// queueVideo queues an item's download, retrying one that failed, and
-// answers why the video cannot play yet.
+// queueVideo queues an item's download, retrying one that failed to
+// download or to package, and answers why the video cannot play yet.
 func queueVideo(store *Store, p *Plugin, username string, id int64, dl Download) (string, error) {
 	if dl.State != "downloading" {
 		if err := store.EnqueueDownload(id); err != nil {
@@ -159,6 +156,9 @@ func queueVideo(store *Store, p *Plugin, username string, id int64, dl Download)
 	}
 	if dl.State == "error" {
 		return "Downloading the video again; the last try failed: " + dl.Error, nil
+	}
+	if dl.State == "ready" && dl.PackageState == "error" {
+		return "Downloading the video again; preparing it failed: " + dl.PackageError, nil
 	}
 	return "Downloading the video", nil
 }

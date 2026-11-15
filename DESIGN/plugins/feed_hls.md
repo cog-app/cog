@@ -68,8 +68,9 @@ any run of segments by byte range out of one file.
   `media/<id>.hls-video.mp4`. Silence, transcription, profanity and the media
   route keep reading `local_path`; Collect removes a replaced original.
 - A download that cannot be packaged keeps playing as it did (the media
-  route), its error is shown, and it is not tried again until it is
-  downloaded again.
+  route), and is not tried again every tick. A video downloaded as two
+  tracks has no single file to fall back to, so a player asking for it
+  downloads it again, saying why, as a failed download is.
 - Fragments are grouped into segments of about 6 s, each starting on a
   keyframe, when the playlist is written. Phase 4 cuts at fragment
   boundaries.

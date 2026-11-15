@@ -3,6 +3,7 @@ package feed
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"path"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,11 @@ func (s Space) Track(stored string) (hls.Track, int64, error) {
 	if err != nil {
 		return hls.Track{}, 0, fmt.Errorf("open track: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("feed: close track", "path", stored, "err", err)
+		}
+	}()
 	ra, ok := f.(io.ReaderAt)
 	if !ok {
 		return hls.Track{}, 0, fmt.Errorf("track %s: storage file %T cannot be read at an offset", stored, f)
