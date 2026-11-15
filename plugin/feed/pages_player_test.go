@@ -262,3 +262,43 @@ func TestRangesPendingUntilAnalysed(t *testing.T) {
 	assert.False(t, got.Pending)
 	assert.Equal(t, []feed.Range{{Start: 1, End: 2, Action: "skip"}}, got.Ranges)
 }
+
+// The web player's YouTube video downloads first, as ResolveMedia's does:
+// stream-url queues it and says so, then answers the media route once the
+// download is ready.
+func TestStreamURLVideoDownloadsFirst(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "erin", "pass")
+	store := feedStore(t, env, u.Username)
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/UC1", Title: "Talks"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v1", Type: "video", Title: "Talk", MediaURL: "https://www.youtube.com/watch?v=abc"})
+	require.NoError(t, err)
+	path := "/apps/feed/api/stream-url/" + strconv.FormatInt(id, 10)
+
+	var waiting struct {
+		URL         string `json:"url"`
+		Downloading bool   `json:"downloading"`
+		Message     string `json:"message"`
+	}
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&waiting)
+	if !waiting.Downloading || waiting.URL != "" || waiting.Message == "" {
+		t.Errorf("before the download: %+v, want downloading with a message", waiting)
+	}
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	if d.State != "queued" {
+		t.Errorf("download state %q, want queued", d.State)
+	}
+
+	require.NoError(t, store.MarkDownloadStart(id))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp4", 10))
+	var ready struct {
+		URL         string `json:"url"`
+		Downloading bool   `json:"downloading"`
+	}
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&ready)
+	if want := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"; ready.URL != want || ready.Downloading {
+		t.Errorf("after the download: %+v, want url %q", ready, want)
+	}
+}

@@ -87,3 +87,38 @@ func TestResolveMediaNothingToPlay(t *testing.T) {
 		ResolveMedia(context.Background(), connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id}))
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }
+
+// A YouTube video Cog has not downloaded is downloaded first: YouTube serves
+// no stream with both picture and sound. Asking queues the download and
+// answers Unavailable until it is ready, without resolving a stream.
+func TestResolveMediaYouTubeVideoDownloads(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/UC1", Title: "Talks"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v1", Type: "video", Title: "Talk", MediaURL: "https://www.youtube.com/watch?v=abc"})
+	require.NoError(t, err)
+	restore := feed.SetStreamResolver(func(context.Context, string, bool) (string, error) {
+		t.Error("resolved a stream for a video")
+		return "", nil
+	})
+	t.Cleanup(restore)
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+
+	_, err = client.ResolveMedia(context.Background(), connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_VIDEO}))
+	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", d.State)
+
+	// A download that failed says why, and asking again retries it.
+	require.NoError(t, store.MarkDownloadStart(id))
+	require.NoError(t, store.MarkDownloadError(id, "yt-dlp: no formats"))
+	_, err = client.ResolveMedia(context.Background(), connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id}))
+	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	assert.True(t, strings.Contains(err.Error(), "yt-dlp: no formats"), err.Error())
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", d.State)
+}

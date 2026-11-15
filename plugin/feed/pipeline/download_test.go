@@ -137,4 +137,53 @@ func TestDownloadYouTube(t *testing.T) {
 	if _, err := space.Own.Stat(d.LocalPath); err != nil {
 		t.Fatalf("downloaded file missing: %v", err)
 	}
+	// YouTube serves video and audio apart: the download merges H.264 and
+	// AAC into an mp4, which phones and browsers play.
+	if !strings.HasSuffix(d.LocalPath, ".mp4") {
+		t.Errorf("local path %q, want an .mp4", d.LocalPath)
+	}
+	args := ytdlpArgs(t, space, d.LocalPath)
+	for _, want := range []string{"--merge-output-format mp4", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("yt-dlp args %q lack %q", args, want)
+		}
+	}
+}
+
+// An audio-only YouTube item downloads its m4a audio.
+func TestDownloadYouTubeAudio(t *testing.T) {
+	abs, err := filepath.Abs("testdata")
+	require.NoError(t, err)
+	t.Setenv("PATH", abs+":"+os.Getenv("PATH"))
+
+	s, space := newPipeline(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/channel"})
+	id, _, _ := s.UpsertItem(feed.Item{
+		SubscriptionID: subID, GUID: "vid1", Type: "audio",
+		MediaURL: "https://www.youtube.com/watch?v=vid1",
+	})
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, pipeline.NewDownloader(s, space).RunOnce(context.Background()))
+
+	d, _ := s.GetDownload(id)
+	if d.State != "ready" {
+		t.Fatalf("state %q error=%q", d.State, d.Error)
+	}
+	if !strings.HasSuffix(d.LocalPath, ".m4a") {
+		t.Errorf("local path %q, want an .m4a", d.LocalPath)
+	}
+	if args := ytdlpArgs(t, space, d.LocalPath); !strings.Contains(args, "ba[ext=m4a]/ba") || strings.Contains(args, "merge-output-format") {
+		t.Errorf("yt-dlp args %q, want the m4a audio alone", args)
+	}
+}
+
+// ytdlpArgs reads the arguments the stub yt-dlp wrote into its download.
+func ytdlpArgs(t *testing.T, space feed.Space, name string) string {
+	t.Helper()
+	f, err := space.Own.Open(feed.Name(name))
+	require.NoError(t, err)
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	require.NoError(t, err)
+	return string(b)
 }

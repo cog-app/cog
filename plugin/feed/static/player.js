@@ -98,19 +98,44 @@
 
 		// --- source loading (YouTube resolves a stream URL) ---
 		if (cfg.sourceKind === "youtube") {
+			// A video plays from Cog's download of it, which the server
+			// queues; until it is ready the answer says why, shown in the
+			// player, and the player asks again.
 			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
-			fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
-				headers: { "X-CSRF-Token": cfg.csrf },
-			})
-				.then(function (r) { return r.json(); })
-				.then(function (d) {
-					if (d.url) {
-						el.src = d.url;
-						if (cfg.resume > 0) el.currentTime = cfg.resume;
-						el.play().catch(function () {});
-					}
+			var note = null;
+			var showNote = function (text) {
+				if (!note) {
+					note = document.createElement("div");
+					note.className = "player-note text-muted";
+					note.style.cssText = "padding:0.5rem 0.75rem;font-size:0.9rem";
+					root.insertBefore(note, root.firstChild);
+				}
+				note.textContent = text;
+				note.hidden = !text;
+			};
+			var loadSource = function () {
+				fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
+					headers: { "X-CSRF-Token": cfg.csrf },
 				})
-				.catch(function (e) { console.error("feed: stream-url", e); });
+					.then(function (r) { return r.json(); })
+					.then(function (d) {
+						if (d.downloading) {
+							showNote((d.message || "Downloading the video") + "…");
+							if (document.body.contains(root)) setTimeout(loadSource, 5000);
+							return;
+						}
+						if (d.url) {
+							showNote("");
+							el.src = d.url;
+							if (cfg.resume > 0) el.currentTime = cfg.resume;
+							el.play().catch(function () {});
+						} else if (d.error) {
+							showNote("Couldn't play: " + d.error);
+						}
+					})
+					.catch(function (e) { console.error("feed: stream-url", e); });
+			};
+			loadSource();
 		} else {
 			el.addEventListener("loadedmetadata", function () {
 				if (cfg.resume > 0) el.currentTime = cfg.resume;

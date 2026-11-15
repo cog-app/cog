@@ -2,6 +2,7 @@
 # Stub yt-dlp for pipeline tests.
 # Handles both download mode (-o <dst> <url>) and captions mode
 # (--write-auto-sub --skip-download -o <prefix> <url>).
+all="$*"
 captions=false
 prefix=""
 out=""
@@ -27,5 +28,5 @@ fi
 
 # Otherwise: download mode (T14 behavior).
 [ -z "$out" ] && exit 1
-echo "dummy youtube payload" > "$out"
+printf 'dummy youtube payload\nargs: %s\n' "$all" > "$out"
 exit 0
