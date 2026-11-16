@@ -154,8 +154,15 @@
 				if (window.Hls && Hls.isSupported()) {
 					var hls = new Hls({ startPosition: cfg.resume > 0 ? cfg.resume : -1, subtitleDisplay: false });
 					activeHls = hls;
+					// data-hls-audio names the audio rendition playing.
+					function reflectAudio() {
+						var t = hls.audioTracks[hls.audioTrack];
+						if (t) root.dataset.hlsAudio = t.name;
+					}
+					hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, reflectAudio);
 					hls.on(Hls.Events.MANIFEST_PARSED, function () {
 						root.dataset.hlsState = "loaded";
+						reflectAudio();
 						el.play().catch(function () {});
 					});
 					hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, function (_, data) {

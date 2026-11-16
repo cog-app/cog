@@ -164,6 +164,8 @@ func TestBrowser(t *testing.T) {
 
 	env.CreateUser(t, "hls", "pass")
 	hlsItem := packagedItem(t, env, "hls", true)
+	env.CreateUser(t, "hlsclean", "pass")
+	cleanVideo := cleanItem(t, env, "hlsclean", true)
 	env.CreateUser(t, "hlscc", "pass")
 	ccOffsetItem := captionedItemFrom(t, env, "hlscc", "audio-offset.m4a", "video-offset.mp4", "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 	ccItem := captionedItem(t, env, "hlscc", true, "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
@@ -179,6 +181,16 @@ func TestBrowser(t *testing.T) {
 		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
 		src, _ := b.Eval(t, `document.querySelector("#player-el").src`).(string)
 		require.True(t, strings.HasPrefix(src, "blob:") || strings.Contains(src, "master.m3u8"), "player source %q", src)
+	})
+
+	// A cleaned video plays HLS with the Clean audio rendition, which the
+	// master playlist marks DEFAULT=YES: hls.js reports it as playing.
+	t.Run("HLSClean", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlsclean", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", cleanVideo))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#feed-player[data-hls-audio="Clean"]`)
 	})
 
 	// Captions arrive as an HLS subtitle rendition. The CC button turns them on,

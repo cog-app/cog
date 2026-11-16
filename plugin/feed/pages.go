@@ -1430,7 +1430,7 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 // setHLSURL gives a packaged video its signed master playlist, which the
 // player plays in place of the media route.
 func (h *Pages) setHLSURL(r *http.Request, store *Store, ip *ItemPlayback) error {
-	if !ip.Packaged || !ip.HasVideo {
+	if !ip.Packaged || !ip.HasVideo || ip.CleanPending {
 		return nil
 	}
 	master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), ip.ID)

@@ -50,7 +50,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 		kind = feedpb.Variant_VARIANT_AUDIO
 	}
 	if dl.State == "ready" && (dl.LocalPath != "" || dl.CleanAudioPath != "") {
-		if kind == feedpb.Variant_VARIANT_VIDEO && req.Msg.Variant != feedpb.Variant_VARIANT_AUDIO && dl.CleanAudioPath == "" {
+		if kind == feedpb.Variant_VARIANT_VIDEO && req.Msg.Variant != feedpb.Variant_VARIANT_AUDIO {
 			switch videoPlayOf(dl) {
 			case playHLS:
 				master, err := s.plugin.HLSMasterURL(store, plugin.UserFromContext(ctx).Username, id)
@@ -59,6 +59,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 				}
 				return connect.NewResponse(&feedpb.MediaSource{
 					Url: master, Mime: hlsMIME, Variant: feedpb.Variant_VARIANT_VIDEO, Bytes: dl.Bytes,
+					Cleaned: dl.CleanTrackPath != "",
 				}), nil
 			case playPreparing:
 				return nil, connect.NewError(connect.CodeUnavailable, errors.New(preparingVideo))
@@ -126,6 +127,10 @@ const (
 
 func videoPlayOf(dl Download) videoPlay {
 	switch {
+	case dl.CleanAudioPath != "" && dl.CleanTrackPath == "":
+		// Clean audio not yet a track, or failed to become one: it plays
+		// as audio from the media route, never HLS with the unclean audio.
+		return playFile
 	case dl.PackageState == "done" && dl.VideoPath != "":
 		return playHLS
 	case dl.VideoPath == "":

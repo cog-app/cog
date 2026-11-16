@@ -166,3 +166,63 @@ func TestResolveMediaPreparing(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 	assert.True(t, strings.Contains(err.Error(), "Preparing the video"), err.Error())
 }
+
+func resolveCleaned(t *testing.T, env *cogtest.Env, u *cogtest.User, id int64) *feedpb.MediaSource {
+	t.Helper()
+	res, err := feedClient(t, env, u.AppPassword(t, "phone")).ResolveMedia(context.Background(),
+		connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id}))
+	require.NoError(t, err)
+	return res.Msg
+}
+
+// A cleaned video plays HLS, whose default audio is the clean rendition.
+func TestResolveMediaCleanedVideoPlaysHLS(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	id := cleanItem(t, env, "alice", true)
+	src := resolveCleaned(t, env, u, id)
+	assert.Equal(t, "application/vnd.apple.mpegurl", src.Mime)
+	assert.Equal(t, feedpb.Variant_VARIANT_VIDEO, src.Variant)
+	assert.True(t, src.Cleaned)
+	assert.True(t, strings.HasPrefix(src.Url, "/apps/feed/hls/"), src.Url)
+}
+
+// Clean audio that is not yet a track, or failed to become one, plays as
+// audio from the media route: never HLS with the unclean audio.
+func TestResolveMediaCleanPendingPlaysCleanAudio(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	id := packagedItem(t, env, "alice", true)
+	store := feedStore(t, env, "alice")
+	require.NoError(t, store.SetCleanAudioPath(id, "media/clean.m4a"))
+	want := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"
+	check := func() {
+		t.Helper()
+		src := resolveCleaned(t, env, u, id)
+		assert.Equal(t, want, src.Url)
+		assert.Equal(t, feedpb.Variant_VARIANT_AUDIO, src.Variant)
+		assert.True(t, src.Cleaned)
+	}
+	check()
+	require.NoError(t, store.MarkCleanTrackError(id, "bad"))
+	check()
+}
+
+// An audio item stays progressive, from its cleaned file.
+func TestResolveMediaCleanedAudioItem(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, "alice")
+	sub, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/clean-audio"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: sub, GUID: "a", Type: "audio", MediaURL: "https://cdn.example.com/a.mp3"})
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkVideoDownloadReady(id, "media/a.m4a", "", 10))
+	require.NoError(t, store.SavePackage(id, "media/a.m4a", "", 10))
+	require.NoError(t, store.SaveCleanTrack(id, "media/a.clean.m4a"))
+	src := resolveCleaned(t, env, u, id)
+	assert.Equal(t, "/apps/feed/items/"+strconv.FormatInt(id, 10)+"/media", src.Url)
+	assert.Equal(t, feedpb.Variant_VARIANT_AUDIO, src.Variant)
+	assert.True(t, src.Cleaned)
+}

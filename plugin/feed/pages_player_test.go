@@ -383,3 +383,20 @@ func TestPlayerFragmentHLS(t *testing.T) {
 	assert.False(t, strings.Contains(body, "data-hls="), "data-hls on an unpackaged item")
 	assert.True(t, strings.Contains(body, `src="/apps/feed/items/`+strconv.FormatInt(plain, 10)+`/media"`), "no src")
 }
+
+// A cleaned video streams HLS; until its clean track is packaged it streams
+// the clean audio from the media route.
+func TestStreamURLCleanedVideo(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pw")
+	id := cleanItem(t, env, "alice", true)
+	got := streamURL(t, env, u, id)
+	hlsURL, _ := got["hls"].(string)
+	assert.True(t, strings.HasPrefix(hlsURL, "/apps/feed/hls/alice/"+strconv.FormatInt(id, 10)+"/master.m3u8?sig="), got)
+
+	pending := packagedItem(t, env, "alice", true)
+	require.NoError(t, feedStore(t, env, "alice").SetCleanAudioPath(pending, "media/clean.m4a"))
+	got = streamURL(t, env, u, pending)
+	url, _ := got["url"].(string)
+	assert.Equal(t, "/apps/feed/items/"+strconv.FormatInt(pending, 10)+"/media", url)
+}
