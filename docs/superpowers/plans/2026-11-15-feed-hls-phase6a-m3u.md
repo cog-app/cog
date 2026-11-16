@@ -487,6 +487,7 @@ Expected: every step passes. Name any failure in the ledger, including flakes su
      - Both entries play in order, and `>` moves to the next.
      - Silence is skipped in the packaged item, provided phase 4's edges exist.
      - The window title shows `<subscription> – <title>`.
+     - **A cleaned podcast (audio only, phase 3):** play the master of an audio item that has a clean track. Its single variant points at `clean.m3u8`, which is also the `DEFAULT=YES` rendition of the `audio` group. Does mpv play the clean audio once, with no doubled or switched audio? Record yes or no.
      - **Subtitles:** press `j`, or run `mpv --sid=1 '<master URL>'`. Does mpv list and show the HLS WebVTT rendition from phase 2? Record yes or no, with the mpv and ffmpeg versions (`mpv --version`).
      - The downloaded launcher works: run `desktop-file-validate cog-*.desktop`, then `gio launch cog-*.desktop`.
 
