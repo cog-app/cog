@@ -588,3 +588,25 @@ func remoteItem(t *testing.T, env *cogtest.Env, username string) int64 {
 	require.NoError(t, err)
 	return id
 }
+
+// HLS links do not expire, so a remote presentation refuses an item a mute
+// filter matched after its link was handed out, as ItemMedia refuses
+// unclean audio: googlevideo's audio is never clean. Nothing is resolved or
+// fetched for it.
+func TestHLSRemoteMutedRefused(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	gv := googlevideo(t)
+	stub := stubTracks(t, env, gv)
+	id := remoteItem(t, env, "alice")
+	master := masterURL(t, env, "alice", id)
+	env.Get(t, master, cogtest.StopRedirect).Status(http.StatusOK)
+
+	muteAll(t, feedStore(t, env, "alice"), id)
+	asked, hits := len(stub.asked()), gv.hits.Load()
+	for _, u := range []string{master, sibling(master, "video.m3u8"), sibling(master, "yt-video.mp4")} {
+		env.Get(t, u, cogtest.StopRedirect).Status(http.StatusServiceUnavailable)
+	}
+	assert.Equal(t, asked, len(stub.asked()))
+	assert.Equal(t, hits, gv.hits.Load())
+}

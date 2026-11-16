@@ -74,7 +74,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.PackageState != "done" {
-		p.serveUnpackaged(w, r, store, username, itemID, file, opts, sig)
+		p.serveUnpackaged(w, r, store, username, itemID, d, file, opts, sig)
 		return
 	}
 	space, err := p.Space(username)
@@ -105,8 +105,11 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 
 // serveUnpackaged answers a request for an item with no packaged download:
 // a YouTube item's presentation is googlevideo's tracks (hls_remote.go), and
-// anything else has none.
-func (p *Plugin) serveUnpackaged(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, file string, opts hlsOptions, sig string) {
+// anything else has none. An item that is to be muted (Download.muted) has
+// no clean audio until it is downloaded, so it is refused, as ItemMedia
+// refuses unclean audio: a link handed out before a mute filter matched it
+// does not expire.
+func (p *Plugin) serveUnpackaged(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, d Download, file string, opts hlsOptions, sig string) {
 	ip, err := store.GetItemPlayback(itemID)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
@@ -118,6 +121,11 @@ func (p *Plugin) serveUnpackaged(w http.ResponseWriter, r *http.Request, store *
 	}
 	if ip.SourceKind != "youtube" || ip.MediaURL == "" {
 		http.NotFound(w, r)
+		return
+	}
+	if d.muted() {
+		httperr.Log(r, fmt.Errorf("feed hls: item %d is to be muted; googlevideo's audio is not clean", itemID))
+		http.Error(w, "clean audio is not available", http.StatusServiceUnavailable)
 		return
 	}
 	p.serveRemoteHLS(w, r, store, username, itemID, ip.MediaURL, file, opts, sig)
