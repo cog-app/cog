@@ -210,8 +210,8 @@ between edges still comes from the original files.
 - Each kept cut shrinks by **0.1 s** at both ends, so a skip never clips a
   word's start or tail. An end within 0.1 s of 0 or of the media duration is
   snapped to it and not shrunk. The duration is the Original track's end;
-  `Ranges` falls back to unclamped cuts, with a warning, when the track
-  can't be read.
+  `Ranges` falls back to unclamped cuts, with a warning (logged once per item
+  per process, since the player polls), when the track can't be read.
 
 **Per-rendition plans.** Renditions have different segment grids (Original
 about 10 s, Clean about 6 s, Video its own), so each is planned on its own
@@ -239,15 +239,36 @@ The cuts are the same, so every rendition ends up the same length.
 **Edges are made on demand, never in a request.**
 
 - The skip master (and, from phase 6a, an M3U that asks for skip) calls
-  `WantEdges`, which sets `downloads.edges_wanted` and wakes the fetcher
-  (`TriggerFetch`). `pipeline.Edges` runs after `RunCleanOnce` in the
-  orchestrator tick (the Clean track is part of the plan), two items or 60 s
-  per run. The result is `downloads.edges_edit` (the plan's id) and
+  `WantEdges`, which sets `downloads.edges_wanted` and `edges_wanted_at`, and
+  wakes the fetcher (`TriggerFetch`) whenever it serves an item pending,
+  including one wanted before whose edges a change reset; saving a new
+  shortest silence wakes it too. `pipeline.Edges` runs after `RunCleanOnce`
+  in the orchestrator tick, two items or 60 s per run, **most recently asked
+  first** (`edges_wanted_at`, refreshed when a pending item is asked for
+  again, at most once a minute). An item whose clean audio is still to come
+  waits: a clean file without its track, or profanity muting that can still
+  run (it has captions, or they are being made). The Clean track is part of
+  the plan, and edges made before it landed would be reset under a player. The result is `downloads.edges_edit` (the plan's id) and
   `downloads.edges_index` (each edge's byte layout), so playlists open no edge
   files. Edges live in the cache under `edges/<item>/<edit>/<a|c|v>-<n>.mp4`
   and are served as `edge-<edit>-<a|c|v>-<n>.mp4`.
+- **A run that stops keeps its edges**: out of budget or cancelled, the next
+  run checks each edge it finds and makes only the rest. `Collect` keeps
+  every edit directory of a pending item (wanted, neither made nor failed);
+  the worker removes the item's other edits when it records one. So a pref
+  change that leaves an item's cuts as they were (same edit) reuses its
+  edges.
 - **Audio edges** are AAC-LC with the priming packet dropped, at the source's
-  sample rate and channel count.
+  sample rate and channel count. They are **whole AAC frames**: an edge's
+  last frame decodes whole, and a player that keeps time by the audio it has
+  played (mpv) drifts by each edge's difference from its piece. Each edge
+  takes the frame count that keeps the audio played so far within half a
+  frame of the plan (`audioSpans`), is cut to the sample with `atrim`, and
+  keeps the end that joins the media beside it: its start after a cut, its
+  end before media that follows without one, so only the time of the cut
+  moves, by under a frame. `TestHLSSkipManyCutsInSync` plays a minute with
+  22 cuts in ffmpeg: the audio is within 3 ms of the presentation (it was
+  330 ms long when each edge ended past its piece).
 - **Video edges** are libx264 with `-bf 0` and `sps-id=1`, with the source's
   timescale and in-band parameter sets. Decode times are shifted by the
   source's B-frame delay (so the edge's `tfdt` is the piece start), and the
@@ -257,7 +278,13 @@ The cuts are the same, so every rendition ends up the same length.
   Hence the two parameter sets, and why hls.js (which reinitialises per
   `EXT-X-MAP`) was never the risk.
 - Every edge is checked by its index, its first `tfdt` and its parameter sets
-  before it counts; a failed run records `edges_error` against the edit.
+  before it counts; a failed run records `edges_error` against the edit (or
+  against no edit, when the tracks could not be loaded) and
+  `edges_failed_at`. The worker takes a failed item again six hours on,
+  clearing its error.
+- **The edge format** (`feed.EdgeFormat`, now 1) is hashed into the full
+  plan's edit id: bump it when the ffmpeg arguments or `AddParamSets` change,
+  so edges made the old way are not served as the new.
 - **Unsupported:** a rendition that is not AAC-LC, or video that is not H.264
   baseline, main or high (HE-AAC, High 10, other codecs), is served
   unskipped, with `SESSION-DATA` `us.duckfam.cog.skip` = `unsupported`, and
@@ -272,10 +299,16 @@ selector on the children:
   is on a segment boundary, which is full at once). Every rendition is cut
   exactly.
 - **Pending:** edges are being made. **Video waits**: a video master is served
-  unskipped until the edges exist (a coarse video cut would desync from
-  audio's exact cut). **Audio-only gets a coarse cut**: whole segments
-  only, from the default rendition (Clean when it exists, else Original), with
-  its subtitles; Original is not listed until the worker is done.
+  unskipped, with `SESSION-DATA` `us.duckfam.cog.skip` = `pending`, until the
+  edges exist (a coarse video cut would desync from audio's exact cut).
+  **Audio-only gets a coarse cut**: whole segments only, from the default
+  rendition (Clean when it exists, else Original), with its subtitles;
+  Original is not listed until the worker is done. (A coarse master carries
+  no `us.duckfam.cog.skip`; it is skipped, if roughly.)
+- **Failed:** the edges of this plan could not be made (or the item could not
+  be planned). As pending, but `us.duckfam.cog.skip` = `failed`: video plays
+  unskipped, audio-only keeps its coarse cut. The worker tries again six
+  hours on; an input change resets the edges at once.
 - **Unsupported:** above.
 
 **The `edit` id.** A 12-hex-digit hash of the applied cuts (rounded to
@@ -294,9 +327,11 @@ clients use to name the plan they play.
 `SaveCleanTrack`, `SetCleanAudioPath` and a change of the min-length pref reset
 `edges_edit` and `edges_error`, so the item is wanted again. The master
 self-heals: if the stored edit differs from the computed one, or its edge
-files have been evicted, it resets and asks again. Stale edge directories are
-removed per item when a new run succeeds, and `Collect` removes those of
-deleted or reset items.
+files have been evicted, it forgets them (`ForgetEdges`, only while the edit
+it read is still the one recorded, so it never wipes edges the worker
+recorded meanwhile) and asks again. Stale edge directories are removed per
+item when a new run succeeds, and `Collect` removes those of deleted items
+and, for items not pending, of every edit but the recorded one.
 
 **Captions under skip.** One VTT per piece of the default audio rendition's
 plan, at the piece's duration, with the same discontinuities as the audio.
@@ -311,6 +346,9 @@ unskipped rule (computed once, before the skip branch).
 **Clean tracks keep the Original's start.** `packClean` offsets the clean
 track to the Original's first fragment start, so Clean and Video stay in sync
 and share one caption map (phase 3's "Clean always starts at 0" is resolved).
+It also drops the encoder's AAC priming frame, so the clean track's first
+sample is the Original's: under a kept init its edit list is lost, as with
+edges.
 
 **Margins and why.**
 
@@ -336,7 +374,8 @@ time and item time:
   to the edit id; the server maps it back to item time with that plan's cuts
   and the **media duration stored in `hls_edits`** (not the feed's duration,
   which is often wrong). The mapped time clamps to that duration, and a report
-  within a hair of the presentation's end maps to the item's end. An unknown
+  within a hair of the presentation's end maps to the item's end. An edit
+  recorded with no duration (0) maps unclamped. An unknown
   id is `InvalidArgument` ("unknown edit list").
 - External players report nothing today. **Open:** an mpv script, or
   gpodder episode actions, either of which would need the mapping.
@@ -432,9 +471,20 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   only (`sidx` earliest presentation time minus the first `tfdt`), which is
   wrong for sources shifted by an `elst`; read the `trun` composition offset
   instead.
-- Audio drifts about 12 ms per edge (each edge's last AAC frame decodes
-  whole), and edge offsets are rounded to 1 ms. No end-to-end audio timing
-  check exists.
+- Edge offsets are rounded to 1 ms (video seeks to the µs).
+- `edges_wanted` never expires: an item asked for once stays wanted, and its
+  edges are remade after every reset (a pref change remakes every wanted
+  item's whose cuts changed). Expire it (say, a month after
+  `edges_wanted_at`, or once played) if the worker's queue shows it.
+- The worker reads an item's plan, encodes, then reads it again before it
+  records (the stale check); an input change between that read and the
+  record leaves stale edges for the master to self-heal. A generation
+  counter would close it; it costs a re-encode only.
+- **Before phases 5 and 6a build on skip**, a by-hand mpv check of a long
+  video with many cuts: no audible gaps or repeats at the cuts, the
+  wall-clock length matches the presentation, and audio and video are in
+  sync at the end. ffmpeg's own decode is checked (`TestHLSSkipManyCutsInSync`);
+  mpv's clock across discontinuities is not.
 - `hls_edits` rows are never pruned (they cascade only when the item is
   deleted).
 - Media playlists, `subs.m3u8` and each `subs-<n>.vtt` replan on every

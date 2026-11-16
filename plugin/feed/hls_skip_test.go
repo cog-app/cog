@@ -91,9 +91,6 @@ func TestSkipPlanEdgeFormat(t *testing.T) {
 	assert.NotEqual(t, hls.EditID(p.Cuts, map[string]hls.Track{feed.EdgeOriginal: lc}, 0), p.Edit)
 }
 
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }
-
 // needFFmpeg skips a test that runs ffmpeg where it is not installed, and
 // fails it in CI.
 func needFFmpeg(t *testing.T) {

@@ -190,15 +190,22 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         effective cuts (`TestEffectiveCuts*`, `TestPlanCuts*`,
         `TestCutEntries*`, `TestEditID*`, `TestHLSOptions*`, `TestEdges*`,
         `TestHLSSkip*`, `TestHLSSkipPlaysInFFmpeg`,
+        `TestHLSSkipManyCutsInSync`, `TestAudioSpans`,
         `TestBrowser/HLSSkipCaptions`, `TestReportProgressEditList*`).
         Captions' `X-TIMESTAMP-MAP` now uses the track's start (reverses
-        phase 2's `MPEGTS:0`). Still open: Media3 with two SPS in a video
-        edge's `avcC` (phase 6b, on the phone); whether mpv shows
-        presentation or item time across discontinuities (phase 6a, by hand);
-        B-frame delay read from the first fragment only (wrong for
-        elst-shifted sources); audio drift of about 12 ms per edge;
-        `hls_edits` never pruned; VTT and media playlists replan per request;
-        `AddParamSets` assumes default-base-is-moof.
+        phase 2's `MPEGTS:0`). Audio edges are whole frames that keep the
+        audio within half a frame of the plan; edges survive Collect while
+        pending, wait for profanity muting, go most recently asked first,
+        report `failed` and retry after 6 h. **Before phases 5 and 6a build
+        on skip:** by hand, mpv on a long many-cut video (gaps at the cuts,
+        wall-clock length, A/V sync at the end). Still open: Media3 with two
+        SPS in a video edge's `avcC` (phase 6b, on the phone); whether mpv
+        shows presentation or item time across discontinuities (phase 6a,
+        by hand); B-frame delay read from the first fragment only (wrong for
+        elst-shifted sources); `edges_wanted` never expires; `hls_edits`
+        never pruned; VTT and media playlists replan per request;
+        `AddParamSets` assumes default-base-is-moof; a generation counter
+        for the worker's check-then-record race.
   - [ ] Phase 5: undownloaded YouTube from googlevideo, after the off-Wi-Fi
         test, with a proxy fallback.
   - [ ] Phase 6: M3U of a playlist or view for external players; Android on
