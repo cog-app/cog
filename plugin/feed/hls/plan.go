@@ -201,10 +201,16 @@ func CutEntries(t Track, pieces []Piece, fileURI string, edgeURI func(n int) str
 			s := segs[p.Segment]
 			e = Entry{URI: fileURI, Offset: s.Offset, Length: s.Length, Duration: s.Duration, Init: init}
 		}
-		e.Discontinuity = i > 0 && p.Start-pieces[i-1].End > planTolerance
+		e.Discontinuity = afterCut(pieces, i)
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// afterCut reports whether piece i is the first of a kept span after a cut:
+// the media before it was left out.
+func afterCut(pieces []Piece, i int) bool {
+	return i > 0 && pieces[i].Start-pieces[i-1].End > planTolerance
 }
 
 // EditID names a cut presentation: the applied cuts, rounded to the

@@ -209,3 +209,29 @@ func SegmentCaptionBounds(audio Track, n int) (start, end float64, ok bool) {
 	start = segs[n].Start - audio.Fragments[0].Start
 	return start, start + segs[n].Duration, true
 }
+
+// VTTPiece is VTTSegment for a piece of a presentation with cuts: the cues
+// overlapping [start, end), in caption time, clipped to it, under MPEGTS 0.
+// A cue that crosses a cut is in two pieces; clipped, each shows only its
+// own part.
+func VTTPiece(cues []Cue, start, end float64) string {
+	clipped := make([]Cue, 0, len(cues))
+	for _, c := range cues {
+		if c.End <= start || c.Start >= end {
+			continue
+		}
+		c.Start, c.End = math.Max(c.Start, start), math.Min(c.End, end)
+		clipped = append(clipped, c)
+	}
+	return VTTSegment(clipped, start, end, 0)
+}
+
+// PieceSubtitleEntries lists one VTT segment per piece of a plan, with the
+// discontinuities CutEntries gives the plan; uri(n) names piece n.
+func PieceSubtitleEntries(pieces []Piece, uri func(n int) string) []Entry {
+	entries := make([]Entry, len(pieces))
+	for i, p := range pieces {
+		entries[i] = Entry{URI: uri(i), Duration: p.End - p.Start, Discontinuity: afterCut(pieces, i)}
+	}
+	return entries
+}

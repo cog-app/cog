@@ -169,3 +169,27 @@ func TestVTTSegmentEscapesText(t *testing.T) {
 	s := hls.VTTSegment([]hls.Cue{{Start: 1, End: 2, Text: "x < 5 & y"}}, 0, 6, 0)
 	assert.True(t, strings.Contains(s, "x &lt; 5 &amp; y\n"), s)
 }
+
+// Under cuts, a cue keeps its caption time but is clipped to the piece, so
+// one that crosses a cut is not shown twice.
+func TestVTTPieceClips(t *testing.T) {
+	cues := []hls.Cue{{Start: 1, End: 3, Text: "A"}, {Start: 4, End: 6, Text: "B"}, {Start: 7, End: 8, Text: "C"}}
+	got := hls.VTTPiece(cues, 2.5, 5)
+	assert.Equal(t, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n"+
+		"00:00:02.500 --> 00:00:03.000\nA\n\n00:00:04.000 --> 00:00:05.000\nB\n\n", got)
+}
+
+func TestPieceSubtitleEntries(t *testing.T) {
+	pieces := []hls.Piece{{Start: 0, End: 2.6, Edge: true}, {Start: 4.1, End: 6, Edge: true}, {Start: 6, End: 12, Segment: 1}}
+	entries := hls.PieceSubtitleEntries(pieces, func(n int) string { return fmt.Sprintf("s%d", n) })
+	require.Equal(t, 3, len(entries))
+	for i, want := range []hls.Entry{
+		{URI: "s0", Duration: 2.6},
+		{URI: "s1", Duration: 1.9, Discontinuity: true},
+		{URI: "s2", Duration: 6},
+	} {
+		assert.Equal(t, want.URI, entries[i].URI)
+		assert.InDelta(t, want.Duration, entries[i].Duration, 1e-9)
+		assert.Equal(t, want.Discontinuity, entries[i].Discontinuity, "entry %d", i)
+	}
+}
