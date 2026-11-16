@@ -1902,50 +1902,68 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
 
-// SystemSettings renders the admin-only feed system settings page.
+// SystemSettings renders the admin-only feed system settings page: the
+// server-wide settings in feed's root database.
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
+	ws, err := h.plugin.WhisperSettings()
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	db := store.DB()
-	model := string(SettingWhisperModel.MustGet(db))
-	modelsDir := SettingWhisperModelsDir.MustGet(db)
-	cliPath := SettingWhisperCLIPath.MustGet(db)
+	db, err := h.plugin.RootDB()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	mode, err := SettingYouTubeMode.Get(db)
+	if err != nil {
+		httperr.Internal(w, r, fmt.Errorf("feed: read youtube mode: %w", err))
+		return
+	}
+	if !mode.valid() {
+		// The page still renders, with neither choice made, so that saving
+		// it is how the admin repairs the setting.
+		h.plugin.log.Error("feed: unknown youtube mode", "mode", mode)
+	}
 	plugin.SetTitle(w, "Feed System Settings")
-	ui.Render(w, r, feedSystemSettingsPage(model, modelsDir, cliPath))
+	ui.Render(w, r, feedSystemSettingsPage(ws, mode, plugin.CSRFToken(r)))
 }
 
-// SaveSystemSettings persists model selection + paths.
+// SaveSystemSettings saves the whisper settings and the YouTube playback
+// mode for the whole server. It checks the whole form before it writes any
+// of it.
 func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
-	if err != nil {
-		h.setFlash(w, "error", "Failed to open DB: "+err.Error())
+	fail := func(msg string) {
+		h.setFlash(w, "error", msg)
 		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
 	}
-	db := store.DB()
 	model := WhisperModel(r.FormValue("whisper_model"))
 	if model != WhisperNone && WhisperModelFile(model) == "" {
-		h.setFlash(w, "error", "Unknown whisper model: "+string(model))
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		fail("Unknown whisper model: " + string(model))
 		return
 	}
-	if err := SettingWhisperModel.Set(db, model); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	mode := YouTubeMode(r.FormValue("youtube_mode"))
+	if !mode.valid() {
+		fail("Unknown YouTube playback mode: " + string(mode))
 		return
 	}
-	if err := SettingWhisperModelsDir.Set(db, r.FormValue("whisper_models_dir")); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	db, err := h.plugin.RootDB()
+	if err != nil {
+		h.plugin.log.Error("feed: save system settings", "err", err)
+		fail("The settings were not saved: " + err.Error())
 		return
 	}
-	if err := SettingWhisperCLIPath.Set(db, r.FormValue("whisper_cli_path")); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
+	for _, set := range []func() error{
+		func() error { return SettingWhisperModel.Set(db, model) },
+		func() error { return SettingWhisperModelsDir.Set(db, r.FormValue("whisper_models_dir")) },
+		func() error { return SettingWhisperCLIPath.Set(db, r.FormValue("whisper_cli_path")) },
+		func() error { return SettingYouTubeMode.Set(db, mode) },
+	} {
+		if err := set(); err != nil {
+			h.plugin.log.Error("feed: save system settings", "err", err)
+			fail("The settings were not saved: " + err.Error())
+			return
+		}
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)

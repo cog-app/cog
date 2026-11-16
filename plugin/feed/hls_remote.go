@@ -29,16 +29,26 @@ const (
 	YouTubeProxy YouTubeMode = "proxy"
 )
 
-// youtubeMode is how remote presentations serve their segments.
-//
-// It is direct until the mode becomes a server-wide admin setting (phase 5,
-// Task 6), which replaces this and the test override in export_test.go.
+// youtubeMode is how remote presentations serve their segments: the admin's
+// server-wide choice (SettingYouTubeMode), direct until they make one. A
+// stored value it does not know is an error rather than a guess.
 func (p *Plugin) youtubeMode() (YouTubeMode, error) {
-	if p.youtubeModeOverride != "" {
-		return p.youtubeModeOverride, nil
+	db, err := p.RootDB()
+	if err != nil {
+		return "", err
 	}
-	return YouTubeDirect, nil
+	mode, err := SettingYouTubeMode.Get(db)
+	if err != nil {
+		return "", fmt.Errorf("feed: read youtube mode: %w", err)
+	}
+	if !mode.valid() {
+		return "", fmt.Errorf("feed: unknown youtube mode %q", mode)
+	}
+	return mode, nil
 }
+
+// valid is whether m is a mode the server knows.
+func (m YouTubeMode) valid() bool { return m == YouTubeDirect || m == YouTubeProxy }
 
 // remotePresentation is an undownloaded YouTube item's tracks and where they live.
 type remotePresentation struct {

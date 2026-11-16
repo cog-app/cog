@@ -1,0 +1,20 @@
+#!/bin/sh
+# whisper-cli stub that captions with the model file it was given (-m), so a
+# test can see which model the worker chose. Writes <-of prefix>.vtt.
+model=""
+prefix=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m)  model="$2"; shift 2 ;;
+    -of) prefix="$2"; shift 2 ;;
+    *)   shift ;;
+  esac
+done
+[ -z "$prefix" ] && exit 1
+cat > "${prefix}.vtt" <<VTT
+WEBVTT
+
+00:00:00.000 --> 00:00:03.000
+model ${model}
+VTT
+exit 0

@@ -1559,25 +1559,42 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 	</div>
 }
 
-templ feedSystemSettingsPage(model string, modelsDir string, cliPath string) {
-	@ui.Card("Transcription (whisper.cpp)") {
-		<form method="post" action="">
+templ feedSystemSettingsPage(ws WhisperSettings, mode YouTubeMode, csrfToken string) {
+	<form method="post" action="">
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		@ui.Card("Transcription (whisper.cpp)") {
 			<div class="form-group">
 				<label for="whisper_model">Model</label>
 				<select name="whisper_model" id="whisper_model" class="form-control">
-					<option value="none" selected?={ model == "none" }>None (disable transcription)</option>
-					<option value="tiny.en" selected?={ model == "tiny.en" }>tiny.en (~75 MB)</option>
-					<option value="base.en" selected?={ model == "base.en" }>base.en (~140 MB) — default</option>
-					<option value="small.en" selected?={ model == "small.en" }>small.en (~470 MB)</option>
-					<option value="medium.en" selected?={ model == "medium.en" }>medium.en (~1.5 GB)</option>
-					<option value="large-v3" selected?={ model == "large-v3" }>large-v3 (~3 GB)</option>
+					<option value="none" selected?={ ws.Model == WhisperNone }>None (disable transcription)</option>
+					<option value="tiny.en" selected?={ ws.Model == WhisperTinyEn }>tiny.en (~75 MB)</option>
+					<option value="base.en" selected?={ ws.Model == WhisperBaseEn }>base.en (~140 MB) — default</option>
+					<option value="small.en" selected?={ ws.Model == WhisperSmallEn }>small.en (~470 MB)</option>
+					<option value="medium.en" selected?={ ws.Model == WhisperMediumEn }>medium.en (~1.5 GB)</option>
+					<option value="large-v3" selected?={ ws.Model == WhisperLargeV3 }>large-v3 (~3 GB)</option>
 				</select>
 			</div>
-			@ui.FormField("Models directory", "whisper_models_dir", "text", modelsDir, "(auto: plugin data dir)")
-			@ui.FormField("whisper-cli binary", "whisper_cli_path", "text", cliPath, "(auto: search PATH)")
-			@ui.Button("primary", "Save")
-		</form>
-	}
+			@ui.FormField("Models directory", "whisper_models_dir", "text", ws.ModelsDir, "(auto: plugin data dir)")
+			@ui.FormField("whisper-cli binary", "whisper_cli_path", "text", ws.CLIPath, "(auto: search PATH)")
+		}
+		@ui.Card("YouTube playback") {
+			<fieldset>
+				<legend>Video that hasn't been downloaded plays</legend>
+				<div class="chip-group">
+					<label class="chip">
+						<input type="radio" name="youtube_mode" value={ string(YouTubeDirect) } checked?={ mode == YouTubeDirect }/>
+						Straight from YouTube
+					</label>
+					<label class="chip">
+						<input type="radio" name="youtube_mode" value={ string(YouTubeProxy) } checked?={ mode == YouTubeProxy }/>
+						Through this server
+					</label>
+				</div>
+				<p class="form-help">Through this server helps when players can't reach YouTube directly, or googlevideo refuses them.</p>
+			</fieldset>
+		}
+		@ui.Button("primary", "Save")
+	</form>
 }
 
 // feedHistoryPage renders the playback history list.

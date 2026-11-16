@@ -28,13 +28,8 @@ func SetTrackResolver(f func(ctx context.Context, watchURL, format string) (YouT
 	return func() { resolveTracks = old }
 }
 
-// SetYouTubeMode makes p serve remote segments in mode, and returns what
-// puts the default back. Task 6 replaces it with the admin setting.
-func SetYouTubeMode(p *Plugin, mode YouTubeMode) func() {
-	old := p.youtubeModeOverride
-	p.youtubeModeOverride = mode
-	return func() { p.youtubeModeOverride = old }
-}
+// YouTubeModeOf is how p serves remote segments.
+func YouTubeModeOf(p *Plugin) (YouTubeMode, error) { return p.youtubeMode() }
 
 // ResolveMediaAs calls ResolveMedia in process as username, with ctx, so a
 // test can cancel ctx as a client that goes away would.

@@ -53,7 +53,7 @@ func TestHLSRemoteMaster(t *testing.T) {
 func TestHLSRemoteDirectRedirects(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeDirect))
+	setYouTubeMode(t, env, feed.YouTubeDirect)
 	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -79,7 +79,7 @@ func TestHLSRemoteDirectRedirects(t *testing.T) {
 func TestHLSRemoteProxyRange(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	setYouTubeMode(t, env, feed.YouTubeProxy)
 	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -108,7 +108,7 @@ func TestHLSRemoteProxyRange(t *testing.T) {
 func TestHLSRemoteProxyHeaders(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	setYouTubeMode(t, env, feed.YouTubeProxy)
 	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -135,7 +135,7 @@ func TestHLSRemoteProxyHeaders(t *testing.T) {
 func TestHLSRemoteProxyRefusedTwice(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	setYouTubeMode(t, env, feed.YouTubeProxy)
 	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -163,7 +163,7 @@ func TestHLSRemoteStoreFailure(t *testing.T) {
 func TestHLSRemoteProxyRefreshesOn403(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	setYouTubeMode(t, env, feed.YouTubeProxy)
 	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -184,7 +184,7 @@ func TestHLSRemoteProxyRefreshesOn403(t *testing.T) {
 func TestHLSRemoteProxyUpstreamError(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	setYouTubeMode(t, env, feed.YouTubeProxy)
 	srv := googlevideo(t)
 	stubTracks(t, env, srv).set(srv.URL+"/missing", srv.URL+"/missing", nil)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))

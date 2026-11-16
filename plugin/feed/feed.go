@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/assets"
@@ -77,9 +78,8 @@ type Plugin struct {
 	rangesWarned sync.Map
 	// youtubeFlight shares one yt-dlp resolve per user and item.
 	youtubeFlight singleflight.Group
-	// youtubeModeOverride is youtubeMode's answer when set; only tests set
-	// it (SetYouTubeMode), until the admin setting replaces it.
-	youtubeModeOverride YouTubeMode
+	// rootReady is whether RootDB has made its settings table.
+	rootReady atomic.Bool
 }
 
 // rangesWarning keys Plugin.rangesWarned.
