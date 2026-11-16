@@ -227,20 +227,22 @@ func TestEdges(t *testing.T) {
 
 func TestEditID(t *testing.T) {
 	layouts := func(tr hls.Track) map[string]hls.Track { return map[string]hls.Track{"a": tr} }
-	a := hls.EditID([]hls.Cut{{5, 13}}, layouts(synthetic()))
+	a := hls.EditID([]hls.Cut{{5, 13}}, layouts(synthetic()), 0)
 	assert.Equal(t, 12, len(a))
-	assert.Equal(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(synthetic())))
-	assert.Equal(t, a, hls.EditID([]hls.Cut{{5.0001, 13}}, layouts(synthetic())), "cuts are rounded to the millisecond")
-	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13.5}}, layouts(synthetic())))
+	assert.Equal(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(synthetic()), 0))
+	assert.Equal(t, a, hls.EditID([]hls.Cut{{5.0001, 13}}, layouts(synthetic()), 0), "cuts are rounded to the millisecond")
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13.5}}, layouts(synthetic()), 0))
 	other := synthetic()
 	other.Fragments = other.Fragments[:8]
-	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(other)))
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(other), 0))
 	resized := synthetic()
 	resized.Fragments[4].Length++
-	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(resized)), "a re-encode changes the id")
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(resized), 0), "a re-encode changes the id")
 	// The same layout as a different rendition, or with another rendition beside it, is another presentation.
-	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, map[string]hls.Track{"c": synthetic()}))
-	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, map[string]hls.Track{"a": synthetic(), "c": synthetic()}))
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, map[string]hls.Track{"c": synthetic()}, 0))
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, map[string]hls.Track{"a": synthetic(), "c": synthetic()}, 0))
+	// Edges made another way are another presentation.
+	assert.NotEqual(t, a, hls.EditID([]hls.Cut{{5, 13}}, layouts(synthetic()), 1))
 	for _, c := range a {
 		assert.True(t, strings.ContainsRune("0123456789abcdef", c), "hex: %s", a)
 	}
@@ -321,7 +323,7 @@ func TestCutEntriesErrors(t *testing.T) {
 // under the track's init, so a new init is a new presentation.
 func TestEditIDCoversInit(t *testing.T) {
 	cuts := []hls.Cut{{5, 13}}
-	a := hls.EditID(cuts, map[string]hls.Track{"a": synthetic()})
+	a := hls.EditID(cuts, map[string]hls.Track{"a": synthetic()}, 0)
 	for name, change := range map[string]func(*hls.Track){
 		"init offset": func(tr *hls.Track) { tr.InitOffset = 8 },
 		"init length": func(tr *hls.Track) { tr.InitLength++ },
@@ -329,6 +331,6 @@ func TestEditIDCoversInit(t *testing.T) {
 	} {
 		tr := synthetic()
 		change(&tr)
-		assert.NotEqual(t, a, hls.EditID(cuts, map[string]hls.Track{"a": tr}), name)
+		assert.NotEqual(t, a, hls.EditID(cuts, map[string]hls.Track{"a": tr}, 0), name)
 	}
 }

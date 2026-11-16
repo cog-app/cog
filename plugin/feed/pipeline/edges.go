@@ -586,6 +586,9 @@ func (w *Edges) removeOthers(itemID int64, edit string) error {
 // shifts are off (-avoid_negative_ts disabled): the edge at the track's
 // start decodes from the source's first decode time. Its parameter sets are
 // edgeParamSetID's, which its source's slices never name.
+//
+// A change to what it makes must bump feed.EdgeFormat, or edges made the old
+// way are served as the new.
 func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error) {
 	sec := func(x float64) string { return strconv.FormatFloat(x, 'f', 6, 64) }
 	ss := max(piece.Start-src.T0, 0)

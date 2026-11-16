@@ -71,6 +71,12 @@ func (d Download) edgesIndex() (EdgesIndex, error) {
 	return idx, nil
 }
 
+// EdgeFormat versions how the edges worker makes edge files (its ffmpeg
+// arguments, hls.AddParamSets): it is part of every full plan's edit id,
+// so bumping it when they change makes every item's edges anew instead of
+// serving those made the old way.
+const EdgeFormat = 1
+
 // Rendition keys of EditID and EdgeName.
 const (
 	EdgeOriginal = "a"
@@ -116,7 +122,7 @@ func SkipPlan(store *Store, d Download, original hls.Track, clean, video *hls.Tr
 		layouts[EdgeVideo] = *video
 		supported = supported && EdgesSupported(*video)
 	}
-	p.Edit = hls.EditID(p.Cuts, layouts)
+	p.Edit = hls.EditID(p.Cuts, layouts, EdgeFormat)
 	if !supported {
 		p.Unsupported = true
 		return p, nil

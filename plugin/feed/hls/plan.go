@@ -218,9 +218,14 @@ func afterCut(pieces []Piece, i int) bool {
 // "a" (Original), "c" (Clean) and "v" (Video). It is 12 hex characters.
 //
 // The layouts include byte lengths, the init section and the codecs, so
-// re-encoding a track changes the id.
-func EditID(applied []Cut, layouts map[string]Track) string {
+// re-encoding a track changes the id. format versions how the edge files
+// of the presentation are made: changing it names every edit anew, so
+// edges made the old way are not reused. 0 is a presentation without edges.
+func EditID(applied []Cut, layouts map[string]Track, format int) string {
 	h := sha256.New()
+	if format != 0 {
+		fmt.Fprintf(h, "format %d\n", format)
+	}
 	ms := func(x float64) string { return strconv.FormatFloat(math.Round(x*1000)/1000, 'g', -1, 64) }
 	// A hash.Hash never returns a write error, so Fprintf's is not checked.
 	for _, c := range applied {

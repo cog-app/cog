@@ -76,7 +76,7 @@ func (h hlsRequest) skipOptions(t itemTracks) (skipOptions, error) {
 		}
 		cuts := hls.CoarseCuts(def, plan.Cuts)
 		if pieces := hls.PlanCuts(def, cuts); len(cuts) > 0 && len(pieces) > 0 {
-			c := &skipSelection{edit: hls.EditID(cuts, map[string]hls.Track{key: def}), cuts: cuts, coarse: true}
+			c := &skipSelection{edit: hls.EditID(cuts, map[string]hls.Track{key: def}, 0), cuts: cuts, coarse: true}
 			if key == EdgeClean {
 				c.clean = pieces
 			} else {

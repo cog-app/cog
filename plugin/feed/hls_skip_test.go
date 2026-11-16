@@ -79,6 +79,18 @@ func TestSkipPlanSupport(t *testing.T) {
 	}
 }
 
+// The edge format names the edit, so edges made another way are not reused.
+func TestSkipPlanEdgeFormat(t *testing.T) {
+	store, id := readyItem(t)
+	d := feed.Download{ItemID: id, SilenceRanges: `[{"start":2.5,"end":4.2,"action":"skip"}]`}
+	lc := twoSegments(hls.Audio, "mp4a.40.2")
+	p, err := feed.SkipPlan(store, d, lc, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, feed.EdgeFormat)
+	assert.Equal(t, hls.EditID(p.Cuts, map[string]hls.Track{feed.EdgeOriginal: lc}, feed.EdgeFormat), p.Edit)
+	assert.NotEqual(t, hls.EditID(p.Cuts, map[string]hls.Track{feed.EdgeOriginal: lc}, 0), p.Edit)
+}
+
 //go:fix inline
 func ptr[T any](v T) *T { return new(v) }
 
