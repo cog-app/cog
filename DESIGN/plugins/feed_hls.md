@@ -496,8 +496,12 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 
 - A packaging backfill for legacy YouTube downloads that are done but were
   never packaged: they now play remote instead of locally.
-- An index cache: each remote start reads four 256 KB index ranges (two per
-  track); cache them per item, keyed by the pinned format ids.
+- An index cache: each remote start reads six 256 KB index ranges, in three
+  sequential stages: both tracks when `ResolveMedia` or `StreamURL` checks
+  the item plays remote (`remoteMaster`), both again for the master, and one
+  per media playlist (a client that reuses a held master URL skips the
+  first two). An index longer than the head costs one more range. Cache
+  them per item, keyed by the pinned format ids.
 - Whether the googlevideo redirect target (the 302 the audio answered) accepts
   other IPs; the phase 5 phone check confirms it, and `proxy` is the fallback.
 - Chunked requests: whether googlevideo throttles long segment ranges, in

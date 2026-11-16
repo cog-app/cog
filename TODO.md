@@ -211,7 +211,7 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         cached until near expiry with pinned formats, never remote for a muted
         item, skip unavailable, falls back to download
         (`TestHLSRemote*`, `TestResolveMediaRemote*`, `TestRemoteTrack*`,
-        `TestResolveYouTube*`, `TestYouTubeMode*`, `TestWhisperSettingsServerWide`).
+        `TestParseRequestedFormats*`, `TestYouTubeMode*`, `TestWhisperSettingsServerWide`).
         Pending: the manual check (desktop Chrome, then the phone off Wi-Fi).
         Still open: a packaging backfill for legacy done-but-unpackaged
         downloads, an index cache, the redirect target from another network,
