@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -86,7 +87,10 @@ var resolveTracks = ResolveYouTubeTracks
 // youtubeTracks returns the item's cached tracks, resolving when none are
 // cached, when either expires within 10 minutes of now, or when refresh is
 // set. A resolve with tracks cached pins their format ids, so the segment
-// index made against them stays valid. Concurrent calls for one user/item
+// index made against them stays valid. If the pinned formats no longer
+// resolve, the cache is forgotten and one fresh resolve selects anew; it may
+// choose other ids, so byte ranges a player holds can be wrong. That is
+// accepted: the alternative is failing forever. Concurrent calls for one user/item
 // share one resolve.
 func (p *Plugin) youtubeTracks(ctx context.Context, store *Store, username string, itemID int64, watchURL string, now time.Time, refresh bool) (video, audio YouTubeTrack, err error) {
 	fresh := func() (v, a YouTubeTrack, cached, ok bool, err error) {
@@ -114,15 +118,28 @@ func (p *Plugin) youtubeTracks(ctx context.Context, store *Store, username strin
 		if ok && !refresh {
 			return pair{v, a}, nil
 		}
-		format := YouTubeFormat(YouTubeVideoFormat, YouTubeAudioFormat)
-		if cached {
-			format = YouTubeFormat(v.FormatID, a.FormatID)
-		}
+		freshFormat := YouTubeFormat(YouTubeVideoFormat, YouTubeAudioFormat)
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), youtubeResolveTimeout)
 		defer cancel()
-		v, a, err = resolveTracks(rctx, watchURL, format)
-		if err != nil {
-			return nil, fmt.Errorf("resolve youtube tracks: %w", err)
+		resolved := false
+		if cached {
+			pv, pa, err := resolveTracks(rctx, watchURL, YouTubeFormat(v.FormatID, a.FormatID))
+			if err == nil {
+				v, a, resolved = pv, pa, true
+			} else {
+				// The pinned formats are gone; forget them and select anew.
+				p.youtubeLog().Info("youtube pinned formats failed; resolving fresh",
+					"item", itemID, "video", v.FormatID, "audio", a.FormatID, "error", err)
+				if err := store.ForgetYouTubeStreams(itemID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if !resolved {
+			v, a, err = resolveTracks(rctx, watchURL, freshFormat)
+			if err != nil {
+				return nil, fmt.Errorf("resolve youtube tracks: %w", err)
+			}
 		}
 		if err := store.SaveYouTubeStreams(itemID, v, a); err != nil {
 			return nil, err
@@ -134,4 +151,11 @@ func (p *Plugin) youtubeTracks(ctx context.Context, store *Store, username strin
 	}
 	r := res.(pair)
 	return r.video, r.audio, nil
+}
+
+func (p *Plugin) youtubeLog() *slog.Logger {
+	if p.log == nil {
+		return slog.Default()
+	}
+	return p.log
 }
