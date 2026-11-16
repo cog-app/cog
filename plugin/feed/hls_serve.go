@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,7 +24,8 @@ const hlsRoute = "GET /apps/feed/hls/{user}/{item}/{file}"
 // master and media playlists, written from the tracks' indexes on each
 // request, and the track files, with byte ranges. With skip=silence, the
 // master picks the presentation and names it by edit list, and the files
-// with that edit= follow its plan, edge files included (hls_skip.go).
+// with that edit= follow its plan, edge files included (hls_skip.go). An
+// undownloaded YouTube item is served from googlevideo (hls_remote.go).
 func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	opts, err := parseHLSOptions(q)
@@ -72,7 +74,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.PackageState != "done" {
-		http.NotFound(w, r)
+		p.serveUnpackaged(w, r, store, username, itemID, file, opts, sig)
 		return
 	}
 	space, err := p.Space(username)
@@ -99,6 +101,26 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.file(file)
 	}
+}
+
+// serveUnpackaged answers a request for an item with no packaged download:
+// a YouTube item's presentation is googlevideo's tracks (hls_remote.go), and
+// anything else has none.
+func (p *Plugin) serveUnpackaged(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, file string, opts hlsOptions, sig string) {
+	ip, err := store.GetItemPlayback(itemID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if ip.SourceKind != "youtube" || ip.MediaURL == "" {
+		http.NotFound(w, r)
+		return
+	}
+	p.serveRemoteHLS(w, r, store, username, itemID, ip.MediaURL, file, opts, sig)
 }
 
 // hlsRequest is one request for a file of an item's presentation, once

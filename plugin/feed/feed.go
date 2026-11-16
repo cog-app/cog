@@ -77,6 +77,9 @@ type Plugin struct {
 	rangesWarned sync.Map
 	// youtubeFlight shares one yt-dlp resolve per user and item.
 	youtubeFlight singleflight.Group
+	// youtubeModeOverride is youtubeMode's answer when set; only tests set
+	// it (SetYouTubeMode), until the admin setting replaces it.
+	youtubeModeOverride YouTubeMode
 }
 
 // rangesWarning keys Plugin.rangesWarned.

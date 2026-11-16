@@ -2,13 +2,16 @@ package feed_test
 
 import (
 	"bytes"
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
@@ -480,4 +484,88 @@ func TestHLSSubsTimestampMapOffset(t *testing.T) {
 	seg := env.Get(t, sibling(masterURL(t, env, "alice", id), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
 	assert.True(t, strings.Contains(seg, "X-TIMESTAMP-MAP=MPEGTS:132910,LOCAL:00:00:00.000\n"), seg)
 	assert.True(t, strings.Contains(seg, "00:00:03.000 --> 00:00:05.000\nHello there\n"), seg)
+}
+
+// googlevideo stands in for googlevideo: it serves the video and audio
+// fixtures at /video and /audio (and at /video2 and /audio2, which are never
+// refused) with byte ranges, answering /video and /audio with 403 while
+// refuse is set. hits counts every request.
+func googlevideo(t *testing.T) (srv *httptest.Server, hits *atomic.Int32, refuse *atomic.Bool) {
+	t.Helper()
+	hits, refuse = new(atomic.Int32), new(atomic.Bool)
+	serve := func(fixture string, refusable bool) http.HandlerFunc {
+		data, err := os.ReadFile("testdata/media/" + fixture)
+		require.NoError(t, err)
+		return func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			if refusable && refuse.Load() {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			http.ServeContent(w, r, fixture, time.Time{}, bytes.NewReader(data))
+		}
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/video", serve("video.mp4", true))
+	mux.Handle("/audio", serve("audio.m4a", true))
+	mux.Handle("/video2", serve("video.mp4", false))
+	mux.Handle("/audio2", serve("audio.m4a", false))
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, hits, refuse
+}
+
+// trackStub is the YouTube track resolver for a test: it answers with the
+// formats 137 and 140 at base+video and base+audio, expiring 6 h from the
+// test's clock, or with err, and records the formats it was asked for.
+type trackStub struct {
+	mu           sync.Mutex
+	video, audio string
+	err          error
+	formats      []string
+}
+
+// stubTracks installs a trackStub answering with srv's /video and /audio.
+func stubTracks(t *testing.T, env *cogtest.Env, srv *httptest.Server) *trackStub {
+	t.Helper()
+	s := &trackStub{video: srv.URL + "/video", audio: srv.URL + "/audio"}
+	t.Cleanup(feed.SetTrackResolver(func(ctx context.Context, watchURL, format string) (feed.YouTubeTrack, feed.YouTubeTrack, error) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.formats = append(s.formats, format)
+		if s.err != nil {
+			return feed.YouTubeTrack{}, feed.YouTubeTrack{}, s.err
+		}
+		exp := env.Clock.Now().Add(6 * time.Hour)
+		return feed.YouTubeTrack{Kind: hls.Video, FormatID: "137", URL: s.video, ExpiresAt: exp},
+			feed.YouTubeTrack{Kind: hls.Audio, FormatID: "140", URL: s.audio, ExpiresAt: exp}, nil
+	}))
+	return s
+}
+
+// set changes what the stub answers from now on.
+func (s *trackStub) set(video, audio string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.video, s.audio, s.err = video, audio, err
+}
+
+// asked is the formats the stub was asked for, in order.
+func (s *trackStub) asked() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.formats...)
+}
+
+// remoteItem stores a YouTube subscription and a video item with no
+// download, and returns the item's ID.
+func remoteItem(t *testing.T, env *cogtest.Env, username string) int64 {
+	t.Helper()
+	store := feedStore(t, env, username)
+	sub, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/c" + strconv.Itoa(nextFeed())})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: sub, GUID: "yt", Type: "video", Title: "Video",
+		URL: "https://www.youtube.com/watch?v=x", MediaURL: "https://www.youtube.com/watch?v=x"})
+	require.NoError(t, err)
+	return id
 }
