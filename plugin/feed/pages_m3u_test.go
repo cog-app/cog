@@ -66,3 +66,20 @@ func TestViewPagesOfferM3U(t *testing.T) {
 		})
 	}
 }
+
+// The index page's links play the unread list, say so, and are not offered
+// beside a search, which the M3U cannot carry.
+func TestIndexPageM3ULabelAndSearch(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	mediaItem(t, store, "audio", "Ep", "https://cdn.example.com/ep.mp3")
+
+	body := env.Get(t, "/apps/feed/", alice.Auth).Status(http.StatusOK).ReadBody()
+	assert.Contains(t, body, "<summary>Play unread in mpv</summary>")
+	assert.Contains(t, body, "/apps/feed/m3u/alice/unread/all.m3u?sig=")
+
+	body = env.Get(t, "/apps/feed/?q=Ep", alice.Auth).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, "in mpv"), "box shown beside a search")
+	assert.False(t, strings.Contains(body, "/m3u/"), "M3U link shown beside a search")
+}

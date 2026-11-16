@@ -94,9 +94,15 @@ func (p *Plugin) M3UURL(store *Store, username string, l m3uList, o hlsOptions) 
 	if err != nil {
 		return "", err
 	}
+	return m3uPath(key, username, l, o), nil
+}
+
+// m3uPath is the signed path of a list's M3U for a key already in hand, so
+// a page signing several links reads the key once.
+func m3uPath(key []byte, username string, l m3uList, o hlsOptions) string {
 	v := o.Values()
 	v.Set("sig", m3uSignature(key, username, l, o))
-	return "/apps/feed/m3u/" + url.PathEscape(username) + "/" + l.path() + "?" + v.Encode(), nil
+	return "/apps/feed/m3u/" + url.PathEscape(username) + "/" + l.path() + "?" + v.Encode()
 }
 
 // absoluteURL prefixes path with the configured base URL, or else the

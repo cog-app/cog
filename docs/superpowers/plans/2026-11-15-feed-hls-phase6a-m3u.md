@@ -17,7 +17,7 @@
 - Tests go through `cogtest`, with `internal/testing/require` and `assert`, never testify.
 - Check builds with `go install ./...`, not `go build`. Format with `go fmt ./...` and `go tool templ fmt .`. Regenerate templ with `go tool templ generate -log-level warn` from the repo root (`go generate ./plugin/feed` does not run templ). Commit the regenerated `pages_templ.go` in the same commit as the `.templ` change.
 - Links do not expire. Revoking the key (`RotateHLSKey`) ends HLS and M3U links alike; there is one key.
-- The m3u route never writes to the database. It reads the key with `ExistingHLSKey`, and a missing key is a 403, as phase 1's HLS route does after its fix.
+- The m3u route writes only through `WantEdges`, and only on a GET of a skip link (a HEAD writes nothing): it marks the packaged items' edges wanted and pokes the worker. It never creates the key: it reads it with `ExistingHLSKey`, and a missing key is a 403, as phase 1's HLS route does after its fix.
 - An M3U lists at most 500 items (`m3uLimit = 500`, the same value as `feedViewLimit`).
 - Options are exactly phase 4's: `skip=silence`, and nothing else. Any other key or value is a 400.
 - Content types: the M3U is `audio/x-mpegurl` with `Cache-Control: private, no-cache`. The launcher is `application/x-desktop`, sent as an attachment.

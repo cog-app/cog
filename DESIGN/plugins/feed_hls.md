@@ -507,7 +507,9 @@ option and is refused with 400. A desktop launcher is just `mpv <that URL>`.
   master path with `hlsMasterPath`; it neither creates a key nor calls
   `HLSMasterURL` per item (no N+1). With no key, no signature can be valid.
   The view, its downloads and the subscriptions are read once each.
-  With skip, the packaged items' edges are marked wanted (the only write).
+  With skip, on a GET only (a HEAD writes nothing), the packaged items' edges
+  are marked wanted (the only write). A deleted playlist, folder or
+  subscription is a 404.
 - Entries follow the page's order (up to the page limit). The `.m3u` URLs and
   every entry are absolute: the configured base URL, else the scheme and host
   the request reached, because a player has no page to resolve against.
@@ -520,7 +522,7 @@ option and is refused with 400. A desktop launcher is just `mpv <that URL>`.
   unclean audio for it, and these links do not expire.
 - A feed's media URL must be http or https with a host and no control
   characters, else the entry is left out: mpv runs `edl://`, `lavfi` and
-  `file` entries, and a newline would add a line. Titles fold line breaks.
+  `file` entries, and a newline would add a line. Titles fold every control character to a space.
 - Ids are canonical decimals (no `+7`, no `007`), so one list has one
   signature; a tag name with a NUL is rejected (the signed message's
   separator).

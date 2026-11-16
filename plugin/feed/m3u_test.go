@@ -162,6 +162,8 @@ func TestM3URejects(t *testing.T) {
 		"bob":          {"/apps/feed/m3u/bob/" + path + "?sig=" + sig, http.StatusForbidden},
 		"nobody":       {"/apps/feed/m3u/nobody/" + path + "?sig=" + sig, http.StatusForbidden},
 		"no playlist":  {m3uURL(t, env, "alice", "playlist/999999.m3u", false), http.StatusNotFound},
+		"no folder":    {m3uURL(t, env, "alice", "folder/999999.m3u", false), http.StatusNotFound},
+		"no sub":       {m3uURL(t, env, "alice", "sub/999999.m3u", false), http.StatusNotFound},
 		"skip added":   {good + "&skip=silence", http.StatusForbidden},
 		"hls sig":      {"/apps/feed/m3u/alice/playlist/" + n + ".m3u?sig=" + hlsSig, http.StatusForbidden},
 		"other list":   {"/apps/feed/m3u/alice/starred/all.m3u?sig=" + sig, http.StatusForbidden},
@@ -536,4 +538,30 @@ func TestM3ULauncherHostileTag(t *testing.T) {
 			env.Get(t, relative(env, execURL(t, launcherExec(t, body)))).Status(http.StatusOK)
 		})
 	}
+}
+
+// A HEAD answers what a GET does and changes nothing: no edge is wanted and
+// no one is poked.
+func TestM3UHeadWritesNothing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	pl, packaged := mixedPlaylist(t, env)
+	u := m3uURL(t, env, "alice", "playlist/"+strconv.FormatInt(pl, 10)+".m3u", true)
+	poked(t, env)
+
+	r := env.Head(t, u).Status(http.StatusOK)
+	assert.False(t, download(t, env, "alice", packaged).EdgesWanted)
+	assert.False(t, poked(t, env))
+	body := env.Get(t, u).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, strconv.Itoa(len(body)), r.Header.Get("Content-Length"))
+	assert.True(t, download(t, env, "alice", packaged).EdgesWanted)
+}
+
+// Every control character in a title becomes a space, as in the launcher.
+func TestM3UTitleControlsFolded(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	mediaItem(t, feedStore(t, env, "alice"), "audio", "A\x00B\x0bC\x0cD\x7fE\tF", "https://cdn.example.com/ep.mp3")
+	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, "#EXTM3U\n#EXTINF:-1,Pod – A B C D E F\nhttps://cdn.example.com/ep.mp3\n", body)
 }

@@ -23,7 +23,8 @@ const m3uLimit = 500
 // ServeM3U serves a playlist or view as an M3U, in the page's order: each
 // item's signed master URL where it plays over HLS, its media URL where it
 // does not, and nothing for a text item. It writes nothing but, with
-// skip=silence, which items' edges are wanted.
+// skip=silence on a GET, which items' edges are wanted. A folder or
+// subscription that is gone is sql.ErrNoRows, like a playlist.
 func (p *Plugin) ServeM3U(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	opts, err := parseHLSOptions(q)
@@ -68,7 +69,8 @@ func (p *Plugin) ServeM3U(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	entries, err := p.m3uEntries(r, store, key, username, l, opts)
+	// Only a GET writes: a HEAD answers the same headers and changes nothing.
+	entries, err := p.m3uEntries(r, store, key, username, l, opts, r.Method != http.MethodHead)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -120,26 +122,43 @@ func m3uSafeURL(raw string) bool {
 	return CheckURL(raw) == nil
 }
 
-// m3uTitle folds line breaks to spaces: a title is one line of the M3U.
-var m3uTitle = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+// m3uTitle folds every control character to a space: a title is one line
+// of the M3U.
+func m3uTitle(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
+}
 
 // m3uEntries lists l's items as entries, signing masters with key, the
 // user's existing one. It reads the view, its downloads and the
 // subscriptions once each, whatever the number of items. With o.Skip, it
-// marks the packaged items' edges wanted, so the worker cuts them before
-// the player reaches them; that is the only write.
+// marks the packaged items' edges wanted when write is set, so the worker
+// cuts them before the player reaches them; that is the only write.
 //
 // An item packaged for HLS gets its master with o. One that is not is
 // left out when it is to be muted (Download.muted), since only its clean
 // audio may play and that is made from a download; an undownloaded YouTube
 // video gets its remote master (remoteEligible), which resolves when the
 // player fetches it; anything else plays its media URL, unskipped.
-func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username string, l m3uList, o hlsOptions) ([]m3uEntry, error) {
+func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username string, l m3uList, o hlsOptions, write bool) ([]m3uEntry, error) {
 	v, err := l.View()
 	if err != nil {
 		return nil, err
 	}
 	spec, expr, err := store.ResolveView(v)
+	if err != nil {
+		return nil, err
+	}
+	switch v.Kind {
+	case ViewFolder:
+		_, err = store.GetFolder(v.ID)
+	case ViewSubscription:
+		_, err = store.GetSubscription(v.ID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +212,9 @@ func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username 
 		if d <= 0 {
 			d = -1
 		}
-		entries = append(entries, m3uEntry{Duration: d, Title: m3uTitle.Replace(it.SubscriptionTitle + " – " + it.Title), URL: u})
+		entries = append(entries, m3uEntry{Duration: d, Title: m3uTitle(it.SubscriptionTitle + " – " + it.Title), URL: u})
 	}
-	if o.Skip {
+	if o.Skip && write {
 		changed, err := store.WantEdges(packaged...)
 		if err != nil {
 			return nil, err

@@ -857,7 +857,8 @@ func (h *Pages) rows(c viewCtx) rowOpts {
 
 // playElsewhere is what a view page offers external players.
 type playElsewhere struct {
-	M3U, M3USkip string // absolute signed M3U URLs
+	Label        string // the box's summary: what the links play
+	M3U, M3USkip string // absolute signed M3U URLs; empty offers nothing
 	Launcher     string // /apps/feed/launchers/<path>
 }
 
@@ -865,15 +866,14 @@ type playElsewhere struct {
 // creates the user's media-link key, as an item page does for its HLS link.
 func (h *Pages) playElsewhere(r *http.Request, store *Store, l m3uList) (playElsewhere, error) {
 	user := plugin.Username(r)
-	plain, err := h.plugin.M3UURL(store, user, l, hlsOptions{})
+	key, err := store.HLSKey()
 	if err != nil {
-		return playElsewhere{}, fmt.Errorf("sign %s M3U link: %w", l.Kind, err)
+		return playElsewhere{}, fmt.Errorf("sign %s M3U links: %w", l.Kind, err)
 	}
-	skip, err := h.plugin.M3UURL(store, user, l, hlsOptions{Skip: true})
-	if err != nil {
-		return playElsewhere{}, fmt.Errorf("sign %s M3U skip link: %w", l.Kind, err)
-	}
+	plain := m3uPath(key, user, l, hlsOptions{})
+	skip := m3uPath(key, user, l, hlsOptions{Skip: true})
 	return playElsewhere{
+		Label:    "Play in mpv",
 		M3U:      h.plugin.absoluteURL(r, plain),
 		M3USkip:  h.plugin.absoluteURL(r, skip),
 		Launcher: "/apps/feed/launchers/" + l.path(),
@@ -977,10 +977,16 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	pe, err := h.playElsewhere(r, store, m3uList{ViewUnread, "all"})
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
+	// The links play the unread list, which is not what a search shows,
+	// and an M3U cannot carry a search: beside one there are none.
+	var pe playElsewhere
+	if q == "" {
+		pe, err = h.playElsewhere(r, store, m3uList{ViewUnread, "all"})
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		pe.Label = "Play unread in mpv"
 	}
 	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c), pe))
 }

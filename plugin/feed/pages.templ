@@ -410,19 +410,21 @@ script copyText(text string) {
 
 // feedPlayElsewhere offers a list's signed M3U links to external players.
 templ feedPlayElsewhere(p playElsewhere) {
-	<details>
-		<summary>Play in mpv</summary>
-		<div class="secret-box">
-			<code class="break-anywhere">{ p.M3U }</code>
-			<button type="button" class="btn" onclick={ copyText(p.M3U) }>Copy link</button>
-		</div>
-		<div class="secret-box">
-			<code class="break-anywhere">{ p.M3USkip }</code>
-			<button type="button" class="btn" onclick={ copyText(p.M3USkip) }>Copy link (skip silence)</button>
-		</div>
-		<p><a href={ templ.SafeURL(p.Launcher) } download>Download launcher</a></p>
-		<p class="text-sm">Plays in mpv or any player that opens .m3u links. Revoke media links in Sync settings to stop every link.</p>
-	</details>
+	if p.M3U != "" {
+		<details>
+			<summary>{ p.Label }</summary>
+			<div class="secret-box">
+				<code class="break-anywhere">{ p.M3U }</code>
+				<button type="button" class="btn" onclick={ copyText(p.M3U) }>Copy link</button>
+			</div>
+			<div class="secret-box">
+				<code class="break-anywhere">{ p.M3USkip }</code>
+				<button type="button" class="btn" onclick={ copyText(p.M3USkip) }>Copy link (skip silence)</button>
+			</div>
+			<p><a href={ templ.SafeURL(p.Launcher) } download>Download launcher</a></p>
+			<p class="text-sm">Plays in mpv or any player that opens .m3u links. Revoke media links in Sync settings to stop every link.</p>
+		</details>
+	}
 }
 
 // feedAncestors is a breadcrumb trail of the pages above this one, for a
