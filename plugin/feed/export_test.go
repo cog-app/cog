@@ -41,3 +41,6 @@ func ResolveMediaAs(ctx context.Context, p *Plugin, username string, req *feedpb
 	}
 	return res.Msg, nil
 }
+
+// HLSMasterPath is hlsMasterPath, for the external tests.
+var HLSMasterPath = hlsMasterPath

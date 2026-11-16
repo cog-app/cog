@@ -121,8 +121,14 @@ func (p *Plugin) HLSMasterURL(store *Store, username string, itemID int64, o hls
 	if err != nil {
 		return "", err
 	}
-	return "/apps/feed/hls/" + url.PathEscape(username) + "/" + strconv.FormatInt(itemID, 10) +
-		"/master.m3u8" + o.query(hlsSignature(key, username, itemID, o)), nil
+	return hlsMasterPath(key, username, itemID, o), nil
+}
+
+// hlsMasterPath is the signed path of an item's master playlist, from a key
+// already in hand.
+func hlsMasterPath(key []byte, user string, itemID int64, o hlsOptions) string {
+	return "/apps/feed/hls/" + url.PathEscape(user) + "/" + strconv.FormatInt(itemID, 10) +
+		"/master.m3u8" + o.query(hlsSignature(key, user, itemID, o))
 }
 
 // HLSSkipMasterURL is HLSMasterURL with skip=silence, for phase 6a and tests.

@@ -633,3 +633,16 @@ func TestHLSRemoteMutedRefused(t *testing.T) {
 	assert.Equal(t, asked, len(stub.asked()))
 	assert.Equal(t, hits, gv.hits.Load())
 }
+
+func TestHLSMasterPathMatchesURL(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	for _, o := range []feed.HLSOptions{{}, {Skip: true}, {Skip: true, Edit: "0123456789ab"}} {
+		want, err := feedPlugin(t, env).HLSMasterURL(store, "alice", 5, o)
+		require.NoError(t, err)
+		key, err := store.ExistingHLSKey()
+		require.NoError(t, err)
+		assert.Equal(t, want, feed.HLSMasterPath(key, "alice", 5, o))
+	}
+}

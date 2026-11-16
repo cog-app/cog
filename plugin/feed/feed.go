@@ -291,15 +291,7 @@ func (b ncapiBackend) SyncFilter(db *sql.DB, proto syncprefs.Protocol) (syncpref
 // request r a sync client made: the configured base URL, or else the address
 // the client reached.
 func (b ncapiBackend) ItemPage(r *http.Request, id int64) string {
-	base := b.p.ctx.BaseURL()
-	if base == "" {
-		scheme := "https"
-		if r.TLS == nil {
-			scheme = "http"
-		}
-		base = scheme + "://" + r.Host
-	}
-	return base + itemHref(id, "")
+	return b.p.absoluteURL(r, itemHref(id, ""))
 }
 
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.
