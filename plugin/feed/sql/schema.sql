@@ -147,6 +147,15 @@ CREATE TABLE IF NOT EXISTS tags (
     name TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS youtube_streams (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('audio','video')),
+    format_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, kind)
+);
+
 CREATE INDEX IF NOT EXISTS idx_downloads_state ON downloads(state);
 
 CREATE INDEX IF NOT EXISTS idx_filters_order ON filters(sort_order);

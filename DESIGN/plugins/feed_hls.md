@@ -445,10 +445,19 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 6. M3U of a playlist or view for external players. Android on Media3 HLS
    with background audio-only.
 
+## Decided
+
+- Undownloaded YouTube defaults to `direct` (`hls_youtube_mode`), with
+  `proxy`, chosen by an admin in Feed System Settings, as the fallback. On
+  2026-11-16, URLs resolved at home were range-requested from a phone on
+  cellular. The audio answered 302, a googlevideo host redirect (players and
+  safehttp follow it), not a refusal; an earlier, possibly-Wi-Fi run had the
+  video at 206. So the URLs are not refused off the resolving network. The
+  redirect's target from another network is confirmed by the phase 5 manual
+  phone check.
+
 ## Open questions
 
-- Whether googlevideo byte ranges work from a different IP than resolved them
-  (phase 5).
 - Whether HLS packed-audio MP3 plays widely enough to skip transcoding
   podcasts.
 - Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,

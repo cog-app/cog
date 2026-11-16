@@ -19,6 +19,12 @@ const (
 	YouTubeAudioFormat = "ba[ext=m4a]/ba"
 )
 
+// YouTubeFormat joins a video and an audio selector for yt-dlp. Each is a "/"
+// chain, and "+" binds tighter than "/", so each is wrapped.
+func YouTubeFormat(video, audio string) string {
+	return "(" + video + ")+(" + audio + ")"
+}
+
 // YouTubeTrack is one of a YouTube video's two tracks, as googlevideo serves it.
 type YouTubeTrack struct {
 	Kind      hls.Kind
@@ -28,8 +34,7 @@ type YouTubeTrack struct {
 }
 
 // ResolveYouTubeTracks resolves the video and audio formats of watchURL that
-// format names ("<video>+<audio>"), with one yt-dlp call. Each selector is
-// a "/" chain, so wrap them: "(<video>)+(<audio>)".
+// format names (see YouTubeFormat), with one yt-dlp call.
 func ResolveYouTubeTracks(ctx context.Context, watchURL, format string) (video, audio YouTubeTrack, err error) {
 	if !ytdlpStreamAvailable() {
 		return video, audio, fmt.Errorf("yt-dlp not found in PATH")

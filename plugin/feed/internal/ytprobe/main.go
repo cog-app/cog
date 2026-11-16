@@ -24,8 +24,7 @@ func main() {
 }
 
 func run(watchURL string) error {
-	// Each selector is a "/" chain, so group them before joining with "+".
-	format := "(" + feed.YouTubeVideoFormat + ")+(" + feed.YouTubeAudioFormat + ")"
+	format := feed.YouTubeFormat(feed.YouTubeVideoFormat, feed.YouTubeAudioFormat)
 	video, audio, err := feed.ResolveYouTubeTracks(context.Background(), watchURL, format)
 	if err != nil {
 		return err

@@ -20,6 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
+	"golang.org/x/sync/singleflight"
 )
 
 //go:generate go tool migratesql .
@@ -74,6 +75,8 @@ type Plugin struct {
 	// rangesWarned holds the items (rangesWarning) whose unreadable track
 	// Ranges has logged: the player polls it.
 	rangesWarned sync.Map
+	// youtubeFlight shares one yt-dlp resolve per user and item.
+	youtubeFlight singleflight.Group
 }
 
 // rangesWarning keys Plugin.rangesWarned.
