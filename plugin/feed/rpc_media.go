@@ -91,7 +91,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
 	if !audio {
 		username := plugin.UserFromContext(ctx).Username
-		master, ok, err := s.plugin.remoteMaster(ctx, store, username, id, ip.MediaURL)
+		master, ok, err := s.plugin.remoteMaster(ctx, store, username, ip)
 		if err != nil {
 			return nil, err
 		}
@@ -151,20 +151,31 @@ func videoPlayOf(dl Download) videoPlay {
 	return playPreparing
 }
 
+// remoteEligible reports whether an item may play from googlevideo over HLS
+// (hls_remote.go), from what is known without resolving: a YouTube video
+// with a watch URL, not packaged, and not to be muted (Download.muted): its
+// clean audio is made from a download, and googlevideo's is never clean.
+// remoteMaster and the M3U route (m3u_serve.go) both decide by it.
+func remoteEligible(sourceKind, itemType, watchURL string, dl Download) bool {
+	return sourceKind == "youtube" && itemType == "video" && watchURL != "" &&
+		dl.PackageState != "done" && !dl.muted()
+}
+
 // remoteMaster answers the signed master of an undownloaded YouTube video
 // after checking both tracks resolve to indexed fMP4; ok is false (err nil)
 // when they don't, and the caller falls back to downloading.
 //
-// It is also false for an item that is to be muted (Download.muted): its
-// clean audio is made from a download, and googlevideo's is never clean.
-// A client that goes away meanwhile gets ctx's error, never a download.
-func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string, itemID int64, watchURL string) (master string, ok bool, err error) {
+// It is also false for an item that is not remoteEligible, such as one that
+// is to be muted. A client that goes away meanwhile gets ctx's error, never
+// a download.
+func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string, it ItemPlayback) (master string, ok bool, err error) {
+	itemID, watchURL := it.ID, it.MediaURL
 	dl, err := store.FindDownload(itemID)
 	if err != nil {
 		return "", false, err
 	}
-	if dl.muted() {
-		p.youtubeLog().Info("youtube remote: item is to be muted; downloading", "item", itemID)
+	if !remoteEligible(it.SourceKind, it.Type, watchURL, dl) {
+		p.youtubeLog().Info("youtube remote: item cannot play remote; downloading", "item", itemID, "muted", dl.muted())
 		return "", false, nil
 	}
 	if _, err := p.remoteYouTube(ctx, store, username, itemID, watchURL, false); err != nil {

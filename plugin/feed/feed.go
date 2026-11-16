@@ -217,6 +217,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		priv.RegisterRoute("/index.php/apps/news/api/", ncapi.New(ncapiBackend{p}))
 		priv.RegisterRoute(gpoddersync.Prefix, gpoddersync.New(ncapiBackend{p}))
 		priv.RegisterRoute(hlsRoute, http.HandlerFunc(p.ServeHLS))
+		priv.RegisterRoute(m3uRoute, http.HandlerFunc(p.ServeM3U))
 
 		sub, err := fs.Sub(staticFS, "static")
 		if err != nil {

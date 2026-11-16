@@ -1526,7 +1526,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	it, err := store.GetItem(id)
+	it, err := store.GetItemPlayback(id)
 	if err != nil {
 		lookupError(w, r, err)
 		return
@@ -1562,7 +1562,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		master, ok, err := h.plugin.remoteMaster(r.Context(), store, plugin.Username(r), id, it.MediaURL)
+		master, ok, err := h.plugin.remoteMaster(r.Context(), store, plugin.Username(r), it)
 		if err != nil {
 			httperr.Internal(w, r, err)
 			return

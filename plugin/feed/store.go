@@ -1835,8 +1835,9 @@ func (s *Store) PlaybackByItems(ids []int64) (map[int64]Playback, error) {
 }
 
 // DownloadsByItems returns the download row per item ID in one query, with
-// what a client is shown of it: state, error, size and captions. Items with
-// no download are absent from the map.
+// what a client is shown of it (state, error, size and captions) and how it
+// plays (package state, and whether it is muted). Items with no download are
+// absent from the map.
 func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	out := make(map[int64]Download)
 	if len(ids) == 0 {
@@ -1844,7 +1845,8 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	}
 	in, args := idArgs(ids)
 	rows, err := s.db.Query(`
-		SELECT item_id, state, error, bytes, captions_path
+		SELECT item_id, state, error, bytes, captions_path,
+		       package_state, needs_profanity, clean_audio_path
 		FROM downloads WHERE item_id IN (`+in+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("downloads by items: %w", err)
@@ -1852,7 +1854,8 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var d Download
-		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath); err != nil {
+		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath,
+			&d.PackageState, &d.NeedsProfanity, &d.CleanAudioPath); err != nil {
 			return nil, fmt.Errorf("downloads by items scan: %w", err)
 		}
 		out[d.ItemID] = d
