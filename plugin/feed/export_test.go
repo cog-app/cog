@@ -9,3 +9,6 @@ func SetStreamResolver(f func(ctx context.Context, watchURL string, audio bool) 
 	resolveStream = f
 	return func() { resolveStream = old }
 }
+
+// HLSOptions is the signed options of a media link, for the external tests.
+type HLSOptions = hlsOptions

@@ -22,11 +22,10 @@ const hlsRoute = "GET /apps/feed/hls/{user}/{item}/{file}"
 // request, and the track files, with byte ranges.
 func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	for k := range q {
-		if k != "sig" {
-			http.Error(w, "unknown parameter "+strconv.Quote(k), http.StatusBadRequest)
-			return
-		}
+	opts, err := parseHLSOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	username, file := r.PathValue("user"), r.PathValue("file")
 	itemID, err := strconv.ParseInt(r.PathValue("item"), 10, 64)
@@ -59,7 +58,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sig := q.Get("sig")
-	if key == nil || !validHLSSignature(key, username, itemID, sig) {
+	if key == nil || !validHLSSignature(key, username, itemID, opts, sig) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -77,7 +76,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	query := "?sig=" + sig
+	query := opts.query(sig)
 	// Captions are masked whenever the clean rendition plays. Without a
 	// profanity plugin there is nothing to mask with, so they are withheld.
 	captions := d.CaptionsPath != ""

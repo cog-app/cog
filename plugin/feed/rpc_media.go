@@ -53,7 +53,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 		if kind == feedpb.Variant_VARIANT_VIDEO && req.Msg.Variant != feedpb.Variant_VARIANT_AUDIO {
 			switch videoPlayOf(dl) {
 			case playHLS:
-				master, err := s.plugin.HLSMasterURL(store, plugin.UserFromContext(ctx).Username, id)
+				master, err := s.plugin.HLSMasterURL(store, plugin.UserFromContext(ctx).Username, id, hlsOptions{})
 				if err != nil {
 					return nil, err
 				}

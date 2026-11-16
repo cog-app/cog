@@ -1433,7 +1433,7 @@ func (h *Pages) setHLSURL(r *http.Request, store *Store, ip *ItemPlayback) error
 	if !ip.Packaged || !ip.HasVideo || ip.CleanPending {
 		return nil
 	}
-	master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), ip.ID)
+	master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), ip.ID, hlsOptions{})
 	if err != nil {
 		return err
 	}
@@ -1539,7 +1539,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		if dl.State == "ready" && dl.LocalPath != "" {
 			switch videoPlayOf(dl) {
 			case playHLS:
-				master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), id)
+				master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), id, hlsOptions{})
 				if err != nil {
 					httperr.Internal(w, r, err)
 					return

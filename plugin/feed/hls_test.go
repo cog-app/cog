@@ -77,7 +77,7 @@ func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, vi
 
 func masterURL(t *testing.T, env *cogtest.Env, username string, id int64) string {
 	t.Helper()
-	u, err := feedPlugin(t, env).HLSMasterURL(feedStore(t, env, username), username, id)
+	u, err := feedPlugin(t, env).HLSMasterURL(feedStore(t, env, username), username, id, feed.HLSOptions{})
 	require.NoError(t, err)
 	return u
 }
@@ -166,7 +166,7 @@ func TestHLSRejects(t *testing.T) {
 		{"no sig", "/apps/feed/hls/alice/" + a + "/master.m3u8", http.StatusForbidden},
 		{"another item's sig", "/apps/feed/hls/alice/" + o + "/master.m3u8?sig=" + sig, http.StatusForbidden},
 		{"alice's sig on bob's path", "/apps/feed/hls/bob/" + b + "/master.m3u8?sig=" + sig, http.StatusForbidden},
-		{"extra parameter", master + "&skip=silence", http.StatusBadRequest},
+		{"extra parameter", master + "&mute=profanity", http.StatusBadRequest},
 		{"unknown file", sibling(master, "secrets.txt"), http.StatusNotFound},
 		{"unknown user", "/apps/feed/hls/mallory/" + a + "/master.m3u8?sig=" + sig, http.StatusForbidden},
 		{"bad item", "/apps/feed/hls/alice/x/master.m3u8?sig=" + sig, http.StatusNotFound},
@@ -177,6 +177,33 @@ func TestHLSRejects(t *testing.T) {
 			assert.Equal(t, "", r.Header.Get("Location"))
 		})
 	}
+}
+
+func TestHLSSkipNeedsItsOwnSignature(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := packagedItem(t, env, "alice", true)
+	plain := masterURL(t, env, "alice", id)
+	bad := env.Get(t, plain+"&skip=silence", cogtest.StopRedirect).Status(http.StatusForbidden).ReadBody()
+	wrong := env.Get(t, strings.Replace(plain, "sig=", "sig=AAAA", 1), cogtest.StopRedirect).Status(http.StatusForbidden).ReadBody()
+	assert.Equal(t, wrong, bad)
+
+	skip, err := feedPlugin(t, env).HLSSkipMasterURL(feedStore(t, env, "alice"), "alice", id)
+	require.NoError(t, err)
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, "&skip=silence"), body)
+	// Every URI carries the option.
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, ".m3u8") {
+			assert.True(t, strings.Contains(line, "&skip=silence"), line)
+		}
+	}
+	// The plain signature on a skip link is refused, and skip alone is too.
+	env.Get(t, sibling(skip, "audio.m3u8")).Status(http.StatusOK)
+	env.Get(t, strings.Replace(skip, "&skip=silence", "", 1)).Status(http.StatusForbidden)
+	// An edit list is accepted with skip, outside the signature.
+	env.Get(t, skip+"&edit=abcdef012345").Status(http.StatusOK)
+	env.Get(t, plain+"&edit=abcdef012345").Status(http.StatusBadRequest)
 }
 
 func TestHLSLinkDoesNotExpire(t *testing.T) {
