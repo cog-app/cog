@@ -564,6 +564,8 @@ type Download struct {
 	VideoPath       string // the video track, as downloaded or as packaged
 	PackageState    string // "" pending, "done", "error" (pipeline/package.go)
 	PackageError    string
+	CleanTrackPath  string // the clean audio as an HLS track; "" until packaged
+	CleanTrackError string
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -766,7 +768,7 @@ func (s *Store) PendingDownloads(limit int) ([]Download, error) {
 	rows, err := s.db.Query(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
-		       video_path, package_state, package_error
+		       video_path, package_state, package_error, clean_track_path, clean_track_error
 		FROM downloads WHERE state = 'queued' ORDER BY item_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending downloads: %w", err)
@@ -819,9 +821,12 @@ func (s *Store) MarkDownloadError(itemID int64, errMsg string) error {
 	return nil
 }
 
-// SetCleanAudioPath updates the clean_audio_path for a download row.
+// SetCleanAudioPath updates the clean_audio_path for a download row. A new
+// clean file has no track yet, so the old track and its error are cleared.
 func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ? WHERE item_id = ?`, path, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ?,
+			clean_track_path = '', clean_track_error = ''
+		WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set clean audio path: %w", err)
 	}
@@ -834,6 +839,7 @@ func (s *Store) DownloadFiles() ([]string, error) {
 	rows, err := s.db.Query(`SELECT local_path FROM downloads WHERE local_path != ''
 		UNION SELECT video_path FROM downloads WHERE video_path != ''
 		UNION SELECT clean_audio_path FROM downloads WHERE clean_audio_path != ''
+		UNION SELECT clean_track_path FROM downloads WHERE clean_track_path != ''
 		UNION SELECT captions_path FROM downloads WHERE captions_path != ''`)
 	if err != nil {
 		return nil, fmt.Errorf("download files: %w", err)
@@ -876,11 +882,13 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 	err := s.db.QueryRow(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
-		       silence_ranges, silence_state, video_path, package_state, package_error
+		       silence_ranges, silence_state, video_path, package_state, package_error,
+		       clean_track_path, clean_track_error
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
 		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
+		&d.CleanTrackPath, &d.CleanTrackError,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
@@ -1048,6 +1056,7 @@ func scanDownloads(rows *sql.Rows) ([]Download, error) {
 			&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 			&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
 			&d.VideoPath, &d.PackageState, &d.PackageError,
+			&d.CleanTrackPath, &d.CleanTrackError,
 		); err != nil {
 			return nil, fmt.Errorf("scan download: %w", err)
 		}
@@ -1131,6 +1140,7 @@ type ItemPlayback struct {
 	DownloadState     string
 	DownloadError     string // why the last download failed, when DownloadState is "error"
 	HasCleanAudio     bool
+	CleanPending      bool   // a clean file is waiting to be packaged as a track
 	SourceKind        string // subscription.kind
 	Packaged          bool   // the download is packaged for HLS
 	HasVideo          bool   // the download has a video track apart from its audio
@@ -1160,7 +1170,8 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 			COALESCE(d.error, ''),
 			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END,
 			COALESCE(d.package_state = 'done', 0),
-			COALESCE(d.video_path != '', 0)
+			COALESCE(d.video_path != '', 0),
+			COALESCE(d.clean_audio_path != '' AND d.clean_track_path = '', 0)
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id
 		LEFT JOIN playback pb ON pb.item_id = i.id
@@ -1178,6 +1189,7 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 		&hasClean,
 		&ip.Packaged,
 		&ip.HasVideo,
+		&ip.CleanPending,
 	)
 	if err != nil {
 		return ItemPlayback{}, fmt.Errorf("get item playback: %w", err)

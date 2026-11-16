@@ -104,3 +104,48 @@ func TestHLSKeyStableAndRotates(t *testing.T) {
 	assert.Equal(t, 32, len(k3))
 	assert.NotEqual(t, k1, k3)
 }
+
+func TestCleanTrackStore(t *testing.T) {
+	store, id := readyItem(t)
+	pendingClean := func() []int64 {
+		t.Helper()
+		ids, err := store.PendingCleanPackage(10)
+		require.NoError(t, err)
+		return ids
+	}
+	cleanPending := func() bool {
+		t.Helper()
+		ip, err := store.GetItemPlayback(id)
+		require.NoError(t, err)
+		return ip.CleanPending
+	}
+
+	// Not packaged yet: never pending.
+	require.NoError(t, store.SetCleanAudioPath(id, "media/1.clean.m4a"))
+	assert.Equal(t, 0, len(pendingClean()))
+
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	assert.Equal(t, []int64{id}, pendingClean())
+	assert.True(t, cleanPending())
+
+	require.NoError(t, store.SaveCleanTrack(id, "media/1.hls-audio.clean.m4a"))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "media/1.hls-audio.clean.m4a", d.CleanTrackPath)
+	assert.Equal(t, "media/1.hls-audio.clean.m4a", d.CleanAudioPath)
+	assert.Equal(t, 0, len(pendingClean()))
+	assert.False(t, cleanPending())
+
+	require.NoError(t, store.SetCleanAudioPath(id, "media/1.clean.m4a"))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.CleanTrackPath)
+	assert.Equal(t, []int64{id}, pendingClean())
+	assert.True(t, cleanPending())
+
+	require.NoError(t, store.MarkCleanTrackError(id, "bad"))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "bad", d.CleanTrackError)
+	assert.Equal(t, 0, len(pendingClean()))
+}

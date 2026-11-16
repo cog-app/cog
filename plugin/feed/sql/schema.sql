@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     silence_state TEXT NOT NULL DEFAULT '',
     video_path TEXT NOT NULL DEFAULT '',
     package_state TEXT NOT NULL DEFAULT '',
-    package_error TEXT NOT NULL DEFAULT ''
+    package_error TEXT NOT NULL DEFAULT '',
+    clean_track_path TEXT NOT NULL DEFAULT '',
+    clean_track_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (

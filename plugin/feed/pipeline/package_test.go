@@ -208,3 +208,15 @@ func TestPackageThenCollect(t *testing.T) {
 		assert.NoError(t, err, name)
 	}
 }
+
+// Collect keeps the clean track a row names.
+func TestCollectKeepsCleanTrack(t *testing.T) {
+	s, space, id := packageMerged(t)
+	_, err := space.Own.Put("media/1.hls-audio.clean.m4a", strings.NewReader("x"))
+	require.NoError(t, err)
+	require.NoError(t, s.SaveCleanTrack(id, "media/1.hls-audio.clean.m4a"))
+	require.NoError(t, pipeline.Collect(s, space))
+	f, err := space.Own.Open("media/1.hls-audio.clean.m4a")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}

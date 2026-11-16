@@ -43,6 +43,41 @@ func (s *Store) MarkPackageError(itemID int64, msg string) error {
 	return nil
 }
 
+// PendingCleanPackage returns up to limit packaged downloads whose clean
+// audio has no track yet and has not failed, ordered by item_id.
+func (s *Store) PendingCleanPackage(limit int) ([]int64, error) {
+	rows, err := s.db.Query(`SELECT item_id FROM downloads
+		WHERE package_state = 'done' AND clean_audio_path != ''
+			AND clean_track_path = '' AND clean_track_error = ''
+		ORDER BY item_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pending clean package: %w", err)
+	}
+	return scanInt64IDs(rows, "pending clean package")
+}
+
+// SaveCleanTrack records the packaged clean track: it is both the clean
+// track and the clean audio the player is given.
+func (s *Store) SaveCleanTrack(itemID int64, path string) error {
+	_, err := s.db.Exec(`UPDATE downloads SET clean_track_path = ?, clean_audio_path = ?,
+			clean_track_error = ''
+		WHERE item_id = ?`, path, path, itemID)
+	if err != nil {
+		return fmt.Errorf("save clean track: %w", err)
+	}
+	return nil
+}
+
+// MarkCleanTrackError records why the clean audio could not be packaged. It
+// is not tried again until a new clean file is set.
+func (s *Store) MarkCleanTrackError(itemID int64, msg string) error {
+	_, err := s.db.Exec(`UPDATE downloads SET clean_track_error = ? WHERE item_id = ?`, msg, itemID)
+	if err != nil {
+		return fmt.Errorf("mark clean track error: %w", err)
+	}
+	return nil
+}
+
 // hlsKeySetting names the key media links are signed with.
 const hlsKeySetting = "hls_key"
 
