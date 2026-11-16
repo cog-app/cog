@@ -196,7 +196,7 @@ func (h hlsRequest) skipFile(file string) {
 	}
 	o, err := h.skipOptions(tracks)
 	if err != nil {
-		httperr.Internal(w, r, err)
+		hlsError(w, r, err)
 		return
 	}
 	var sel skipSelection

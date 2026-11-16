@@ -189,7 +189,7 @@ func (h hlsRequest) master() {
 	}
 	sel, err := h.masterSkip(tracks)
 	if err != nil {
-		httperr.Internal(h.w, h.r, err)
+		hlsError(h.w, h.r, err)
 		return
 	}
 	pres := presentation(tracks, hlsOptions{Skip: true, Edit: sel.edit}.query(h.sig), subs)
