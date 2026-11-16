@@ -24,13 +24,14 @@ type Piece struct {
 	Edge       bool    // a strict part of its segment: played from an edge file
 }
 
-// unionCuts sorts cuts and merges those that overlap or touch.
+// unionCuts sorts cuts and merges those that overlap or touch. A cut
+// shorter than 1 ms is no cut.
 func unionCuts(cuts []Cut) []Cut {
 	sorted := slices.Clone(cuts)
 	slices.SortFunc(sorted, func(a, b Cut) int { return cmpFloat(a.Start, b.Start) })
 	var out []Cut
 	for _, c := range sorted {
-		if c.End-c.Start <= 0 {
+		if c.End-c.Start < planTolerance {
 			continue
 		}
 		if n := len(out); n > 0 && c.Start <= out[n-1].End+planTolerance {
@@ -45,9 +46,13 @@ func unionCuts(cuts []Cut) []Cut {
 // PlanCuts keeps every part of every segment outside the cuts: a whole
 // segment as it is, a part of one as an edge piece.
 //
-// Parts shorter than 1 ms are not kept. A piece shorter than MinPiece is
-// joined to the next piece of its kept span, or the previous one at the
-// span's end; a kept span shorter than MinPiece stays a piece of its own.
+// Parts shorter than 1 ms are not kept. An edge piece shorter than MinPiece
+// is joined to the next piece of its kept span, or the previous one at the
+// span's end, which then becomes an edge too; a short whole segment stays
+// as it is, since it needs no encoding. A kept span shorter than MinPiece
+// at the track's start or end is dropped: it is media past a cut that
+// reaches the item's edge, in a rendition a frame longer than the one the
+// cuts were made from. Any other short kept span stays a piece of its own.
 // Cuts may be unsorted or overlap. A plan whose cuts cover the whole track
 // has no pieces.
 func PlanCuts(t Track, cuts []Cut) []Piece {
@@ -72,6 +77,10 @@ func PlanCuts(t Track, cuts []Cut) []Piece {
 
 	var pieces []Piece
 	for _, span := range spans {
+		atStart, atEnd := span.Start <= start+planTolerance, span.End >= end-planTolerance
+		if span.End-span.Start < MinPiece && atStart != atEnd {
+			continue
+		}
 		var ps []Piece
 		for i, s := range segs {
 			sEnd := s.Start + s.Duration
@@ -92,11 +101,11 @@ func PlanCuts(t Track, cuts []Cut) []Piece {
 	return pieces
 }
 
-// joinShort joins each piece of one kept span shorter than MinPiece to its
-// neighbour, so no edge is too short to hold a frame.
+// joinShort joins each edge piece of one kept span shorter than MinPiece
+// to its neighbour, so no edge is too short to hold a frame.
 func joinShort(ps []Piece) []Piece {
 	for i := 0; i < len(ps) && len(ps) > 1; {
-		if ps[i].End-ps[i].Start >= MinPiece {
+		if !ps[i].Edge || ps[i].End-ps[i].Start >= MinPiece {
 			i++
 			continue
 		}
@@ -158,7 +167,16 @@ func Edges(pieces []Piece) []Piece {
 // only changes the EXT-X-MAP, so every rendition planned with the same cuts
 // has its discontinuities at the same presentation times, whatever its
 // segment grid. A plan with no pieces has no entries.
-func CutEntries(t Track, pieces []Piece, fileURI string, edgeURI func(n int) string, edges []Track) []Entry {
+//
+// It is an error when edges does not hold one track per edge piece, when
+// an edge track has no fragments, when edgeURI is nil and there are edge
+// pieces, or when a piece names a segment t does not have.
+func CutEntries(t Track, pieces []Piece, fileURI string, edgeURI func(n int) string, edges []Track) ([]Entry, error) {
+	if want := len(Edges(pieces)); len(edges) != want {
+		return nil, fmt.Errorf("hls: %d edge tracks for %d edge pieces", len(edges), want)
+	} else if want > 0 && edgeURI == nil {
+		return nil, fmt.Errorf("hls: %d edge pieces and no edge URI", want)
+	}
 	segs := TrackSegments(t)
 	init := Init{URI: fileURI, Offset: t.InitOffset, Length: t.InitLength}
 	entries := make([]Entry, 0, len(pieces))
@@ -167,27 +185,34 @@ func CutEntries(t Track, pieces []Piece, fileURI string, edgeURI func(n int) str
 		var e Entry
 		if p.Edge {
 			uri, edge := edgeURI(n), edges[n]
+			if len(edge.Fragments) == 0 {
+				return nil, fmt.Errorf("hls: edge %d (%s) has no fragments", n, uri)
+			}
 			n++
-			e = Entry{URI: uri, Duration: p.End - p.Start, Init: Init{URI: uri, Offset: edge.InitOffset, Length: edge.InitLength}}
-			if len(edge.Fragments) > 0 {
-				first, lastFrag := edge.Fragments[0], edge.Fragments[len(edge.Fragments)-1]
-				e.Offset, e.Length = first.Offset, lastFrag.Offset+lastFrag.Length-first.Offset
+			first, last := edge.Fragments[0], edge.Fragments[len(edge.Fragments)-1]
+			e = Entry{
+				URI: uri, Offset: first.Offset, Length: last.Offset + last.Length - first.Offset, Duration: p.End - p.Start,
+				Init: Init{URI: uri, Offset: edge.InitOffset, Length: edge.InitLength},
 			}
 		} else {
+			if p.Segment < 0 || p.Segment >= len(segs) {
+				return nil, fmt.Errorf("hls: piece %d names segment %d of %d", i, p.Segment, len(segs))
+			}
 			s := segs[p.Segment]
 			e = Entry{URI: fileURI, Offset: s.Offset, Length: s.Length, Duration: s.Duration, Init: init}
 		}
 		e.Discontinuity = i > 0 && p.Start-pieces[i-1].End > planTolerance
 		entries = append(entries, e)
 	}
-	return entries
+	return entries, nil
 }
 
 // EditID names a cut presentation: the applied cuts, rounded to the
 // millisecond, and the segment layout of every rendition it lists, keyed
 // "a" (Original), "c" (Clean) and "v" (Video). It is 12 hex characters.
 //
-// The layouts include byte lengths, so re-encoding a track changes the id.
+// The layouts include byte lengths, the init section and the codecs, so
+// re-encoding a track changes the id.
 func EditID(applied []Cut, layouts map[string]Track) string {
 	h := sha256.New()
 	ms := func(x float64) string { return strconv.FormatFloat(math.Round(x*1000)/1000, 'g', -1, 64) }
@@ -201,8 +226,9 @@ func EditID(applied []Cut, layouts map[string]Track) string {
 	}
 	slices.Sort(keys)
 	for _, k := range keys {
-		fmt.Fprintf(h, "track %q\n", k)
-		for _, s := range TrackSegments(layouts[k]) {
+		t := layouts[k]
+		fmt.Fprintf(h, "track %q %q %d %d\n", k, t.Codecs, t.InitOffset, t.InitLength)
+		for _, s := range TrackSegments(t) {
 			fmt.Fprintf(h, "seg %s %s %d %d\n",
 				strconv.FormatFloat(s.Start, 'g', -1, 64), strconv.FormatFloat(s.Duration, 'g', -1, 64), s.Offset, s.Length)
 		}
