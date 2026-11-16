@@ -292,11 +292,14 @@ func TestBrowser(t *testing.T) {
 		}`
 		read := func(done func(a, b, buf float64) bool) (a, bb, buf float64) {
 			for deadline := time.Now().Add(20 * time.Second); ; {
-				got, _ := b.Eval(t, probe).([]any)
-				require.True(t, len(got) == 3, "probe returned %v", got)
-				a, _ = got[0].(float64)
-				bb, _ = got[1].(float64)
-				buf, _ = got[2].(float64)
+				raw := b.Eval(t, probe)
+				got, ok := raw.([]any)
+				require.True(t, ok && len(got) == 3, "probe returned %v", raw)
+				var okA, okB, okBuf bool
+				a, okA = got[0].(float64)
+				bb, okB = got[1].(float64)
+				buf, okBuf = got[2].(float64)
+				require.True(t, okA && okB && okBuf, "probe returned %v", got)
 				if done(a, bb, buf) || time.Now().After(deadline) {
 					return a, bb, buf
 				}

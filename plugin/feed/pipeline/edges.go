@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"math"
 	"path"
@@ -134,7 +135,11 @@ func (w *Edges) processOne(ctx context.Context, itemID int64, deadline time.Time
 		slog.Info("feed edges: inputs changed while encoding; made again next run", "item_id", itemID, "edit", plan.Edit)
 		return rmErr
 	}
-	if err := w.store.SetEdges(itemID, plan.Edit); err != nil {
+	index, err := w.index(itemID, plan.Edit, rs)
+	if err != nil {
+		return errors.Join(w.fail(itemID, plan.Edit, err), w.space.Cache.RemoveAll(dir))
+	}
+	if err := w.store.SetEdges(itemID, plan.Edit, index); err != nil {
 		return errors.Join(err, w.space.Cache.RemoveAll(dir))
 	}
 	return w.removeOthers(itemID, plan.Edit)
@@ -184,6 +189,27 @@ func (w *Edges) load(d feed.Download) (feed.EdgePlan, []rendition, error) {
 		rs = append(rs, rendition{feed.EdgeVideo, d.VideoPath, *video, plan.Video})
 	}
 	return plan, rs, nil
+}
+
+// index reads where the media of each edge of the edit is, for playlists
+// to list without opening the files.
+func (w *Edges) index(itemID int64, edit string, rs []rendition) (feed.EdgesIndex, error) {
+	index := feed.EdgesIndex{}
+	for _, r := range rs {
+		for n := range hls.Edges(r.pieces) {
+			name := feed.EdgeName(itemID, edit, r.key, n)
+			tr, _, err := w.space.CachedTrack(name)
+			if err != nil {
+				return nil, fmt.Errorf("index edge: %w", err)
+			}
+			e, ok := feed.EdgeEntryOf(tr)
+			if !ok {
+				return nil, fmt.Errorf("index edge %s: no fragments", name)
+			}
+			index[r.key] = append(index[r.key], e)
+		}
+	}
+	return index, nil
 }
 
 // stale reports whether the item's plan is no longer edit, or it is no
@@ -337,6 +363,9 @@ func ratio(s string) (a, b int, ok bool) {
 // One that does not is made again.
 func (w *Edges) made(name string, piece hls.Piece, src edgeSource) bool {
 	if _, err := w.space.Cache.Stat(name); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			slog.Warn("feed edges: making an edge again: stat", "name", name, "err", err)
+		}
 		return false
 	}
 	if err := w.check(name, piece, src); err != nil {

@@ -386,7 +386,7 @@ func TestSetPlayerPrefsResetsEdges(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
 	set(1) // the default: unchanged
 	assert.Equal(t, "abcdefabcdef", edit())
 	set(0) // a client without the field: unchanged

@@ -29,7 +29,7 @@ func (s *Store) PendingPackage(limit int) ([]int64, error) {
 func (s *Store) SavePackage(itemID int64, audioPath, videoPath string, bytes int64) error {
 	_, err := s.db.Exec(`UPDATE downloads SET local_path = ?, video_path = ?, bytes = ?,
 			package_state = 'done', package_error = '',
-			edges_edit = '', edges_error = ''
+			edges_edit = '', edges_error = '', edges_index = ''
 		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
 	if err != nil {
 		return fmt.Errorf("save package: %w", err)
@@ -65,7 +65,7 @@ func (s *Store) PendingCleanPackage(limit int) ([]int64, error) {
 // track and the clean audio the player is given.
 func (s *Store) SaveCleanTrack(itemID int64, path string) error {
 	_, err := s.db.Exec(`UPDATE downloads SET clean_track_path = ?, clean_audio_path = ?,
-			clean_track_error = '', edges_edit = '', edges_error = ''
+			clean_track_error = '', edges_edit = '', edges_error = '', edges_index = ''
 		WHERE item_id = ?`, path, path, itemID)
 	if err != nil {
 		return fmt.Errorf("save clean track: %w", err)
@@ -77,7 +77,7 @@ func (s *Store) SaveCleanTrack(itemID int64, path string) error {
 // item to be cleaned again.
 func (s *Store) ResetCleanAudio(itemID int64) error {
 	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = '', needs_profanity = 1,
-			edges_edit = '', edges_error = ''
+			edges_edit = '', edges_error = '', edges_index = ''
 		WHERE item_id = ?`, itemID)
 	if err != nil {
 		return fmt.Errorf("reset clean audio: %w", err)
@@ -230,11 +230,16 @@ func (s *Store) PendingEdges(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending edges")
 }
 
-// SetEdges records that the item's edges for the edit list exist (an edit
-// list with no edge pieces has an empty set).
-func (s *Store) SetEdges(itemID int64, edit string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = ''
-		WHERE item_id = ?`, edit, itemID)
+// SetEdges records that the item's edges for the edit list exist, and where
+// in each file its media is (an edit list with no edge pieces has an empty
+// set).
+func (s *Store) SetEdges(itemID int64, edit string, index EdgesIndex) error {
+	buf, err := json.Marshal(index)
+	if err != nil {
+		return fmt.Errorf("encode edges index: %w", err)
+	}
+	_, err = s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = '', edges_index = ?
+		WHERE item_id = ?`, edit, string(buf), itemID)
 	if err != nil {
 		return fmt.Errorf("set edges: %w", err)
 	}
@@ -245,7 +250,7 @@ func (s *Store) SetEdges(itemID int64, edit string) error {
 // The edit is kept, so it is not tried again until an input changes and
 // ResetEdges clears it.
 func (s *Store) MarkEdgesError(itemID int64, edit, msg string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = ?
+	_, err := s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = ?, edges_index = ''
 		WHERE item_id = ?`, edit, msg, itemID)
 	if err != nil {
 		return fmt.Errorf("mark edges error: %w", err)
@@ -256,7 +261,7 @@ func (s *Store) MarkEdgesError(itemID int64, edit, msg string) error {
 // ResetEdges forgets the edges (and their error) of the items, or of every
 // item when none is given. Wanted items are made again.
 func (s *Store) ResetEdges(itemIDs ...int64) error {
-	q := `UPDATE downloads SET edges_edit = '', edges_error = ''
+	q := `UPDATE downloads SET edges_edit = '', edges_error = '', edges_index = ''
 		WHERE (edges_edit != '' OR edges_error != '')`
 	var args []any
 	if len(itemIDs) > 0 {
@@ -275,6 +280,16 @@ var ErrEditNotFound = errors.New("feed: unknown edit list")
 // RecordEdit remembers the cuts an edit list applied. The id names the cuts,
 // so one already recorded is left as it is.
 func (s *Store) RecordEdit(itemID int64, edit string, applied []hls.Cut) error {
+	// Read first: a master request for an edit list already served is the
+	// steady state and must not take the write lock.
+	var n int
+	if err := s.db.QueryRow(`SELECT count(*) FROM hls_edits WHERE item_id = ? AND id = ?`,
+		itemID, edit).Scan(&n); err != nil {
+		return fmt.Errorf("record edit: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
 	buf, err := json.Marshal(applied)
 	if err != nil {
 		return fmt.Errorf("encode edit cuts: %w", err)

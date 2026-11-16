@@ -196,13 +196,47 @@ func edgesMade(t *testing.T) (*feed.Store, int64) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.True(t, edgesPending(t, store, id))
-	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", testEdgesIndex))
 	require.False(t, edgesPending(t, store, id))
 	d, err := store.GetDownload(id)
 	require.NoError(t, err)
 	require.True(t, d.EdgesWanted)
 	require.Equal(t, "abcdefabcdef", d.EdgesEdit)
+	require.NotEqual(t, "", d.EdgesIndex)
 	return store, id
+}
+
+var testEdgesIndex = feed.EdgesIndex{feed.EdgeOriginal: {{InitOffset: 0, InitLength: 700, Offset: 780, Length: 3000}}}
+
+// Every change that forgets the edges forgets where their media is too.
+func TestEdgesIndexClearedOnReset(t *testing.T) {
+	for name, reset := range map[string]func(*feed.Store, int64) error{
+		"ResetEdges":        func(s *feed.Store, id int64) error { return s.ResetEdges(id) },
+		"ResetEdgesAll":     func(s *feed.Store, id int64) error { return s.ResetEdges() },
+		"MarkEdgesError":    func(s *feed.Store, id int64) error { return s.MarkEdgesError(id, "abcdefabcdef", "boom") },
+		"SetSilenceRanges":  func(s *feed.Store, id int64) error { return s.SetSilenceRanges(id, nil) },
+		"SavePackage":       func(s *feed.Store, id int64) error { return s.SavePackage(id, "media/2.hls-audio.m4a", "", 300) },
+		"SaveCleanTrack":    func(s *feed.Store, id int64) error { return s.SaveCleanTrack(id, "media/1.clean.hls.m4a") },
+		"SetCleanAudioPath": func(s *feed.Store, id int64) error { return s.SetCleanAudioPath(id, "") },
+		"ResetCleanAudio":   func(s *feed.Store, id int64) error { return s.ResetCleanAudio(id) },
+		"MarkDownloadReady": func(s *feed.Store, id int64) error { return s.MarkDownloadReady(id, "media/1.mp3", 100) },
+		"PrefChange": func(s *feed.Store, id int64) error {
+			prefs, err := s.LoadPlayerPrefs()
+			if err != nil {
+				return err
+			}
+			prefs.SkipSilenceMinSec++
+			return s.SavePlayerPrefs(prefs)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, id := edgesMade(t)
+			require.NoError(t, reset(store, id))
+			d, err := store.GetDownload(id)
+			require.NoError(t, err)
+			assert.Equal(t, "", d.EdgesIndex)
+		})
+	}
 }
 
 func TestEdgesPending(t *testing.T) {
@@ -213,7 +247,7 @@ func TestEdgesPending(t *testing.T) {
 	assert.False(t, edgesPending(t, store, id), "silence not done")
 	require.NoError(t, store.SetSilenceRanges(id, nil))
 	assert.True(t, edgesPending(t, store, id))
-	require.NoError(t, store.SetEdges(id, "abc"))
+	require.NoError(t, store.SetEdges(id, "abc", nil))
 	assert.False(t, edgesPending(t, store, id))
 	require.NoError(t, store.SetSilenceRanges(id, []feed.Range{{Start: 1, End: 3, Action: "skip"}}))
 	assert.True(t, edgesPending(t, store, id), "new silence clears the edges")
@@ -340,7 +374,7 @@ func TestPackagedEdges(t *testing.T) {
 	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
 	assert.Equal(t, map[int64]string{id: ""}, edges)
-	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
 	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
 	assert.Equal(t, map[int64]string{id: "abcdefabcdef"}, edges)
@@ -368,7 +402,7 @@ func TestResetEdgesScopedToItems(t *testing.T) {
 	require.NoError(t, store.SetSilenceRanges(b, nil))
 	_, err := store.WantEdges(b)
 	require.NoError(t, err)
-	require.NoError(t, store.SetEdges(b, "bbbbbbbbbbbb"))
+	require.NoError(t, store.SetEdges(b, "bbbbbbbbbbbb", nil))
 
 	require.NoError(t, store.ResetEdges(a))
 	da, err := store.GetDownload(a)

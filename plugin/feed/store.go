@@ -569,6 +569,7 @@ type Download struct {
 	EdgesWanted     bool   // a player asked for the skip presentation
 	EdgesEdit       string // the edit list the edges were made for; "" = none yet
 	EdgesError      string // why they could not be made
+	EdgesIndex      string // JSON EdgesIndex of the edges of EdgesEdit; "" until made
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -809,7 +810,7 @@ func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64
 		UPDATE downloads SET state = 'ready', local_path = ?, video_path = ?, bytes = ?,
 			completed_at = unixepoch(), package_state = '', package_error = '',
 			clean_track_path = '', clean_track_error = '',
-			edges_edit = '', edges_error = '',
+			edges_edit = '', edges_error = '', edges_index = '',
 			needs_profanity = CASE WHEN clean_audio_path != '' THEN 1 ELSE needs_profanity END,
 			clean_audio_path = ''
 		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
@@ -836,7 +837,7 @@ func (s *Store) MarkDownloadError(itemID int64, errMsg string) error {
 func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
 	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ?,
 			clean_track_path = '', clean_track_error = '',
-			edges_edit = '', edges_error = ''
+			edges_edit = '', edges_error = '', edges_index = ''
 		WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set clean audio path: %w", err)
@@ -894,12 +895,12 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
 		       silence_ranges, silence_state, video_path, package_state, package_error,
-		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error
+		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error, edges_index
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
 		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
-		&d.CleanTrackPath, &d.CleanTrackError, &wanted, &d.EdgesEdit, &d.EdgesError,
+		&d.CleanTrackPath, &d.CleanTrackError, &wanted, &d.EdgesEdit, &d.EdgesError, &d.EdgesIndex,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
@@ -953,7 +954,7 @@ func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
 	}
 	_, err = s.db.Exec(
 		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done',
-			edges_edit = '', edges_error = '' WHERE item_id = ?`,
+			edges_edit = '', edges_error = '', edges_index = '' WHERE item_id = ?`,
 		string(buf), itemID)
 	if err != nil {
 		return fmt.Errorf("save silence ranges for item %d: %w", itemID, err)

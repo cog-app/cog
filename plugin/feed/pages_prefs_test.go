@@ -135,7 +135,7 @@ func TestSavePlayerPrefsFormResetsEdges(t *testing.T) {
 	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
 	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
 	require.NoError(t, store.SetSilenceRanges(id, nil))
-	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
 	post := func(k, v string) {
 		t.Helper()
 		env.PostForm(t, "/apps/feed/player/prefs", url.Values{

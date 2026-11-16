@@ -3,6 +3,7 @@ package feed
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -172,7 +173,7 @@ func presentation(t itemTracks, query string, subs bool) hls.Presentation {
 func (h hlsRequest) master() {
 	tracks, err := loadTracks(h.space, h.d)
 	if err != nil {
-		httperr.Internal(h.w, h.r, err)
+		hlsError(h.w, h.r, err)
 		return
 	}
 	subs := h.captions
@@ -220,7 +221,7 @@ func (h hlsRequest) file(file string) {
 		}
 		audio, _, err := space.Track(d.LocalPath)
 		if err != nil {
-			httperr.Internal(w, r, err)
+			hlsError(w, r, err)
 			return
 		}
 		writePlaylist(w, r, hls.Playlist(hls.SubtitleEntries(audio, func(n int) string {
@@ -240,7 +241,7 @@ func (h hlsRequest) file(file string) {
 		}
 		t, _, err := space.Track(stored)
 		if err != nil {
-			httperr.Internal(w, r, err)
+			hlsError(w, r, err)
 			return
 		}
 		writePlaylist(w, r, hls.MediaPlaylist(t, media+query))
@@ -254,7 +255,7 @@ func (h hlsRequest) file(file string) {
 		}
 		audio, _, err := space.Track(d.LocalPath)
 		if err != nil {
-			httperr.Internal(w, r, err)
+			hlsError(w, r, err)
 			return
 		}
 		start, end, ok := hls.SegmentCaptionBounds(audio, n)
@@ -264,7 +265,7 @@ func (h hlsRequest) file(file string) {
 		}
 		cues, err := h.captionCues()
 		if err != nil {
-			httperr.Internal(w, r, err)
+			hlsError(w, r, err)
 			return
 		}
 		// MPEGTS 0: hls.js rebases the timeline so the first audio sample plays
@@ -321,7 +322,7 @@ func serveTrackFile(w http.ResponseWriter, r *http.Request, space Space, stored,
 func serveFile(w http.ResponseWriter, r *http.Request, from plugin.Storage, name, mime string) {
 	f, err := from.Open(name)
 	if err != nil {
-		httperr.Internal(w, r, err)
+		hlsError(w, r, err)
 		return
 	}
 	defer func() {
@@ -331,7 +332,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, from plugin.Storage, name
 	}()
 	st, err := f.Stat()
 	if err != nil {
-		httperr.Internal(w, r, err)
+		hlsError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", mime)
@@ -387,4 +388,16 @@ func writeText(w http.ResponseWriter, r *http.Request, contentType, body string)
 	if _, err := w.Write([]byte(body)); err != nil {
 		slog.Debug("feed hls: write playlist", "err", err)
 	}
+}
+
+// hlsError answers a request that failed: a file gone from the storage or
+// the cache (evicted, or removed under a stale row) is not found, and
+// anything else is the server's.
+func hlsError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, fs.ErrNotExist) {
+		slog.Warn("feed hls: file missing", "path", r.URL.Path, "err", err)
+		http.NotFound(w, r)
+		return
+	}
+	httperr.Internal(w, r, err)
 }

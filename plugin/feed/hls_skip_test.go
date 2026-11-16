@@ -153,10 +153,12 @@ func masterURI(t *testing.T, body, file string) string {
 	return ""
 }
 
-func extinfSum(pl string) float64 {
+func extinfSum(t *testing.T, pl string) float64 {
+	t.Helper()
 	sum := 0.0
 	for _, m := range extinf.FindAllStringSubmatch(pl, -1) {
-		v, _ := strconv.ParseFloat(m[1], 64)
+		v, err := strconv.ParseFloat(m[1], 64)
+		require.NoError(t, err, m[0])
 		sum += v
 	}
 	return sum
@@ -209,8 +211,8 @@ func TestHLSSkipVideoPendingThenFull(t *testing.T) {
 		assert.Equal(t, 2, strings.Count(pl, "#EXT-X-DISCONTINUITY"), pl)
 		assert.Equal(t, 4, strings.Count(pl, "#EXT-X-MAP:URI=\"edge-"+edit+"-"), pl)
 		// The cuts take 3.9 s; AAC frames make the audio track 12.023 s.
-		whole := extinfSum(env.Get(t, sibling(plain, file)).Status(http.StatusOK).ReadBody())
-		assert.InDelta(t, whole-1.5-2.4, extinfSum(pl), 0.01, pl)
+		whole := extinfSum(t, env.Get(t, sibling(plain, file)).Status(http.StatusOK).ReadBody())
+		assert.InDelta(t, whole-1.5-2.4, extinfSum(t, pl), 0.01, pl)
 		mime, key := "video/mp4", "-v-"
 		if file == "audio.m3u8" {
 			mime, key = "audio/mp4", "-a-"
@@ -240,7 +242,7 @@ func TestHLSSkipAudioCoarse(t *testing.T) {
 	pl := env.Get(t, child(skip, masterURI(t, body, "audio.m3u8"))).Status(http.StatusOK).ReadBody()
 	assert.False(t, strings.Contains(pl, "edge-"), pl)
 	assert.Equal(t, 1, strings.Count(pl, "#EXTINF:"), pl)
-	assert.InDelta(t, extinfSum(plain)/2, extinfSum(pl), 0.05, pl)
+	assert.InDelta(t, extinfSum(t, plain)/2, extinfSum(t, pl), 0.05, pl)
 	assert.Equal(t, 0, strings.Count(pl, "#EXT-X-DISCONTINUITY"), pl)
 	cuts, err := feedStore(t, env, "alice").EditCuts(id, edit)
 	require.NoError(t, err)
@@ -344,7 +346,7 @@ func TestHLSSkipSubtitles(t *testing.T) {
 		return at
 	}
 	assert.Equal(t, discont(audio), discont(subs))
-	assert.InDelta(t, extinfSum(audio), extinfSum(subs), 0.01)
+	assert.InDelta(t, extinfSum(t, audio), extinfSum(t, subs), 0.01)
 	vtts := playlistURIs(subs)
 	require.Equal(t, 4, len(vtts))
 	for _, u := range vtts {
@@ -471,7 +473,7 @@ func TestHLSSkipRejectsOtherPlans(t *testing.T) {
 	}
 }
 
-// A cache that lost an edge sends the item back to the worker (R13).
+// A cache that lost the edges sends the item back to the worker (R13).
 func TestHLSSkipSelfHealsMissingEdge(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
@@ -482,7 +484,8 @@ func TestHLSSkipSelfHealsMissingEdge(t *testing.T) {
 	require.NotEqual(t, "", edit)
 	space, err := feedPlugin(t, env).Space("alice")
 	require.NoError(t, err)
-	require.NoError(t, space.Cache.Remove(feed.EdgeName(id, edit, feed.EdgeVideo, 2)))
+	// The cache dropped the edit's edges.
+	require.NoError(t, space.Cache.RemoveAll(feed.EdgesDir(id)+"/"+edit))
 
 	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
 	assert.True(t, strings.Contains(body, `VALUE="pending"`), body)
@@ -513,4 +516,96 @@ func TestHLSSkipEdgesErrorNoLoop(t *testing.T) {
 		assert.Equal(t, "ffmpeg: boom", d.EdgesError)
 	}
 	env.Get(t, sibling(skip, "video.m3u8")+"&edit="+edit).Status(http.StatusNotFound)
+}
+
+// fullSkipItem is a video skip item whose edges are made, its skip master
+// URL, and the master's body.
+func fullSkipItem(t *testing.T, env *cogtest.Env) (int64, string, string) {
+	t.Helper()
+	id, skip := skipItem(t, env, "alice", true, skipFixture)
+	env.Get(t, skip).Status(http.StatusOK)
+	runEdges(t, env, "alice")
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	require.NotEqual(t, "", masterEdit(body), body)
+	return id, skip, body
+}
+
+// Playlists list edges from the index the worker recorded, as they would
+// from the edge files themselves.
+func TestHLSSkipPlaylistFromIndex(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id, skip, body := fullSkipItem(t, env)
+	edit := masterEdit(body)
+	store := feedStore(t, env, "alice")
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	d := download(t, env, "alice", id)
+	original, _, err := space.Track(d.LocalPath)
+	require.NoError(t, err)
+	video, _, err := space.Track(d.VideoPath)
+	require.NoError(t, err)
+	plan, err := feed.SkipPlan(store, d, original, nil, &video)
+	require.NoError(t, err)
+	require.Equal(t, edit, plan.Edit)
+	for _, c := range []struct {
+		file, media, key string
+		track            hls.Track
+		pieces           []hls.Piece
+	}{
+		{"video.m3u8", "video.mp4", feed.EdgeVideo, video, plan.Video},
+		{"audio.m3u8", "audio.m4a", feed.EdgeOriginal, original, plan.Original},
+	} {
+		uri := masterURI(t, body, c.file)
+		query := uri[strings.Index(uri, "?"):]
+		var edges []hls.Track
+		for n := range hls.Edges(c.pieces) {
+			tr, _, err := space.CachedTrack(feed.EdgeName(id, edit, c.key, n))
+			require.NoError(t, err)
+			edges = append(edges, tr)
+		}
+		entries, err := hls.CutEntries(c.track, c.pieces, c.media+query, func(n int) string {
+			return "edge-" + edit + "-" + c.key + "-" + strconv.Itoa(n) + ".mp4" + query
+		}, edges)
+		require.NoError(t, err)
+		got := env.Get(t, child(skip, uri)).Status(http.StatusOK).ReadBody()
+		assert.Equal(t, hls.Playlist(entries), got)
+	}
+}
+
+// An edge request is checked against the recorded edges alone: it reads
+// no track, so it is served even when the item's tracks cannot be read.
+func TestHLSSkipEdgeReadsNoTrack(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id, skip, body := fullSkipItem(t, env)
+	edge := playlistURIs(env.Get(t, child(skip, masterURI(t, body, "video.m3u8"))).Status(http.StatusOK).ReadBody())[0]
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	d := download(t, env, "alice", id)
+	for _, stored := range []string{d.LocalPath, d.VideoPath} {
+		_, err := space.Own.Put(stored, strings.NewReader("not a track"))
+		require.NoError(t, err)
+	}
+	env.Get(t, child(skip, edge), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
+	env.Get(t, child(skip, masterURI(t, body, "video.m3u8"))).Status(http.StatusInternalServerError)
+}
+
+// A file gone from the cache or storage is not found, not a server error.
+func TestHLSSkipMissingFiles(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id, skip, body := fullSkipItem(t, env)
+	edit := masterEdit(body)
+	edge := playlistURIs(env.Get(t, child(skip, masterURI(t, body, "video.m3u8"))).Status(http.StatusOK).ReadBody())[0]
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	require.NoError(t, space.Cache.Remove(feed.EdgeName(id, edit, feed.EdgeVideo, 0)))
+	env.Get(t, child(skip, edge)).Status(http.StatusNotFound)
+
+	d := download(t, env, "alice", id)
+	require.NoError(t, space.Own.Remove(d.VideoPath))
+	env.Get(t, sibling(masterURL(t, env, "alice", id), "video.mp4")).Status(http.StatusNotFound)
+	env.Get(t, sibling(masterURL(t, env, "alice", id), "video.m3u8")).Status(http.StatusNotFound)
+	env.Get(t, skip).Status(http.StatusNotFound)
 }
