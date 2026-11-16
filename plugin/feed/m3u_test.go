@@ -1,8 +1,10 @@
 package feed_test
 
 import (
+	"html"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -413,4 +415,115 @@ func TestM3UPodcastVideoNotDownloaded(t *testing.T) {
 	mediaItem(t, feedStore(t, env, "alice"), "video", "Vid", "https://cdn.example.com/v.mp4")
 	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
 	assert.Equal(t, "#EXTM3U\n#EXTINF:-1,Pod – Vid\nhttps://cdn.example.com/v.mp4\n", body)
+}
+
+// launcherExec is the Exec line of a launcher body.
+func launcherExec(t *testing.T, body string) string {
+	t.Helper()
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "Exec=") {
+			return l
+		}
+	}
+	t.Fatalf("no Exec line in %q", body)
+	return ""
+}
+
+// execURL is the URL a launcher's Exec line hands mpv, read back as a
+// Desktop Entry reader would: the quotes dropped and %% read as %.
+func execURL(t *testing.T, line string) string {
+	t.Helper()
+	arg, ok := strings.CutPrefix(line, `Exec=mpv --force-window "`)
+	require.True(t, ok, line)
+	arg, ok = strings.CutSuffix(arg, `"`)
+	require.True(t, ok, line)
+	// Inside quotes, a backslash makes the next character itself.
+	var b strings.Builder
+	for i := 0; i < len(arg); i++ {
+		if arg[i] == '\\' && i+1 < len(arg) {
+			i++
+		}
+		b.WriteByte(arg[i])
+	}
+	return strings.ReplaceAll(b.String(), "%%", "%")
+}
+
+func TestM3ULauncher(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	pl, err := store.CreatePlaylist(feed.Playlist{Name: "Morning News"})
+	require.NoError(t, err)
+
+	path := "/apps/feed/launchers/playlist/" + strconv.FormatInt(pl, 10) + ".m3u"
+	r := env.Get(t, path, alice.Auth).Status(http.StatusOK)
+	assert.Equal(t, "application/x-desktop", r.Header.Get("Content-Type"))
+	assert.Equal(t, `attachment; filename="cog-morning-news.desktop"`, r.Header.Get("Content-Disposition"))
+	body := r.ReadBody()
+	assert.True(t, strings.HasPrefix(body, "[Desktop Entry]\nType=Application\nName=Cog: Morning News\n"), body)
+	assert.True(t, strings.Contains(body, "Comment=Play Morning News from Cog in mpv, silence skipped\n"), body)
+	assert.True(t, strings.HasSuffix(body, "Terminal=false\nCategories=AudioVideo;Player;\n"), body)
+
+	m3u := execURL(t, launcherExec(t, body))
+	assert.True(t, strings.HasPrefix(m3u, env.Providers.Config.BaseURL+"/apps/feed/m3u/alice/playlist/"), m3u)
+	assert.True(t, strings.HasSuffix(m3u, "&skip=silence"), m3u)
+	env.Get(t, relative(env, m3u)).Status(http.StatusOK)
+
+	env.Get(t, path).Status(http.StatusUnauthorized)
+	env.Get(t, "/apps/feed/launchers/playlist/9999.m3u", alice.Auth).Status(http.StatusNotFound)
+	env.Get(t, "/apps/feed/launchers/playlist/x.m3u", alice.Auth).Status(http.StatusBadRequest)
+	env.Get(t, "/apps/feed/launchers/starred/7.m3u", alice.Auth).Status(http.StatusBadRequest)
+}
+
+// The launcher link a view page really contains downloads a launcher.
+func TestM3ULauncherFromPages(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	sub, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://pod.example.com/l", Title: "Pod: Cast"})
+	require.NoError(t, err)
+	folder, err := store.CreateFolder("Folder")
+	require.NoError(t, err)
+	pl, err := store.CreatePlaylist(feed.Playlist{Name: "Everything"})
+	require.NoError(t, err)
+	id := strconv.FormatInt
+	for _, tc := range []struct{ page, name string }{
+		{"/apps/feed/playlists/" + id(pl, 10), "Everything"},
+		{"/apps/feed/folder/" + id(folder, 10), "Folder"},
+		{"/apps/feed/subscription/" + id(sub, 10), "Pod: Cast"},
+		{"/apps/feed/tag/" + url.PathEscape("a b"), "a b"},
+		{"/apps/feed/starred", "Starred"},
+		{"/apps/feed/", "Unread"},
+	} {
+		t.Run(tc.page, func(t *testing.T) {
+			page := env.Get(t, tc.page, alice.Auth).Status(http.StatusOK).ReadBody()
+			m := regexp.MustCompile(`href="(/apps/feed/launchers/[^"]*)"`).FindStringSubmatch(page)
+			require.NotNil(t, m, "no launcher link")
+			r := env.Get(t, html.UnescapeString(m[1]), alice.Auth).Status(http.StatusOK)
+			assert.True(t, strings.Contains(r.ReadBody(), "Name=Cog: "+tc.name+"\n"))
+		})
+	}
+}
+
+var dispRE = regexp.MustCompile(`^attachment; filename="cog-[a-z0-9-]+\.desktop"$`)
+
+// A tag name is the user's text, and it ends up in an Exec line and a Name.
+func TestM3ULauncherHostileTag(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pw")
+	for _, tag := range []string{`a"b`, "a`b", "a$b", `a\b`, "a%b", "a b", "a\nb\nExec=evil", "a\r\nb", "a'b", "a;b&c|d"} {
+		t.Run(strconv.Quote(tag), func(t *testing.T) {
+			r := env.Get(t, "/apps/feed/launchers/tag/"+url.PathEscape(tag)+".m3u", alice.Auth).Status(http.StatusOK)
+			disp := r.Header.Get("Content-Disposition")
+			assert.True(t, dispRE.MatchString(disp), disp)
+			body := r.ReadBody()
+			var keys []string
+			for _, l := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+				keys = append(keys, strings.SplitN(l, "=", 2)[0])
+			}
+			assert.Equal(t, []string{"[Desktop Entry]", "Type", "Name", "Comment", "Exec", "Terminal", "Categories"}, keys)
+			// The URL the Exec line carries is a signed link that works.
+			env.Get(t, relative(env, execURL(t, launcherExec(t, body)))).Status(http.StatusOK)
+		})
+	}
 }

@@ -205,6 +205,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "talks/preview", http.HandlerFunc(pages.TalksPreview))
 	ctx.RegisterAction("POST", "talks", http.HandlerFunc(pages.AddTalks))
 	ctx.RegisterAPI("opml/export", http.HandlerFunc(pages.ExportOPML))
+	ctx.RegisterAPI("launchers/{kind}/{file}", http.HandlerFunc(pages.Launcher))
 
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
 		Handler: http.HandlerFunc(pages.SystemSettings),
