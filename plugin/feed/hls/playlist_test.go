@@ -243,3 +243,10 @@ func TestMasterSubtitlesAudioOnly(t *testing.T) {
 	assert.False(t, strings.Contains(pl, "TYPE=AUDIO"), pl)
 	assert.True(t, strings.Contains(pl, `SUBTITLES="subs"`+"\naudio.m3u8\n"), pl)
 }
+
+// 2.4995 is just under half-way in binary and prints as 2.499, which rounds to 2.
+func TestMediaPlaylistTargetDurationHalfway(t *testing.T) {
+	pl := hls.Playlist([]hls.Entry{{URI: "a", Duration: 2.4995}, {URI: "b", Duration: 1}})
+	assert.True(t, strings.Contains(pl, "#EXTINF:2.499,"), pl)
+	assert.True(t, strings.Contains(pl, "#EXT-X-TARGETDURATION:2\n"), pl)
+}

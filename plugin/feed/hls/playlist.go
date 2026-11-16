@@ -3,6 +3,7 @@ package hls
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -65,7 +66,10 @@ func Playlist(entries []Entry) string {
 	target := 1
 	for _, e := range entries {
 		// The target is the longest EXTINF as printed, rounded to the nearest second.
-		printed := math.Round(e.Duration*1000) / 1000
+		printed, err := strconv.ParseFloat(fmt.Sprintf("%.3f", e.Duration), 64)
+		if err != nil {
+			printed = e.Duration // unreachable: %.3f of a float always parses
+		}
 		target = max(target, int(math.Round(printed)))
 	}
 	var b strings.Builder
