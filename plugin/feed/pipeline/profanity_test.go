@@ -2,15 +2,20 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 // captureProcessor records what it was given and just copies in->out.
@@ -41,9 +46,10 @@ func TestProfanityWorkerUsesCaptions(t *testing.T) {
 	require.NoError(t, s.EnqueueDownload(id))
 	require.NoError(t, s.MarkDownloadStart(id))
 
-	_, err := space.Own.Put("media/in.mp3", strings.NewReader("audio bytes"))
+	local := fmt.Sprintf("media/%d.hls-audio.m4a", id)
+	_, err := space.Own.Put(local, strings.NewReader("audio bytes"))
 	require.NoError(t, err)
-	require.NoError(t, s.MarkDownloadReady(id, "media/in.mp3", 11))
+	require.NoError(t, s.MarkDownloadReady(id, local, 11))
 
 	// Captions file.
 	_, err = space.Own.Put("captions/g.vtt", strings.NewReader(`WEBVTT
@@ -63,9 +69,7 @@ hello world
 		t.Fatal("processor did not receive captions")
 	}
 	d, _ := s.GetDownload(id)
-	if d.CleanAudioPath != "media/in.clean.mp3" {
-		t.Fatalf("clean_audio_path %q", d.CleanAudioPath)
-	}
+	assert.Equal(t, fmt.Sprintf("media/%d.clean.m4a", id), d.CleanAudioPath)
 	if got := readStored(t, space, d.CleanAudioPath); got != "audio bytes" {
 		t.Fatalf("clean audio %q", got)
 	}
@@ -98,4 +102,68 @@ func TestProfanityWorkerSkipsWithoutCaptions(t *testing.T) {
 	if !d.NeedsProfanity {
 		t.Error("needs_profanity flag should remain set so worker can retry")
 	}
+}
+
+// noRanges is a Processor that finds nothing to mute.
+type noRanges struct{ calls int }
+
+func (n *noRanges) Process(context.Context, string, string, []cogplugin.CaptionSegment) error {
+	n.calls++
+	return fmt.Errorf("wrapped: %w", profanity.ErrNoRanges)
+}
+
+// noRangesItem makes an item with captions, a ready download and a queued
+// profanity pass.
+func noRangesItem(t *testing.T, s *feed.Store, space feed.Space) int64 {
+	t.Helper()
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
+	require.NoError(t, err)
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, s.MarkDownloadStart(id))
+	local := fmt.Sprintf("media/%d.hls-audio.m4a", id)
+	_, err = space.Own.Put(local, strings.NewReader("audio bytes"))
+	require.NoError(t, err)
+	require.NoError(t, s.MarkDownloadReady(id, local, 11))
+	_, err = space.Own.Put("captions/g.vtt", strings.NewReader("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nhello world\n"))
+	require.NoError(t, err)
+	require.NoError(t, s.SetCaptionsPath(id, "captions/g.vtt"))
+	require.NoError(t, s.EnqueueProfanity(id))
+	return id
+}
+
+func TestProfanityWorkerNoRangesClearsFlag(t *testing.T) {
+	s, space := newPipeline(t)
+	id := noRangesItem(t, s, space)
+
+	proc := &noRanges{}
+	w := pipeline.NewProfanity(s, space, proc)
+	require.NoError(t, w.RunOnce(context.Background()))
+	require.NoError(t, w.RunOnce(context.Background()))
+
+	assert.Equal(t, 1, proc.calls)
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.False(t, d.NeedsProfanity)
+	assert.Equal(t, "", d.CleanAudioPath)
+}
+
+func TestProfanityWorkerNoRangesDropsOldClean(t *testing.T) {
+	s, space := newPipeline(t)
+	id := noRangesItem(t, s, space)
+	old := fmt.Sprintf("media/%d.clean.m4a", id)
+	_, err := space.Own.Put(old, strings.NewReader("old clean"))
+	require.NoError(t, err)
+	require.NoError(t, s.SetCleanAudioPath(id, old))
+
+	w := pipeline.NewProfanity(s, space, &noRanges{})
+	require.NoError(t, w.RunOnce(context.Background()))
+	require.NoError(t, pipeline.Collect(s, space))
+
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.CleanAudioPath)
+	_, err = space.Own.Open(old)
+	assert.True(t, errors.Is(err, fs.ErrNotExist), "open old clean: %v", err)
 }

@@ -43,3 +43,9 @@ func TestParseProbe(t *testing.T) {
 	_, err = parseProbe([]byte("not json"))
 	assert.Error(t, err)
 }
+
+func TestCleanName(t *testing.T) {
+	assert.Equal(t, "media/7.clean.m4a", cleanName(7, "media/7.hls-audio.m4a"))
+	assert.Equal(t, "media/7.clean.mp3", cleanName(7, "media/7.mp3"))
+	assert.Equal(t, "media/7.clean", cleanName(7, "media/7"))
+}

@@ -91,14 +91,20 @@ func (p *Plugin) AudioRanges(username string, captions []plugin.CaptionSegment) 
 	return wl.AudioRanges(captions)
 }
 
+// ErrNoRanges: the word list is empty or matches none of the captions, so
+// there is nothing to clean and no file was written.
+var ErrNoRanges = errors.New("profanity: nothing to mute")
+
+// CleanAudioFile writes a muted copy of the audio at inputURL to outputPath.
+// It returns ErrNoRanges, writing nothing, when there is nothing to mute.
 func (p *Plugin) CleanAudioFile(ctx context.Context, username, inputURL, outputPath string, captions []plugin.CaptionSegment) error {
 	wl := p.loadWordList(username)
 	if wl.Empty() {
-		return nil
+		return ErrNoRanges
 	}
 	ranges := wl.AudioRanges(captions)
 	if len(ranges) == 0 {
-		return nil
+		return ErrNoRanges
 	}
 
 	cfg, err := p.ttsConfig()
