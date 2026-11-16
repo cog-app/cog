@@ -67,13 +67,21 @@ func packagedItem(t *testing.T, env *cogtest.Env, username string, withVideo boo
 // empty for an audio-only item. An absolute name is a file a test made.
 func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, videoFixture string) int64 {
 	t.Helper()
-	p := feedPlugin(t, env)
 	store := feedStore(t, env, username)
-	space, err := p.Space(username)
-	require.NoError(t, err)
 	sub, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/" + strconv.Itoa(nextFeed())})
 	require.NoError(t, err)
 	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: sub, GUID: "ep", Type: "video", Title: "Episode", MediaURL: "https://cdn.example.com/ep.mp4"})
+	require.NoError(t, err)
+	packageItem(t, env, username, id, audioFixture, videoFixture)
+	return id
+}
+
+// packageItem downloads and packages the fixtures as item id's tracks, as
+// the pipeline would.
+func packageItem(t *testing.T, env *cogtest.Env, username string, id int64, audioFixture, videoFixture string) {
+	t.Helper()
+	store := feedStore(t, env, username)
+	space, err := feedPlugin(t, env).Space(username)
 	require.NoError(t, err)
 	require.NoError(t, store.EnqueueDownload(id))
 	put := func(fixture, name string) int64 {
@@ -95,7 +103,6 @@ func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, vi
 	}
 	require.NoError(t, store.MarkVideoDownloadReady(id, audio, video, size))
 	require.NoError(t, store.SavePackage(id, audio, video, size))
-	return id
 }
 
 func masterURL(t *testing.T, env *cogtest.Env, username string, id int64) string {

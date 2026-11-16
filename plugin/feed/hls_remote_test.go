@@ -252,3 +252,36 @@ func TestHLSRemoteSkipUnavailable(t *testing.T) {
 	assert.False(t, strings.Contains(pl, "#EXT-X-DISCONTINUITY"), pl)
 	env.Get(t, sibling(skip, "video.m3u8")+"&edit=abcdef012345").Status(http.StatusNotFound)
 }
+
+// A download packaged while a player holds a remote presentation leaves
+// that presentation playing: its segments are still googlevideo's, in
+// either mode. A new master is the local presentation.
+func TestHLSRemotePackagedMidSession(t *testing.T) {
+	for _, tc := range []struct {
+		mode feed.YouTubeMode
+		want int
+	}{{feed.YouTubeDirect, http.StatusFound}, {feed.YouTubeProxy, http.StatusPartialContent}} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			env := cogtest.New(t, feed.New())
+			env.CreateUser(t, "alice", "pw")
+			setYouTubeMode(t, env, tc.mode)
+			srv := googlevideo(t)
+			stubTracks(t, env, srv)
+			id := remoteItem(t, env, "alice")
+			master := masterURL(t, env, "alice", id)
+			env.Get(t, master).Status(http.StatusOK)
+			vp := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
+			assert.True(t, strings.Contains(vp, "yt-video.mp4?sig="), vp)
+
+			packageItem(t, env, "alice", id, "audio.m4a", "video.mp4")
+
+			env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+				Status(tc.want)
+			env.Get(t, sibling(master, "yt-audio.m4a"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+				Status(tc.want)
+			// A new start plays the download.
+			body := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
+			assert.True(t, strings.Contains(body, "video.mp4?sig=") && !strings.Contains(body, "yt-video"), body)
+		})
+	}
+}

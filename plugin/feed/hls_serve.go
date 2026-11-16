@@ -73,7 +73,10 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	if d.PackageState != "done" {
+	// A remote segment is googlevideo's whatever the package state: a
+	// player that started before the download was packaged holds remote
+	// playlists, and finishes with them. Its next master is local.
+	if d.PackageState != "done" || strings.HasPrefix(file, remoteSegmentPrefix) {
 		p.serveUnpackaged(w, r, store, username, itemID, d, file, opts, sig)
 		return
 	}
@@ -103,7 +106,8 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveUnpackaged answers a request for an item with no packaged download:
+// serveUnpackaged answers a request for an item with no packaged download,
+// or for a remote segment of any item:
 // a YouTube item's presentation is googlevideo's tracks (hls_remote.go), and
 // anything else has none. An item that is to be muted (Download.muted) has
 // no clean audio until it is downloaded, so it is refused, as ItemMedia

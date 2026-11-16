@@ -112,6 +112,10 @@ func (p *Plugin) remoteURL(ctx context.Context, store *Store, username string, i
 	return a.URL, nil
 }
 
+// remoteSegmentPrefix starts the name of every remote segment file, and
+// of no file of a local presentation.
+const remoteSegmentPrefix = "yt-"
+
 // serveRemoteHLS answers master.m3u8, audio.m3u8, video.m3u8, yt-audio.m4a,
 // yt-video.mp4 for an undownloaded YouTube item, whose tracks are
 // googlevideo's. It has no captions, no Clean rendition and no skip: a skip
