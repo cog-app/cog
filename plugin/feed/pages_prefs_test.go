@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -79,6 +80,85 @@ func TestSavePlayerPrefsEndpoint(t *testing.T) {
 	if !got.SkipSilence {
 		t.Errorf("SkipSilence = false, want true")
 	}
+}
+
+func TestSavePlayerPrefsFormSkipSilenceMin(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "carol", "pass")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+	store := feedStore(t, env, u.Username)
+
+	// NaN and Inf parse as floats but are ignored, like any unparseable
+	// value: the stored 3 stays.
+	for _, value := range []string{"3", "NaN", "Inf", "-Inf", "x"} {
+		post := func(value string) {
+			env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+				"csrf_token":           {csrfToken},
+				"skip_silence_min_sec": {value},
+			}, sessionCookie).Status(http.StatusNoContent)
+		}
+		post(value)
+		got, err := store.LoadPlayerPrefs()
+		require.NoError(t, err)
+		if got.SkipSilenceMinSec != 3 {
+			t.Errorf("skip_silence_min_sec=%s stored %g, want 3", value, got.SkipSilenceMinSec)
+		}
+	}
+	for value, want := range map[string]float64{"99": 10, "0.1": 0.5} {
+		env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+			"csrf_token":           {csrfToken},
+			"skip_silence_min_sec": {value},
+		}, sessionCookie).Status(http.StatusNoContent)
+		got, err := store.LoadPlayerPrefs()
+		require.NoError(t, err)
+		if got.SkipSilenceMinSec != want {
+			t.Errorf("skip_silence_min_sec=%s stored %g, want %g", value, got.SkipSilenceMinSec, want)
+		}
+	}
+}
+
+// Changing the shortest silence changes the cuts, so the edges are remade;
+// saving the same value, or another pref, keeps them.
+func TestSavePlayerPrefsFormResetsEdges(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "dave", "pass")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep.mp3")
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
+	post := func(k, v string) {
+		t.Helper()
+		env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+			"csrf_token": {csrfToken},
+			k:            {v},
+		}, sessionCookie).Status(http.StatusNoContent)
+	}
+	edit := func() string {
+		t.Helper()
+		d, err := store.GetDownload(id)
+		require.NoError(t, err)
+		return d.EdgesEdit
+	}
+
+	poked(t, env)
+	post("skip_silence_min_sec", "1") // the default
+	post("speed", "1.5")
+	assert.Equal(t, "abcdefabcdef", edit())
+	assert.False(t, poked(t, env))
+	// The worker is woken to make them again.
+	post("skip_silence_min_sec", "3")
+	assert.Equal(t, "", edit())
+	assert.True(t, poked(t, env), "worker not woken")
 }
 
 func TestSidebarHidesEmptyWhenEnabled(t *testing.T) {

@@ -32,6 +32,20 @@
 		});
 	}
 
+	// The hls.js instance of the player on the page. A player swapped in for
+	// another destroys it, so the old item's MediaSource does not linger.
+	var activeHls = null;
+
+	// whenHls calls fn once hls.js has loaded, which a player fragment swapped
+	// in by HTMX may be ahead of.
+	function whenHls(fn) {
+		if (window.Hls) { fn(); return; }
+		var s = document.querySelector("script[data-hls-js]");
+		if (!s) { fn(); return; }
+		s.addEventListener("load", fn, { once: true });
+		s.addEventListener("error", fn, { once: true });
+	}
+
 	function init() {
 		var root = document.getElementById("feed-player");
 		if (!root || root.dataset.bound === "1") return;
@@ -49,6 +63,7 @@
 			csrf: root.dataset.csrf,
 			title: root.dataset.title || "",
 			subscription: root.dataset.subscription || "",
+			hls: root.dataset.hls || "",
 			artwork: root.dataset.artwork || "",
 			speed: parseFloat(root.dataset.speed) || 1,
 			skipBack: parseInt(root.dataset.skipBack, 10) || 15,
@@ -74,6 +89,7 @@
 		var handle = root.querySelector("#player-handle");
 		var markers = root.querySelector("#player-markers");
 		var speedBtn = root.querySelector("#player-speed");
+		var ccBtn = root.querySelector("#player-cc");
 		var volBtn = root.querySelector("#player-mute");
 		var volRange = root.querySelector("#player-volume");
 		var gearBtn = root.querySelector("#player-gear");
@@ -96,22 +112,139 @@
 		if (volRange) volRange.value = String(el.volume);
 		if (speedBtn) speedBtn.textContent = cfg.speed + "×";
 
-		// --- source loading (YouTube resolves a stream URL) ---
-		if (cfg.sourceKind === "youtube") {
-			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
-			fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
-				headers: { "X-CSRF-Token": cfg.csrf },
-			})
-				.then(function (r) { return r.json(); })
-				.then(function (d) {
-					if (d.url) {
-						el.src = d.url;
+		// --- notes shown above the player (downloading, errors) ---
+		var note = null;
+		function showNote(text) {
+			if (!note) {
+				if (!text) return;
+				note = document.createElement("div");
+				note.className = "player-note text-muted";
+				note.style.cssText = "padding:0.5rem 0.75rem;font-size:0.9rem";
+				root.insertBefore(note, root.firstChild);
+			}
+			note.textContent = text;
+			note.hidden = !text;
+		}
+
+		// --- captions (video only): the CC button toggles the HLS subtitle
+		// rendition. hls.js keeps captions off until asked; Safari's native
+		// player lists them as text tracks. data-captions mirrors the button.
+		var captionsOn = false;
+		if (ccBtn) root.dataset.captions = "off";
+		function setCaptions(on, apply) {
+			captionsOn = on;
+			root.dataset.captions = on ? "on" : "off";
+			if (ccBtn) ccBtn.setAttribute("aria-pressed", on ? "true" : "false");
+			apply(on);
+		}
+		function offerCaptions(apply) {
+			if (!ccBtn) return;
+			ccBtn.hidden = false;
+			ccBtn.onclick = function () { setCaptions(!captionsOn, apply); };
+		}
+
+		// playHLS plays a master playlist: through hls.js where the browser
+		// has Media Source Extensions, else natively (Safari on iOS). The
+		// player's data-hls-state says "loaded" once the playlist is read, or
+		// "error".
+		function playHLS(url) {
+			if (activeHls) { activeHls.destroy(); activeHls = null; }
+			whenHls(function () {
+				if (!document.body.contains(root)) return;
+				if (window.Hls && Hls.isSupported()) {
+					var hls = new Hls({ startPosition: cfg.resume > 0 ? cfg.resume : -1, subtitleDisplay: false });
+					activeHls = hls;
+					// data-hls-audio names the audio rendition playing.
+					function reflectAudio() {
+						var t = hls.audioTracks[hls.audioTrack];
+						if (t) root.dataset.hlsAudio = t.name;
+					}
+					hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, reflectAudio);
+					hls.on(Hls.Events.MANIFEST_PARSED, function () {
+						root.dataset.hlsState = "loaded";
+						reflectAudio();
+						el.play().catch(function () {});
+					});
+					hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, function (_, data) {
+						if (!data.subtitleTracks || data.subtitleTracks.length === 0) return;
+						offerCaptions(function (on) {
+							hls.subtitleDisplay = on;
+							hls.subtitleTrack = on ? 0 : -1;
+						});
+					});
+					hls.on(Hls.Events.ERROR, function (_, data) {
+						if (!data.fatal) return;
+						console.error("feed: hls", data);
+						root.dataset.hlsState = "error";
+						if (ccBtn) ccBtn.hidden = true;
+						showNote("Couldn't play: " + data.details);
+						hls.destroy();
+						if (activeHls === hls) activeHls = null;
+					});
+					hls.loadSource(url);
+					hls.attachMedia(el);
+				} else if (el.canPlayType("application/vnd.apple.mpegurl")) {
+					function nativeCaptions() {
+						if (el.textTracks.length === 0) return;
+						offerCaptions(function (on) {
+							el.textTracks[0].mode = on ? "showing" : "disabled";
+						});
+					}
+					el.textTracks.addEventListener("addtrack", nativeCaptions);
+					el.addEventListener("loadedmetadata", function () {
+						nativeCaptions();
+						root.dataset.hlsState = "loaded";
 						if (cfg.resume > 0) el.currentTime = cfg.resume;
 						el.play().catch(function () {});
-					}
+					}, { once: true });
+					el.addEventListener("error", function () {
+						root.dataset.hlsState = "error";
+						showNote("Couldn't play this video.");
+					}, { once: true });
+					el.src = url;
+				} else {
+					root.dataset.hlsState = "error";
+					showNote("This browser can't play this video.");
+				}
+			});
+		}
+
+		// --- source loading ---
+		if (cfg.hls) {
+			playHLS(cfg.hls);
+		} else if (cfg.sourceKind === "youtube") {
+			// A video plays from Cog's download of it, which the server
+			// queues and then packages for HLS; until it is ready the answer
+			// says why, shown in the player, and the player asks again.
+			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
+			var loadSource = function () {
+				fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
+					headers: { "X-CSRF-Token": cfg.csrf },
 				})
-				.catch(function (e) { console.error("feed: stream-url", e); });
+					.then(function (r) { return r.json(); })
+					.then(function (d) {
+						if (d.downloading) {
+							showNote((d.message || "Downloading the video") + "…");
+							if (document.body.contains(root)) setTimeout(loadSource, 5000);
+							return;
+						}
+						if (d.hls) {
+							showNote("");
+							playHLS(d.hls);
+						} else if (d.url) {
+							showNote("");
+							el.src = d.url;
+							if (cfg.resume > 0) el.currentTime = cfg.resume;
+							el.play().catch(function () {});
+						} else if (d.error) {
+							showNote("Couldn't play: " + d.error);
+						}
+					})
+					.catch(function (e) { console.error("feed: stream-url", e); });
+			};
+			loadSource();
 		} else {
+			if (activeHls) { activeHls.destroy(); activeHls = null; }
 			el.addEventListener("loadedmetadata", function () {
 				if (cfg.resume > 0) el.currentTime = cfg.resume;
 				el.play().catch(function () {});
@@ -215,14 +348,17 @@
 			Object.assign(pendingPrefs, partial);
 			clearTimeout(prefTimer);
 			prefTimer = setTimeout(function () {
+				var reload = "skipSilenceMinSec" in pendingPrefs;
 				var body = Object.keys(pendingPrefs)
 					.map(function (k) {
-						var form = { speed: "speed", volume: "volume", skipSilence: "skip_silence", autoplayNext: "autoplay_next" }[k] || k;
+						var form = { speed: "speed", volume: "volume", skipSilence: "skip_silence", autoplayNext: "autoplay_next", skipSilenceMinSec: "skip_silence_min_sec" }[k] || k;
 						return form + "=" + encodeURIComponent(pendingPrefs[k]);
 					})
 					.join("&");
 				pendingPrefs = {};
 				post("/apps/feed/player/prefs", body, cfg.csrf)
+					// The ranges follow the pref, so read them once it is stored.
+					.then(function () { if (reload) loadRanges(); })
 					.catch(function (e) { console.error("feed: prefs", e); });
 			}, 400);
 		}
@@ -249,6 +385,14 @@
 		if (gearMenu) gearMenu.addEventListener("click", function (e) {
 			var sp = e.target.getAttribute("data-speed");
 			if (sp) { setSpeed(parseFloat(sp)); return; }
+			var ms = e.target.getAttribute("data-min-silence");
+			if (ms) {
+				gearMenu.querySelectorAll("[data-min-silence]").forEach(function (b) {
+					b.setAttribute("aria-pressed", b === e.target ? "true" : "false");
+				});
+				savePrefs({ skipSilenceMinSec: parseFloat(ms) });
+				return;
+			}
 			var tg = e.target.getAttribute("data-toggle");
 			if (tg === "skip_silence") {
 				cfg.skipSilence = !cfg.skipSilence;

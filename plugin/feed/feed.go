@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/assets"
@@ -19,6 +21,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
+	"golang.org/x/sync/singleflight"
 )
 
 //go:generate go tool migratesql .
@@ -70,6 +73,19 @@ type Plugin struct {
 	profanity    *profanity.Plugin // discovered in Start; may be nil
 	runOrchestra OrchestratorRunner
 	pokes        chan PokeRequest
+	// rangesWarned holds the items (rangesWarning) whose unreadable track
+	// Ranges has logged: the player polls it.
+	rangesWarned sync.Map
+	// youtubeFlight shares one yt-dlp resolve per user and item.
+	youtubeFlight singleflight.Group
+	// rootReady is whether RootDB has made its settings table.
+	rootReady atomic.Bool
+}
+
+// rangesWarning keys Plugin.rangesWarned.
+type rangesWarning struct {
+	user string
+	item int64
 }
 
 // New creates a new feed plugin instance.
@@ -173,6 +189,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("settings/playlists", http.HandlerFunc(pages.SettingsPlaylists))
 	ctx.RegisterPage("settings/sync", http.HandlerFunc(pages.SettingsSync))
 	ctx.RegisterAction("POST", "settings/sync", http.HandlerFunc(pages.SaveSyncSettings))
+	ctx.RegisterAction("POST", "settings/media-links/revoke", http.HandlerFunc(pages.RevokeMediaLinks))
 	ctx.RegisterAction("POST", "subscriptions", http.HandlerFunc(pages.AddSubscription))
 	ctx.RegisterAction("POST", "subscriptions/{id}/delete", http.HandlerFunc(pages.DeleteSubscription))
 	ctx.RegisterAction("POST", "subscriptions/bulk", http.HandlerFunc(pages.BulkSubscriptions))
@@ -188,6 +205,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "talks/preview", http.HandlerFunc(pages.TalksPreview))
 	ctx.RegisterAction("POST", "talks", http.HandlerFunc(pages.AddTalks))
 	ctx.RegisterAPI("opml/export", http.HandlerFunc(pages.ExportOPML))
+	ctx.RegisterAPI("launchers/{kind}/{file}", http.HandlerFunc(pages.Launcher))
 
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
 		Handler: http.HandlerFunc(pages.SystemSettings),
@@ -199,6 +217,8 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("/index.php/apps/news/api/", ncapi.New(ncapiBackend{p}))
 		priv.RegisterRoute(gpoddersync.Prefix, gpoddersync.New(ncapiBackend{p}))
+		priv.RegisterRoute(hlsRoute, http.HandlerFunc(p.ServeHLS))
+		priv.RegisterRoute(m3uRoute, http.HandlerFunc(p.ServeM3U))
 
 		sub, err := fs.Sub(staticFS, "static")
 		if err != nil {
@@ -273,15 +293,7 @@ func (b ncapiBackend) SyncFilter(db *sql.DB, proto syncprefs.Protocol) (syncpref
 // request r a sync client made: the configured base URL, or else the address
 // the client reached.
 func (b ncapiBackend) ItemPage(r *http.Request, id int64) string {
-	base := b.p.ctx.BaseURL()
-	if base == "" {
-		scheme := "https"
-		if r.TLS == nil {
-			scheme = "http"
-		}
-		base = scheme + "://" + r.Host
-	}
-	return base + itemHref(id, "")
+	return b.p.absoluteURL(r, itemHref(id, ""))
 }
 
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.

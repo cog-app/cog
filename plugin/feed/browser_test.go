@@ -1,11 +1,15 @@
 package feed_test
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/testing/webtest"
@@ -145,6 +149,11 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "sub", "pass")
 	env.CreateUser(t, "star", "pass")
 	env.CreateUser(t, "lists", "pass")
+	// Pages sign M3U links with the user's media key; a fixed key keeps the
+	// golden the same on every run.
+	for _, name := range []string{"empty", "index", "expand", "reader", "subs", "sub", "star", "lists"} {
+		require.NoError(t, feed.SetHLSKey(feedStore(t, env, name), bytes.Repeat([]byte{7}, 32)))
+	}
 	seedBrowserFeed(t, env, "star")
 	seedBrowserFeed(t, env, "index")
 	seedBrowserFeed(t, env, "expand")
@@ -159,6 +168,186 @@ func TestBrowser(t *testing.T) {
 		_, err := lists.CreatePlaylist(pl)
 		require.NoError(t, err)
 	}
+
+	env.CreateUser(t, "hls", "pass")
+	hlsItem := packagedItem(t, env, "hls", true)
+	env.CreateUser(t, "hlsclean", "pass")
+	cleanVideo := cleanItem(t, env, "hlsclean", true)
+	env.CreateUser(t, "hlscc", "pass")
+	ccOffsetItem := captionedItemFrom(t, env, "hlscc", "audio-offset.m4a", "video-offset.mp4", "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
+	ccItem := captionedItem(t, env, "hlscc", true, "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
+
+	// A packaged video plays over HLS: through hls.js where the browser has
+	// Media Source Extensions (a blob: source), natively where it plays HLS
+	// itself. The state is the assertion, not a snapshot: Chromium builds
+	// differ in which codecs they decode.
+	t.Run("HLS", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hls", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", hlsItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		src, _ := b.Eval(t, `document.querySelector("#player-el").src`).(string)
+		require.True(t, strings.HasPrefix(src, "blob:") || strings.Contains(src, "master.m3u8"), "player source %q", src)
+	})
+
+	// A cleaned video plays HLS with the Clean audio rendition, which the
+	// master playlist marks DEFAULT=YES: hls.js reports it as playing.
+	t.Run("HLSClean", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlsclean", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", cleanVideo))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#feed-player[data-hls-audio="Clean"]`)
+	})
+
+	// Captions arrive as an HLS subtitle rendition. The CC button turns them on,
+	// and hls.js places the cue at the item time it names: the X-TIMESTAMP-MAP
+	// ties caption time 0 to the audio track's first fragment.
+	t.Run("HLSCaptions", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlscc", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", ccItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#player-cc:not([hidden])`)
+		b.Click(t, "#player-cc")
+		b.WaitVisible(t, `#feed-player[data-captions="on"]`)
+		const cueStart = `() => { for (const x of document.querySelector("#player-el").textTracks) if (x.cues && x.cues.length) return x.cues[0].startTime; return -1 }`
+		var start float64
+		for deadline := time.Now().Add(20 * time.Second); ; {
+			start, _ = b.Eval(t, cueStart).(float64)
+			if start >= 0 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		assert.InDelta(t, 3.0, start, 0.1)
+	})
+
+	// The tracks start 1.5 s in. A cue at caption time 3 s must show 3 s after
+	// the first audio sample, which is where the media element's first
+	// buffered range begins: hls.js places the cue with the segment's
+	// X-TIMESTAMP-MAP, and buffered.start(0) is the same timeline's origin.
+	t.Run("HLSCaptionsOffset", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "hlscc", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", ccOffsetItem))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		b.WaitVisible(t, `#player-cc:not([hidden])`)
+		b.Click(t, "#player-cc")
+		b.WaitVisible(t, `#feed-player[data-captions="on"]`)
+		const probe = `() => { const el = document.querySelector("#player-el"); const b0 = el.buffered.length ? el.buffered.start(0) : -1; for (const x of el.textTracks) if (x.cues && x.cues.length) return [x.cues[0].startTime, b0]; return [-1, b0] }`
+		var cue, buf float64
+		for deadline := time.Now().Add(20 * time.Second); ; {
+			got, _ := b.Eval(t, probe).([]any)
+			require.True(t, len(got) == 2, "probe returned %v", got)
+			cue, _ = got[0].(float64)
+			buf, _ = got[1].(float64)
+			if (cue >= 0 && buf >= 0) || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Logf("cue startTime %.3f, buffered.start(0) %.3f", cue, buf)
+		assert.InDelta(t, 3.0, cue-buf, 0.1)
+	})
+
+	// Under skip, captions keep their caption time, clipped to each piece,
+	// and the unskipped presentation's X-TIMESTAMP-MAP. Kept media keeps its item-time
+	// timestamps, so hls.js shows a cue after a cut where the cut moved it:
+	// cue B at item time 9 s shows at 7 s once {6,8} is cut (R8). The
+	// product player does not play skip yet, so the test plays the skip
+	// master in a video element of its own.
+	env.CreateUser(t, "hlsskip", "pass")
+	skipCC := captionedItem(t, env, "hlsskip", true, "WEBVTT\n\n00:00:03.000 --> 00:00:04.000\nA\n\n00:00:09.000 --> 00:00:10.000\nB\n")
+	t.Run("HLSSkipCaptions", func(t *testing.T) {
+		needFFmpeg(t)
+		store := feedStore(t, env, "hlsskip")
+		// {5.9,8.1} at 0.5 s is the cut {6.0,8.0}: 6.0 is a segment
+		// boundary, and [8,12) an edge.
+		require.NoError(t, store.SetSilenceRanges(skipCC, []feed.Range{{Start: 5.9, End: 8.1, Action: "skip"}}))
+		prefs, err := store.LoadPlayerPrefs()
+		require.NoError(t, err)
+		prefs.SkipSilenceMinSec = 0.5
+		require.NoError(t, store.SavePlayerPrefs(prefs))
+		skip := skipMaster(t, env, "hlsskip", skipCC)
+		env.Get(t, skip).Status(http.StatusOK)
+		runEdges(t, env, "hlsskip")
+		require.NotEqual(t, "", masterEdit(env.Get(t, skip).Status(http.StatusOK).ReadBody()))
+
+		b := eng.Start(t)
+		b.Login(t, "hlsskip", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", skipCC))
+		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		// hls.js 1.7.4 parses a VTT piece whose discontinuity has no initPTS
+		// yet as if that initPTS were 0, and with MPEGTS:0 it then places the
+		// cue at the discontinuity's start plus its caption time (B at 15 s,
+		// not 7 s) instead of deferring it. Media fragments usually arrive
+		// first; on a loaded machine they need not. The loader holds each
+		// subtitle fragment until its discontinuity's initPTS is known, so the
+		// test checks our timestamps, not the race. See feed_hls.md, Open
+		// questions.
+		b.Eval(t, fmt.Sprintf(`() => {
+			const pts = new Set(), held = [];
+			const Base = Hls.DefaultConfig.loader;
+			class AfterInitPTS extends Base {
+				load(context, config, callbacks) {
+					const f = context.frag;
+					const go = () => { this.held = null; super.load(context, config, callbacks) };
+					if (f && f.type === "subtitle" && !pts.has(f.cc)) { this.held = [f.cc, go]; held.push(this.held); return }
+					go();
+				}
+				abort() {
+					const i = held.indexOf(this.held);
+					if (i >= 0) held.splice(i, 1);
+					this.held = null;
+					super.abort();
+				}
+			}
+			const v = document.createElement("video");
+			v.id = "skip-el"; v.muted = true;
+			document.body.appendChild(v);
+			const h = new Hls({ subtitleDisplay: true, fLoader: AfterInitPTS });
+			h.on(Hls.Events.INIT_PTS_FOUND, (_, d) => {
+				pts.add(d.frag.cc);
+				for (const w of held.filter(w => pts.has(w[0]))) { held.splice(held.indexOf(w), 1); w[1]() }
+			});
+			window.skipHls = h;
+			h.loadSource(%q);
+			h.attachMedia(v);
+			return true;
+		}`, skip))
+		const probe = `() => {
+			const v = document.querySelector("#skip-el");
+			// hls.js leaves captions off until a track is chosen.
+			if (window.skipHls.subtitleTracks.length && window.skipHls.subtitleTrack < 0) window.skipHls.subtitleTrack = 0;
+			const out = { A: -1, B: -1, buf: v.buffered.length ? v.buffered.start(0) : -1 };
+			for (const x of v.textTracks) if (x.cues) for (const c of x.cues) out[c.text] = c.startTime;
+			return [out.A, out.B, out.buf];
+		}`
+		read := func(done func(a, b, buf float64) bool) (a, bb, buf float64) {
+			for deadline := time.Now().Add(20 * time.Second); ; {
+				raw := b.Eval(t, probe)
+				got, ok := raw.([]any)
+				require.True(t, ok && len(got) == 3, "probe returned %v", raw)
+				var okA, okB, okBuf bool
+				a, okA = got[0].(float64)
+				bb, okB = got[1].(float64)
+				buf, okBuf = got[2].(float64)
+				require.True(t, okA && okB && okBuf, "probe returned %v", got)
+				if done(a, bb, buf) || time.Now().After(deadline) {
+					return a, bb, buf
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		a, _, buf := read(func(a, _, buf float64) bool { return a >= 0 && buf >= 0 })
+		// Seek past the cut, so the piece holding cue B is fetched.
+		b.Eval(t, `() => { document.querySelector("#skip-el").currentTime = 7.5; return true }`)
+		_, cueB, _ := read(func(_, bb, _ float64) bool { return bb >= 0 })
+		t.Logf("cue A %.3f, cue B %.3f, buffered.start(0) %.3f", a, cueB, buf)
+		assert.InDelta(t, 3.0, a-buf, 0.1)
+		assert.InDelta(t, 7.0, cueB-buf, 0.1)
+	})
 
 	t.Run("EmptyState", func(t *testing.T) {
 		b := eng.Start(t)

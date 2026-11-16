@@ -296,6 +296,9 @@ message ReportProgressRequest {
   bool completed = 3;
   google.protobuf.Timestamp at = 4; // client clock
   string device = 5;
+  // When set, progress_sec is in that skip presentation's time and the
+  // server stores the item time it maps to.
+  string edit_list = 6;
 }
 
 // --- Media -------------------------------------------------------------------
@@ -373,6 +376,8 @@ message PlayerPrefs {
   bool autoplay_next = 5;
   bool skip_silence = 6;
   bool hide_empty = 7;
+  // Shortest silence skipped, in seconds. 0 means unchanged on a set.
+  double skip_silence_min_sec = 8;
 }
 
 // --- Sync --------------------------------------------------------------------

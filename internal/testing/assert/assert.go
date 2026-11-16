@@ -4,6 +4,7 @@ package assert
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -35,6 +36,16 @@ func Equal[T any](t testing.TB, expected, actual T, msgAndArgs ...any) bool {
 	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
 		fail(t, fmt.Sprintf("expected %v, got %v", expected, actual), msgAndArgs...)
+		return false
+	}
+	return true
+}
+
+// InDelta asserts that actual is within delta of expected.
+func InDelta(t testing.TB, expected, actual, delta float64, msgAndArgs ...any) bool {
+	t.Helper()
+	if math.Abs(expected-actual) > delta {
+		fail(t, fmt.Sprintf("expected %v ± %v, got %v", expected, delta, actual), msgAndArgs...)
 		return false
 	}
 	return true

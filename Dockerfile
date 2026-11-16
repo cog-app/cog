@@ -4,13 +4,15 @@ ARG BUILD_BASE
 # The image the test and pages jobs run in (docker build --target ci): the Go
 # toolchain, a C compiler for go-sqlite3, Chromium for the browser tests, git
 # for go tool stamp, and every module go.sum names, so a job neither installs
-# packages nor downloads modules. The ci-image job rebuilds it when this file,
-# go.mod or go.sum changes (.gitlab-ci.yml).
+# packages nor downloads modules. ffmpeg is for the feed packager's tests
+# (plugin/feed/pipeline/package_test.go), which fail without it in CI. The
+# ci-image job rebuilds it when this file, go.mod or go.sum changes
+# (.gitlab-ci.yml).
 #
 # It is the first stage because the legacy builder builds every stage above
 # the target, whether the target needs it or not.
 FROM golang:1.26-alpine AS ci
-RUN apk add --no-cache gcc musl-dev chromium git
+RUN apk add --no-cache gcc musl-dev chromium git ffmpeg
 WORKDIR /tmp/modules
 COPY go.mod go.sum ./
 RUN go mod download && rm -rf /tmp/modules
@@ -29,8 +31,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	libstdc++6 \
 	wget \
-	yt-dlp \
+	unzip \
 	&& rm -rf /var/lib/apt/lists/*
+# yt-dlp from its own releases, not Debian's: YouTube changes often enough
+# that a distribution's copy stops resolving streams long before the
+# distribution updates it. deno is the JavaScript runtime yt-dlp runs
+# YouTube's player code in; without one it finds fewer formats, or none.
+# Bump both when YouTube breaks.
+ARG YTDLP_VERSION=2026.10.26
+ARG DENO_VERSION=v2.9.8
+RUN set -eux; \
+	case "$(uname -m)" in \
+		x86_64) YTDLP_ASSET=yt-dlp_linux; DENO_ARCH=x86_64 ;; \
+		aarch64) YTDLP_ASSET=yt-dlp_linux_aarch64; DENO_ARCH=aarch64 ;; \
+		*) echo "unsupported arch"; exit 1 ;; \
+	esac; \
+	wget -q "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}" -O /usr/local/bin/yt-dlp && \
+	chmod 755 /usr/local/bin/yt-dlp && \
+	wget -q "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${DENO_ARCH}-unknown-linux-gnu.zip" -O /tmp/deno.zip && \
+	unzip -q /tmp/deno.zip -d /usr/local/bin && \
+	rm /tmp/deno.zip && \
+	yt-dlp --version && deno --version
 # ONNX Runtime for image recognition
 ARG ONNXRUNTIME_VERSION=1.24.3
 RUN set -eux; \

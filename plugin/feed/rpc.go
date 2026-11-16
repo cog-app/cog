@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb/feedpbconnect"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // FeedService serves native clients the views, item state and management the
@@ -416,8 +418,16 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	id := req.Msg.ItemId
-	if _, err := getItem(store, id); err != nil {
+	item, err := getItem(store, id)
+	if err != nil {
 		return nil, err
+	}
+	progress := req.Msg.ProgressSec
+	if edit := req.Msg.EditList; edit != "" {
+		progress, err = itemProgress(store, item, edit, progress)
+		if err != nil {
+			return nil, err
+		}
 	}
 	at := time.Now()
 	if req.Msg.At != nil {
@@ -426,7 +436,7 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		}
 		at = req.Msg.At.AsTime()
 	}
-	if err := store.SetPlayback(id, req.Msg.ProgressSec, req.Msg.Completed, at); err != nil {
+	if err := store.SetPlayback(id, progress, req.Msg.Completed, at); err != nil {
 		return nil, err
 	}
 	if req.Msg.Completed {
@@ -440,6 +450,30 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	return connect.NewResponse(playbackPB(pb)), nil
+}
+
+// itemProgress maps progress in a skip presentation's time to item time.
+//
+// The item end is the media duration recorded with the edit list (the
+// Original track's end the plan was built on), so a mapped time past it
+// clamps to it, and a report at the presentation's end is the item's end.
+// With no recorded duration the mapped time is stored as is.
+func itemProgress(store *Store, item Item, edit string, presentation float64) (float64, error) {
+	cuts, dur, err := store.EditCuts(item.ID, edit)
+	if errors.Is(err, ErrEditNotFound) {
+		return 0, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if err != nil {
+		return 0, err
+	}
+	t := hls.ItemTime(cuts, presentation)
+	if dur <= 0 {
+		return t, nil
+	}
+	if presentation >= hls.PresentationDuration(cuts, dur)-1e-6 || t > dur {
+		return dur, nil
+	}
+	return t, nil
 }
 
 // SavePlaylist creates a playlist (id 0) or replaces one, and returns it with
@@ -609,10 +643,22 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skips must be in [%d, %d] seconds", MinSkipSec, MaxSkipSec))
 	case m.Volume < 0 || m.Volume > 1:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("volume must be in [0, 1]"))
+	case math.IsNaN(m.SkipSilenceMinSec) || m.SkipSilenceMinSec != 0 && (m.SkipSilenceMinSec < MinSkipSilenceSec || m.SkipSilenceMinSec > MaxSkipSilenceSec):
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skip_silence_min_sec must be in [%g, %g]", MinSkipSilenceSec, MaxSkipSilenceSec))
 	}
 	store, err := s.store(ctx)
 	if err != nil {
 		return nil, err
+	}
+	cur, err := store.LoadPlayerPrefs()
+	if err != nil {
+		return nil, err
+	}
+	// Zero is "unchanged": clients that predate the field send whole
+	// PlayerPrefs without it.
+	minSilence := cur.SkipSilenceMinSec
+	if m.SkipSilenceMinSec != 0 {
+		minSilence = m.SkipSilenceMinSec
 	}
 	p := PlayerPrefs{
 		Speed:        m.Speed,
@@ -622,9 +668,16 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 		AutoplayNext: m.AutoplayNext,
 		SkipSilence:  m.SkipSilence,
 		HideEmpty:    m.HideEmpty,
+
+		SkipSilenceMinSec: minSilence,
 	}
 	if err := store.SavePlayerPrefs(p); err != nil {
 		return nil, err
+	}
+	if minSilence != cur.SkipSilenceMinSec {
+		// SavePlayerPrefs forgot every item's edges: the worker makes the
+		// wanted ones again.
+		s.plugin.TriggerFetch(plugin.UserFromContext(ctx).Username, 0)
 	}
 	return connect.NewResponse(playerPrefsPB(p)), nil
 }
@@ -638,6 +691,8 @@ func playerPrefsPB(p PlayerPrefs) *feedpb.PlayerPrefs {
 		AutoplayNext: p.AutoplayNext,
 		SkipSilence:  p.SkipSilence,
 		HideEmpty:    p.HideEmpty,
+
+		SkipSilenceMinSec: p.SkipSilenceMinSec,
 	}
 }
 

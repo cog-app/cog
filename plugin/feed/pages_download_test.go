@@ -166,3 +166,25 @@ func TestItemMediaRefusesWithoutCredentials(t *testing.T) {
 	itemID := seedAudioItem(t, feedStore(t, env, u.Username), "https://cdn.example.com/ep1.mp3")
 	env.Get(t, "/apps/feed/items/"+strconv.FormatInt(itemID, 10)+"/media", cogtest.StopRedirect).Status(http.StatusUnauthorized)
 }
+
+// An item the user cleaned never plays its unclean audio: when the clean file
+// is missing the request fails instead of falling back to the download.
+func TestItemMediaMissingCleanFileFailsClosed(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	store := feedStore(t, env, u.Username)
+	itemID := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	require.True(t, ok, "feed plugin not registered")
+	space, err := raw.(*feed.Plugin).Space(u.Username)
+	require.NoError(t, err)
+	n, err := space.Own.Put("media/1.mp3", strings.NewReader("unclean"))
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(itemID))
+	require.NoError(t, store.MarkDownloadStart(itemID))
+	require.NoError(t, store.MarkDownloadReady(itemID, "media/1.mp3", n))
+	require.NoError(t, store.SetCleanAudioPath(itemID, "media/1.clean.m4a"))
+
+	path := "/apps/feed/items/" + strconv.FormatInt(itemID, 10) + "/media"
+	env.Get(t, path, u.Auth).Status(http.StatusServiceUnavailable)
+}

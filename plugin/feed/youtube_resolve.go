@@ -2,6 +2,7 @@ package feed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -34,6 +35,10 @@ func ResolveYouTubeStreamURL(ctx context.Context, watchURL string, audio bool) (
 	}
 	out, err := cmd.Output()
 	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+			return "", fmt.Errorf("yt-dlp stream-url: %w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
 		return "", fmt.Errorf("yt-dlp stream-url: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
