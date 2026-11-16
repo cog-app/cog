@@ -581,6 +581,21 @@ func (d Download) muted() bool {
 	return d.NeedsProfanity || d.CleanAudioPath != ""
 }
 
+// uncleanOnly is whether the item is to be muted and has no clean audio
+// yet: nothing of it may play, downloaded or not, until cleaning makes some
+// (Plugin.waitClean says why). Cleaning ends with clean audio, or with
+// needs_profanity cleared when there was nothing to mute.
+func (d Download) uncleanOnly() bool {
+	return d.NeedsProfanity && d.CleanAudioPath == ""
+}
+
+// hlsUnclean is whether the item's HLS presentation has only its original
+// audio while the item is to be muted: until its clean audio is packaged as
+// a track, the presentation is not to be played.
+func (d Download) hlsUnclean() bool {
+	return d.muted() && d.CleanTrackPath == ""
+}
+
 // Range is a time span within a media item with an associated player action.
 // Action is "mute" (drop volume during the span) or "skip" (seek past it).
 type Range struct {
@@ -1201,6 +1216,7 @@ type ItemPlayback struct {
 	Packaged          bool   // the download is packaged for HLS
 	HasVideo          bool   // the download has a video track apart from its audio
 	HLSURL            string // the signed master playlist; set by handlers, not the store
+	Waiting           string // why it cannot play until it is clean; set by handlers
 }
 
 // GetItemPlayback returns an ItemPlayback for a single item by ID, joining
@@ -1836,7 +1852,7 @@ func (s *Store) PlaybackByItems(ids []int64) (map[int64]Playback, error) {
 
 // DownloadsByItems returns the download row per item ID in one query, with
 // what a client is shown of it (state, error, size and captions) and how it
-// plays (package state, and whether it is muted). Items with no download are
+// plays (package state, whether it is muted, and its clean track). Items with no download are
 // absent from the map.
 func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	out := make(map[int64]Download)
@@ -1846,7 +1862,7 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	in, args := idArgs(ids)
 	rows, err := s.db.Query(`
 		SELECT item_id, state, error, bytes, captions_path,
-		       package_state, needs_profanity, clean_audio_path
+		       package_state, needs_profanity, clean_audio_path, clean_track_path
 		FROM downloads WHERE item_id IN (`+in+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("downloads by items: %w", err)
@@ -1855,7 +1871,7 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	for rows.Next() {
 		var d Download
 		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath,
-			&d.PackageState, &d.NeedsProfanity, &d.CleanAudioPath); err != nil {
+			&d.PackageState, &d.NeedsProfanity, &d.CleanAudioPath, &d.CleanTrackPath); err != nil {
 			return nil, fmt.Errorf("downloads by items scan: %w", err)
 		}
 		out[d.ItemID] = d

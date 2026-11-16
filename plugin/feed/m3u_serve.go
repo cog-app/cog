@@ -139,9 +139,9 @@ func m3uTitle(s string) string {
 // marks the packaged items' edges wanted when write is set, so the worker
 // cuts them before the player reaches them; that is the only write.
 //
-// An item packaged for HLS gets its master with o. One that is not is
-// left out when it is to be muted (Download.muted), since only its clean
-// audio may play and that is made from a download; an undownloaded YouTube
+// An item to be muted with no clean track (Download.hlsUnclean) is left
+// out, since only its clean audio may play; one packaged for HLS gets its
+// master with o; an undownloaded YouTube
 // video gets its remote master (remoteEligible), which resolves when the
 // player fetches it; anything else plays its media URL, unskipped.
 func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username string, l m3uList, o hlsOptions, write bool) ([]m3uEntry, error) {
@@ -191,6 +191,9 @@ func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username 
 		dl := downloads[it.ID]
 		var u string
 		switch {
+		case dl.hlsUnclean():
+			// Its presentation, if any, has only the original audio.
+			continue
 		case dl.PackageState == "done":
 			u = p.absoluteURL(r, hlsMasterPath(key, username, it.ID, o))
 			packaged = append(packaged, it.ID)

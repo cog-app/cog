@@ -1491,8 +1491,20 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 // setHLSURL gives a packaged video its signed master playlist, which the
-// player plays in place of the media route.
+// player plays in place of the media route; an item that cannot play
+// until it is clean (Download.uncleanOnly) gets why it waits instead.
 func (h *Pages) setHLSURL(r *http.Request, store *Store, ip *ItemPlayback) error {
+	if ip.Type == "text" {
+		return nil
+	}
+	dl, err := store.FindDownload(ip.ID)
+	if err != nil {
+		return err
+	}
+	if dl.uncleanOnly() {
+		ip.Waiting = h.plugin.waitWhy(dl)
+		return nil
+	}
 	if !ip.Packaged || !ip.HasVideo || ip.CleanPending {
 		return nil
 	}
@@ -1575,8 +1587,10 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 // ?variant=audio, or for an audio item, its best audio-only stream; a video
 // from its download once ready, and until then from googlevideo over HLS
 // (remoteMaster). When that cannot be, it queues the download, answering
-// {"downloading": true} with why until the download is ready. The audio of
-// an item to be muted (Download.muted) is its download's, never a stream.
+// {"downloading": true} with why until the download is ready. An item to
+// be muted (Download.muted) plays only its clean audio, and until it has
+// some answers {"downloading": true} with why (waitClean); any item not
+// from YouTube plays its audio from the media route.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1593,14 +1607,24 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		lookupError(w, r, err)
 		return
 	}
-	// A video plays from its download: YouTube serves picture and sound
-	// apart (ResolveMedia).
-	if r.URL.Query().Get("variant") != "audio" && it.Type != "audio" {
-		dl, err := store.FindDownload(id)
+	dl, err := store.FindDownload(id)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	audio := r.URL.Query().Get("variant") == "audio" || it.Type == "audio"
+	if dl.uncleanOnly() {
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, audio)
 		if err != nil {
 			httperr.Internal(w, r, err)
 			return
 		}
+		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		return
+	}
+	// A video plays from its download: YouTube serves picture and sound
+	// apart (ResolveMedia).
+	if !audio {
 		if dl.State == "ready" && dl.LocalPath != "" {
 			switch videoPlayOf(dl) {
 			case playHLS:
@@ -1641,23 +1665,25 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
 		return
 	}
-	dl, err := store.FindDownload(id)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
+	media := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"
 	if dl.muted() {
 		// Only its clean audio may play, and that is made from a download.
-		if dl.State == "ready" && (dl.LocalPath != "" || dl.CleanAudioPath != "") {
-			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
+		if dl.State == "ready" && dl.CleanAudioPath != "" {
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": media})
 			return
 		}
-		why, err := queueDownload(store, h.plugin, plugin.Username(r), id, dl, "audio")
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, true)
 		if err != nil {
 			httperr.Internal(w, r, err)
 			return
 		}
 		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		return
+	}
+	if it.SourceKind != "youtube" {
+		// An enclosure is not a stream to resolve: the media route serves
+		// the download, or else redirects to it.
+		plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": media})
 		return
 	}
 	streamURL, err := resolveStream(r.Context(), it.MediaURL, true)
@@ -1774,7 +1800,8 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.
 // A missing clean file is an error, never a reason to serve the unclean one,
-// and an item to be muted (Download.muted) is never redirected to its original.
+// and an item to be muted (Download.muted) plays nothing until it has clean
+// audio: it answers 503 with why (waitClean), queueing its download.
 func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1794,6 +1821,16 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	dl, err := store.FindDownload(id)
 	if err != nil {
 		httperr.Internal(w, r, err)
+		return
+	}
+	if dl.uncleanOnly() {
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, true)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		httperr.Log(r, fmt.Errorf("item %d is to be muted and has no clean audio: %s", id, why))
+		http.Error(w, why, http.StatusServiceUnavailable)
 		return
 	}
 	for _, stored := range []string{dl.CleanAudioPath, dl.LocalPath} {

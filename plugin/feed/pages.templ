@@ -1287,6 +1287,9 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		if ip.HLSURL != "" && playerType(ip, nav) == "video" {
 			data-hls={ ip.HLSURL }
 		}
+		if ip.Waiting != "" {
+			data-waiting={ ip.Waiting }
+		}
 		if nav.ListenOnly {
 			data-variant="audio"
 		}
@@ -1505,7 +1508,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 					id="player-el"
 					preload="metadata"
 					playsinline
-					if ip.SourceKind != "youtube" && ip.HLSURL == "" {
+					if ip.SourceKind != "youtube" && ip.HLSURL == "" && ip.Waiting == "" {
 						src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 					}
 				></video>
@@ -1524,7 +1527,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			<audio
 				id="player-el"
 				preload="metadata"
-				if ip.SourceKind != "youtube" {
+				if ip.SourceKind != "youtube" && ip.Waiting == "" {
 					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 				}
 			></audio>

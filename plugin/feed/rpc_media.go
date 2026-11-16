@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -30,8 +31,9 @@ var resolveStream = ResolveYouTubeStreamURL
 // first: asking queues the download and answers Unavailable until it is
 // downloaded and packaged, which a client asks again on. Any other enclosure
 // plays from its origin. An item to be muted (Download.muted) plays nothing
-// but its clean media: until its download is ready it is downloaded first,
-// whatever it is and whichever variant is asked for.
+// but its clean media: until it has some (Download.uncleanOnly) it answers
+// Unavailable with why (waitClean), whatever it is and whichever variant is
+// asked for.
 func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error) {
 	store, err := s.store(ctx)
 	if err != nil {
@@ -52,6 +54,14 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 	kind := feedpb.Variant_VARIANT_VIDEO
 	if ip.Type == "audio" {
 		kind = feedpb.Variant_VARIANT_AUDIO
+	}
+	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
+	if dl.uncleanOnly() {
+		why, err := s.plugin.waitClean(store, plugin.UserFromContext(ctx).Username, id, dl, audio)
+		if err != nil {
+			return nil, err
+		}
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New(why))
 	}
 	if dl.State == "ready" && (dl.LocalPath != "" || dl.CleanAudioPath != "") {
 		if kind == feedpb.Variant_VARIANT_VIDEO && req.Msg.Variant != feedpb.Variant_VARIANT_AUDIO {
@@ -87,15 +97,10 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 	if ip.MediaURL == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("item %d has no media", id))
 	}
-	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
 	if dl.muted() {
 		// Its clean audio is made from a download, and neither the
 		// enclosure nor googlevideo's stream is clean.
-		what := "video"
-		if audio {
-			what = "audio"
-		}
-		return nil, s.downloadFirst(ctx, store, id, dl, what)
+		return nil, s.downloadFirst(ctx, store, id, dl, mediaNoun(audio))
 	}
 	if ip.SourceKind != "youtube" {
 		return connect.NewResponse(&feedpb.MediaSource{Url: ip.MediaURL, Mime: ip.MediaMIME, Variant: kind}), nil
@@ -237,6 +242,60 @@ func queueDownload(store *Store, p *Plugin, username string, id int64, dl Downlo
 		return "Downloading the " + what + " again; preparing it failed: " + dl.PackageError, nil
 	}
 	return "Downloading the " + what, nil
+}
+
+// mediaNoun names what a player asked for, in a reason it cannot play yet.
+func mediaNoun(audio bool) string {
+	if audio {
+		return "audio"
+	}
+	return "video"
+}
+
+// waitClean answers why an item with no clean audio yet
+// (Download.uncleanOnly) cannot play, queueing its download when it has
+// none; audio is whether its audio, not its video, was asked for.
+func (p *Plugin) waitClean(store *Store, username string, id int64, dl Download, audio bool) (string, error) {
+	if dl.State == "ready" {
+		return p.cleaningWhy(dl), nil
+	}
+	return queueDownload(store, p, username, id, dl, mediaNoun(audio))
+}
+
+// waitWhy is waitClean's reason without queueing anything, for a page that
+// shows it before the player asks.
+func (p *Plugin) waitWhy(dl Download) string {
+	if dl.State == "ready" {
+		return p.cleaningWhy(dl)
+	}
+	return "Downloading the audio"
+}
+
+// cleaningWhy says why a downloaded item has no clean audio yet: cleaning
+// is under way, or it failed or cannot happen, which a retry may not cure.
+func (p *Plugin) cleaningWhy(dl Download) string {
+	switch {
+	case dl.ProfanityError != "":
+		return "Cleaning failed: " + firstLine(dl.ProfanityError)
+	case dl.TranscribeError != "":
+		return "Cleaning failed: " + firstLine(dl.TranscribeError)
+	case p.Profanity() == nil:
+		return "Cleaning failed: the profanity plugin is not installed"
+	case dl.CaptionsPath == "" && !dl.NeedsTranscribe:
+		// Transcription ended without captions, as it does with whisper off.
+		return "Cleaning failed: no captions to find the words by"
+	}
+	return "Cleaning the audio"
+}
+
+// firstLine is the first line of a stored error, at most 200 bytes of it:
+// a tool's error can carry its whole output.
+func firstLine(s string) string {
+	s, _, _ = strings.Cut(s, "\n")
+	if len(s) > 200 {
+		s = strings.ToValidUTF8(s[:200], "") + "…"
+	}
+	return s
 }
 
 // streamExpiry reads when a resolved stream stops working from its expire

@@ -73,6 +73,14 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	// Links do not expire, so one handed out before a mute filter matched
+	// the item still arrives: nothing of a presentation with only the
+	// original audio is served.
+	if d.hlsUnclean() {
+		httperr.Log(r, fmt.Errorf("feed hls: item %d is to be muted and has no clean track", itemID))
+		http.Error(w, "clean audio is not available", http.StatusServiceUnavailable)
+		return
+	}
 	// A remote segment is googlevideo's whatever the package state: a
 	// player that started before the download was packaged holds remote
 	// playlists, and finishes with them. Its next master is local.

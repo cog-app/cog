@@ -64,6 +64,7 @@
 			title: root.dataset.title || "",
 			subscription: root.dataset.subscription || "",
 			hls: root.dataset.hls || "",
+			waiting: root.dataset.waiting || "",
 			artwork: root.dataset.artwork || "",
 			speed: parseFloat(root.dataset.speed) || 1,
 			skipBack: parseInt(root.dataset.skipBack, 10) || 15,
@@ -212,10 +213,12 @@
 		// --- source loading ---
 		if (cfg.hls) {
 			playHLS(cfg.hls);
-		} else if (cfg.sourceKind === "youtube") {
+		} else if (cfg.sourceKind === "youtube" || cfg.waiting) {
 			// A video plays from Cog's download of it, which the server
 			// queues and then packages for HLS; until it is ready the answer
-			// says why, shown in the player, and the player asks again.
+			// says why, shown in the player, and the player asks again. So
+			// does an item to be muted until its audio is clean.
+			if (cfg.waiting) showNote(cfg.waiting + "…");
 			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
 			var loadSource = function () {
 				fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
