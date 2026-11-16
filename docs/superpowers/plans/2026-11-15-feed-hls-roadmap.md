@@ -117,7 +117,18 @@ There is no `TimestampMap`.
 **As built (phase 2), later phases must know these:**
 - **Captions are written with `X-TIMESTAMP-MAP=MPEGTS:0`, not the track's first `Start`.** hls.js 1.7.4 rebases the timeline so the first sample plays at 0. `TestBrowser/HLSCaptionsOffset` proves this only for a timeline with no discontinuities.
 - **Phase 4 must re-prove caption timing after a cut**, with a browser test of a cue after a dropped run. Cues are in item time; after an `EXT-X-DISCONTINUITY`, each VTT segment's cues must be shifted into presentation time, or given a per-piece MPEGTS.
-- **Phase 2's `Master` writes no `AUDIO` renditions without video**, and the audio-only variant has no `AUDIO=`. Phase 3's audio-only clean presentation changes that branch. Its Task 1 rules on it, and phase 2's goldens and `TestMasterSubtitlesAudioOnly` are updated then.
+- **Phase 2's `Master` writes no `AUDIO` renditions without video**, and the audio-only variant has no `AUDIO=`. Phase 3's audio-only clean presentation changes that branch. Its Task 1 rules on it, and phase 2's goldens and `TestMasterSubtitlesAudioOnly` are updated then. *(Done in phase 3. With two or more audio renditions, `Master` writes the group, and the audio-only variant names `AUDIO="audio"` and points at the default rendition.)*
+
+**As built (phase 3):**
+- **A cleaned item has two audio tracks.** `Original` (`local_path`) is listed first. `Clean` (`clean_track_path`, `media/<id>.hls-audio.clean.m4a`) is listed second, with `DEFAULT=YES`.
+- **The two tracks' segment grids differ.**
+  - The Clean track is cut into fragments of about 2 s (`-frag_duration 2000000`). YouTube's original audio is cut into fragments of about 10 s.
+  - **Phase 4 therefore plans cuts and edge transcodes per rendition**, for Original, Clean and video alike.
+  - Its edge cache key includes the rendition, not only the item and the ranges.
+  - The playlist for each rendition is built at `ServeHLS`'s per-file switch (`stored, media`).
+- **Clean captions are masked.** When a clean track exists, captions pass through `profanity.FilterText`. If the profanity plugin is unavailable, they are withheld.
+- **A clean track that is pending or failed means no HLS for that video.** `videoPlayOf` answers `playFile`, and `setHLSURL` skips it.
+- **Phase 5 has no Clean rendition and no masking**, because a remote presentation has no download row. `ServeHLS` reads `CleanTrackPath` and `CaptionsPath` directly from `Download`. Phase 5 should build the `Presentation` (renditions and captions policy) in one function that both the local and the remote source feed.
 
 ### `plugin/feed`: file names served under `/apps/feed/hls/{user}/{item}/`
 
