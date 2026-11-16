@@ -29,7 +29,9 @@ var resolveStream = ResolveYouTubeStreamURL
 // tracks cannot be HLS, or the item is to be muted, its video is downloaded
 // first: asking queues the download and answers Unavailable until it is
 // downloaded and packaged, which a client asks again on. Any other enclosure
-// plays from its origin.
+// plays from its origin. An item to be muted (Download.muted) plays nothing
+// but its clean media: until its download is ready it is downloaded first,
+// whatever it is and whichever variant is asked for.
 func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error) {
 	store, err := s.store(ctx)
 	if err != nil {
@@ -66,7 +68,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 			case playPreparing:
 				return nil, connect.NewError(connect.CodeUnavailable, errors.New(preparingVideo))
 			case playPackageFailed:
-				return nil, s.downloadFirst(ctx, store, id, dl)
+				return nil, s.downloadFirst(ctx, store, id, dl, "video")
 			}
 		}
 		src := &feedpb.MediaSource{
@@ -85,10 +87,19 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 	if ip.MediaURL == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("item %d has no media", id))
 	}
+	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
+	if dl.muted() {
+		// Its clean audio is made from a download, and neither the
+		// enclosure nor googlevideo's stream is clean.
+		what := "video"
+		if audio {
+			what = "audio"
+		}
+		return nil, s.downloadFirst(ctx, store, id, dl, what)
+	}
 	if ip.SourceKind != "youtube" {
 		return connect.NewResponse(&feedpb.MediaSource{Url: ip.MediaURL, Mime: ip.MediaMIME, Variant: kind}), nil
 	}
-	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
 	if !audio {
 		username := plugin.UserFromContext(ctx).Username
 		master, ok, err := s.plugin.remoteMaster(ctx, store, username, ip)
@@ -98,7 +109,7 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 		if ok {
 			return connect.NewResponse(&feedpb.MediaSource{Url: master, Mime: hlsMIME, Variant: feedpb.Variant_VARIANT_VIDEO}), nil
 		}
-		return nil, s.downloadFirst(ctx, store, id, dl)
+		return nil, s.downloadFirst(ctx, store, id, dl, "video")
 	}
 	stream, err := resolveStream(ctx, ip.MediaURL, audio)
 	if err != nil {
@@ -199,18 +210,20 @@ func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string
 	return master, true, nil
 }
 
-// downloadFirst queues an item's video and answers why it cannot play yet.
-func (s *FeedService) downloadFirst(ctx context.Context, store *Store, id int64, dl Download) error {
-	why, err := queueVideo(store, s.plugin, plugin.UserFromContext(ctx).Username, id, dl)
+// downloadFirst queues an item's download and answers why its video or
+// audio (what) cannot play yet.
+func (s *FeedService) downloadFirst(ctx context.Context, store *Store, id int64, dl Download, what string) error {
+	why, err := queueDownload(store, s.plugin, plugin.UserFromContext(ctx).Username, id, dl, what)
 	if err != nil {
 		return err
 	}
 	return connect.NewError(connect.CodeUnavailable, errors.New(why))
 }
 
-// queueVideo queues an item's download, retrying one that failed to
-// download or to package, and answers why the video cannot play yet.
-func queueVideo(store *Store, p *Plugin, username string, id int64, dl Download) (string, error) {
+// queueDownload queues an item's download, retrying one that failed to
+// download or to package, and answers why its video or audio (what) cannot
+// play yet.
+func queueDownload(store *Store, p *Plugin, username string, id int64, dl Download, what string) (string, error) {
 	if dl.State != "downloading" {
 		if err := store.EnqueueDownload(id); err != nil {
 			return "", err
@@ -218,12 +231,12 @@ func queueVideo(store *Store, p *Plugin, username string, id int64, dl Download)
 		p.TriggerFetch(username, 0)
 	}
 	if dl.State == "error" {
-		return "Downloading the video again; the last try failed: " + dl.Error, nil
+		return "Downloading the " + what + " again; the last try failed: " + dl.Error, nil
 	}
 	if dl.State == "ready" && dl.PackageState == "error" {
-		return "Downloading the video again; preparing it failed: " + dl.PackageError, nil
+		return "Downloading the " + what + " again; preparing it failed: " + dl.PackageError, nil
 	}
-	return "Downloading the video", nil
+	return "Downloading the " + what, nil
 }
 
 // streamExpiry reads when a resolved stream stops working from its expire
