@@ -465,6 +465,21 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 - Whether iOS Safari's native HLS and Media3 (spec-following, media
   timeline) show captions at the right time on a track that does not start at
   0, given `MPEGTS` = the track's start. Checked on the phone in phase 6b.
+- hls.js 1.7.4 misplaces a skip caption when a VTT piece after a cut is
+  parsed before that discontinuity's media has given it an initPTS, and the
+  map is `MPEGTS:0` (a track starting at 0). Its WebVTT parser takes a
+  missing initPTS as 0, so `MPEGTS − initPTS` is 0, which it reads as "map
+  lines up with the discontinuity" and places the cue at the discontinuity's
+  start plus its caption time (cue B at 9 s, cut {6,8}: 15 s, not 7 s). A
+  non-zero `MPEGTS` instead raises "Missing initPTS", and the piece is
+  deferred and placed correctly. Our playlists and map are spec-correct
+  (kept media keeps its media time); the order is a race, usually won by the
+  media. `TestBrowser/HLSSkipCaptions` holds subtitle fragments until their
+  initPTS. Before the web player plays skip, either do the same in its
+  loader, or write the equivalent non-zero map (`MPEGTS:<m+k>,LOCAL:<k/90000>`,
+  say k = 90000), which by its source hls.js would defer (untested). Media3
+  is expected to wait for a discontinuity's timestamp adjuster before
+  reading its WebVTT; confirm on the phone in phase 6b.
 - A captions language is not recorded: neither source (YouTube, whisper)
   records one reliably, so the rendition has no `LANGUAGE`.
 - How to get progress back from external players.

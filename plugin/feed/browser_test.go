@@ -272,11 +272,39 @@ func TestBrowser(t *testing.T) {
 		b.Login(t, "hlsskip", "pass")
 		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", skipCC))
 		b.WaitVisible(t, `#feed-player[data-hls-state="loaded"]`)
+		// hls.js 1.7.4 parses a VTT piece whose discontinuity has no initPTS
+		// yet as if that initPTS were 0, and with MPEGTS:0 it then places the
+		// cue at the discontinuity's start plus its caption time (B at 15 s,
+		// not 7 s) instead of deferring it. Media fragments usually arrive
+		// first; on a loaded machine they need not. The loader holds each
+		// subtitle fragment until its discontinuity's initPTS is known, so the
+		// test checks our timestamps, not the race. See feed_hls.md, Open
+		// questions.
 		b.Eval(t, fmt.Sprintf(`() => {
+			const pts = new Set(), held = [];
+			const Base = Hls.DefaultConfig.loader;
+			class AfterInitPTS extends Base {
+				load(context, config, callbacks) {
+					const f = context.frag;
+					const go = () => { this.held = null; super.load(context, config, callbacks) };
+					if (f && f.type === "subtitle" && !pts.has(f.cc)) { this.held = [f.cc, go]; held.push(this.held); return }
+					go();
+				}
+				abort() {
+					const i = held.indexOf(this.held);
+					if (i >= 0) held.splice(i, 1);
+					this.held = null;
+					super.abort();
+				}
+			}
 			const v = document.createElement("video");
 			v.id = "skip-el"; v.muted = true;
 			document.body.appendChild(v);
-			const h = new Hls({ subtitleDisplay: true });
+			const h = new Hls({ subtitleDisplay: true, fLoader: AfterInitPTS });
+			h.on(Hls.Events.INIT_PTS_FOUND, (_, d) => {
+				pts.add(d.frag.cc);
+				for (const w of held.filter(w => pts.has(w[0]))) { held.splice(held.indexOf(w), 1); w[1]() }
+			});
 			window.skipHls = h;
 			h.loadSource(%q);
 			h.attachMedia(v);
