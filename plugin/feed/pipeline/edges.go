@@ -411,8 +411,7 @@ func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	if src.Kind == hls.Video && !first.Keyframe {
 		return errors.New("made a video track that does not start with a keyframe")
 	}
-	// AAC puts its priming frame before the piece, and a video frame
-	// begins at or after the piece and may run past its end.
+	// A video frame begins at or after the piece and may run past its end.
 	start, end := first.Start, last.Start+last.Duration
 	tol := src.Frame + 1e-3
 	if math.Abs(start-piece.Start) > tol || math.Abs(end-piece.End) > tol || math.Abs((end-start)-(piece.End-piece.Start)) > tol {
@@ -455,10 +454,17 @@ func (w *Edges) removeOthers(itemID int64, edit string) error {
 // time. Two flags keep it there: frag_discont writes it into the fragments'
 // tfdt as well as the sidx (without it tfdt stays 0, and players place
 // fragments by tfdt), and -avoid_negative_ts make_non_negative stops the
-// muxer moving the edge to 0, but still moves an edge at the track's start
-// whose AAC priming frame would come before 0, as the source's was. Video keeps the source's frame times
-// (passthrough, at the demuxer's time base, in the source's timescale), and
-// its length is an output -t a millisecond short of the piece (an input -to
+// muxer moving the edge to 0. Audio
+// drops the encoder's priming frame (the packets before the input's start):
+// the edge's edit list, which says to skip it, is lost under the init a
+// player keeps, so it would play 23 ms of nothing per edge and overlap the
+// piece before. Its first frame is then the piece's start, decoded with
+// whatever came before it. Video keeps the source's frame times
+// (passthrough, at the demuxer's time base, in the source's timescale) and
+// has no B-frames: the mp4 muxer starts a track's decode times at its first
+// presentation time, so an encoder's B-frame delay would show every frame
+// that much later than the source does (two frames for x264's default), and
+// lose a frame at the joint after a kept segment. Its length is an output -t a millisecond short of the piece (an input -to
 // keeps a frame up to 20 ms past it), so a frame that starts where the
 // piece ends is left to what follows.
 func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error) {
@@ -474,6 +480,7 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 		head = append(head, "-to", sec(piece.End-src.T0))
 		tail = []string{"-map", "0:a:0", "-c:a", "aac", "-b:a", "128k",
 			"-ar", strconv.Itoa(src.SampleRate), "-ac", strconv.Itoa(src.Channels),
+			"-bsf:a", `noise=drop=lt(pts\,0)`,
 			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
 			"-movflags", "+empty_moov+default_base_moof+global_sidx+frag_discont", "-frag_duration", "2000000", "-f", "mp4", out}
 	case hls.Video:
@@ -486,7 +493,7 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 		}
 		tail = []string{"-t", sec(piece.End - piece.Start - 1e-3), "-map", "0:V:0", "-an", "-fps_mode", "passthrough", "-enc_time_base", "demux",
 			"-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", profile, "-level", level,
-			"-pix_fmt", "yuv420p", "-x264-params", "repeat-headers=1",
+			"-bf", "0", "-pix_fmt", "yuv420p", "-x264-params", "repeat-headers=1",
 			"-video_track_timescale", strconv.Itoa(src.Timescale),
 			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
 			"-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx+frag_discont", "-f", "mp4", out}

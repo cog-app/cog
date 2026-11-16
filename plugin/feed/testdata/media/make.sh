@@ -29,3 +29,8 @@ $ff -f lavfi -i sine=frequency=440:duration=12 -output_ts_offset 1.5 -avoid_nega
 # What the profanity worker leaves behind for an AAC download: plain
 # progressive AAC, not fragmented.
 $ff -f lavfi -i sine=frequency=440:duration=12 -c:a aac -b:a 32k -movflags +faststart plain-audio.m4a
+# A video track the edge encoder does not match: high profile (B-frames)
+# at a 90 kHz timescale, as a YouTube download might be.
+$ff -f lavfi -i testsrc=size=160x90:rate=24:duration=12 \
+	-c:v libx264 -profile:v high -level 4.0 -g 48 -keyint_min 48 -sc_threshold 0 -pix_fmt yuv420p -video_track_timescale 90000 \
+	-movflags +frag_keyframe+empty_moov+default_base_moof+global_sidx -f mp4 video-high.mp4

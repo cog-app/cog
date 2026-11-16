@@ -106,13 +106,13 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 		assert.Equal(t, hls.Audio, tr.Kind)
 		assert.Equal(t, "mp4a.40.2", tr.Codecs)
 		first, last := tr.Fragments[0], tr.Fragments[len(tr.Fragments)-1]
-		// AAC priming puts one frame (23 ms) before the piece.
-		assert.InDelta(t, piece.Start, first.Start, 0.05, "audio edge %d start", n)
-		// Players place fragments by tfdt, not the sidx: it is item time too,
-		// at most one AAC frame (plus rounding) from the piece.
+		// The encoder's priming frame is dropped: players that keep the
+		// first init never skip it, so it would play 23 ms of nothing and
+		// overlap what comes before. The edge starts at the piece.
+		assert.InDelta(t, piece.Start, first.Start, 1e-3, "audio edge %d start", n)
+		// Players place fragments by tfdt, not the sidx: it is item time too.
 		tfdt := decodeTime(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, n))
 		assert.InDelta(t, first.Start, tfdt, 1e-3, "audio edge %d tfdt", n)
-		assert.InDelta(t, piece.Start, tfdt, 1024.0/44100+1e-3, "audio edge %d tfdt", n)
 		assert.InDelta(t, piece.End, last.Start+last.Duration, 0.05, "audio edge %d end", n)
 	}
 	a0 := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0))
