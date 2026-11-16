@@ -476,3 +476,36 @@ func TestPackagedTrackDecodesAtItsIndex(t *testing.T) {
 		})
 	}
 }
+
+// A clean track starts where the Original does, in its index and its
+// fragments' tfdt: the clean file's first sample is the Original's first
+// (the profanity worker decodes it from there), and an Original used as
+// downloaded can start after 0.
+func TestPackageCleanTrackKeepsOriginalStart(t *testing.T) {
+	for _, c := range []struct{ original, clean string }{
+		{"audio-offset.m4a", "plain-audio.m4a"}, // copied
+		{"audio-offset.m4a", "episode.mp3"},     // encoded
+		{"audio.m4a", "plain-audio.m4a"},
+	} {
+		t.Run(c.original+"/"+c.clean, func(t *testing.T) {
+			needFFmpeg(t)
+			s, space := newPipeline(t)
+			id := readyDownload(t, s, "audio")
+			putFixture(t, space, c.original, "media/1.hls-audio.m4a")
+			require.NoError(t, s.MarkDownloadReady(id, "media/1.hls-audio.m4a", 1))
+			require.NoError(t, pipeline.NewPackager(s, space).RunOnce(context.Background()))
+			putFixture(t, space, c.clean, "media/1.clean.m4a")
+			require.NoError(t, s.SetCleanAudioPath(id, "media/1.clean.m4a"))
+			require.NoError(t, pipeline.NewPackager(s, space).RunCleanOnce(context.Background()))
+			d, err := s.GetDownload(id)
+			require.NoError(t, err)
+			require.Equal(t, "", d.CleanTrackError)
+			original := storedTrack(t, space, d.LocalPath)
+			clean := storedTrack(t, space, d.CleanTrackPath)
+			assert.InDelta(t, original.Fragments[0].Start, clean.Fragments[0].Start, 1e-3, "clean sidx start")
+			tfdt, err := space.DecodeTime(d.CleanTrackPath)
+			require.NoError(t, err)
+			assert.InDelta(t, original.Fragments[0].Start, tfdt, 1e-3, "clean tfdt")
+		})
+	}
+}

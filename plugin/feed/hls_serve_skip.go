@@ -242,12 +242,13 @@ func (h hlsRequest) skipFile(file string) {
 				return
 			}
 			// Cues stay in caption time, clipped to the piece, under the
-			// map of the unskipped presentation: kept media and edges keep
-			// their media time, and hls.js places a cue after a cut by its
+			// unskipped presentation's map (the Original's, which a clean
+			// track starts with too): kept media and edges keep their media
+			// time, and hls.js places a cue after a cut by its
 			// discontinuity's own offset (TestBrowser/HLSSkipCaptions).
 			t0 := subsTrack.Fragments[0].Start
 			p := subsPieces[n]
-			writeVTT(w, r, hls.VTTPiece(cues, p.Start-t0, p.End-t0, hls.TimestampMap(subsTrack)))
+			writeVTT(w, r, hls.VTTPiece(cues, p.Start-t0, p.End-t0, hls.TimestampMap(tracks.original)))
 			return
 		}
 		http.NotFound(w, r)

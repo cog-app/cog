@@ -268,9 +268,9 @@ func (h hlsRequest) file(file string) {
 			hlsError(w, r, err)
 			return
 		}
-		// Caption time 0 is the audio's first sample, at its media time: the
-		// spec's mapping, which hls.js follows against the first tfdt
-		// (TestBrowser/HLSCaptionsOffset).
+		// Caption time 0 is the Original's first sample, at its media time
+		// (a clean track starts there too): the spec's mapping, which hls.js
+		// follows against the first tfdt (TestBrowser/HLSCaptionsOffset).
 		writeVTT(w, r, hls.VTTSegment(cues, start, end, hls.TimestampMap(audio)))
 	}
 }

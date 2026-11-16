@@ -77,6 +77,9 @@ type track struct {
 	kept       string // the storage name it was kept as
 	needed     bool
 	sourceDesc string
+	// clean: a clean track, which starts at start, the Original's start.
+	clean bool
+	start float64
 }
 
 func (p *Packager) pack(ctx context.Context, itemID int64) (err error) {
@@ -274,6 +277,26 @@ func packageArgs(in, out string, kind hls.Kind, transcode bool) []string {
 	return append(args, "-movflags", "+empty_moov+default_base_moof+global_sidx", "-frag_duration", "2000000", "-f", "mp4", out)
 }
 
+// cleanTrackArgs is packageArgs for a clean track: an audio track that
+// starts where the Original does (start, its first fragment's), in its sidx
+// and its fragments' tfdt (frag_discont). The clean file's first sample is
+// the Original's first, as the profanity worker decoded it, so its AAC
+// priming frame, which a player that keeps the Original's init would never
+// skip, is dropped (the packets before its start), as edges drop theirs:
+// its first frame is then the Original's first.
+func cleanTrackArgs(in, out string, transcode bool, start float64) []string {
+	args := append([]string{"-nostdin", "-y", "-v", "error"}, ffargs.Input(in)...)
+	args = append(args, "-map", "0:a:0")
+	if transcode {
+		args = append(args, "-c:a", "aac", "-b:a", "128k")
+	} else {
+		args = append(args, "-c", "copy")
+	}
+	return append(args, "-bsf:a", `noise=drop=lt(pts\,0)`,
+		"-output_ts_offset", strconv.FormatFloat(start, 'f', 6, 64), "-avoid_negative_ts", "make_non_negative",
+		"-movflags", "+empty_moov+default_base_moof+global_sidx+frag_discont", "-frag_duration", "2000000", "-f", "mp4", out)
+}
+
 // remux makes t from its source into the cache, checks the result has an
 // index, and keeps it as media/<id>.hls-<kind>.
 func (p *Packager) remux(ctx context.Context, t *track) error {
@@ -285,8 +308,11 @@ func (p *Packager) remux(ctx context.Context, t *track) error {
 	if err != nil {
 		return fmt.Errorf("package path: %w", err)
 	}
-	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{in}, Write: []string{filepath.Dir(out)}},
-		"ffmpeg", packageArgs(in, out, t.kind, t.transcode)...)
+	args := packageArgs(in, out, t.kind, t.transcode)
+	if t.clean {
+		args = cleanTrackArgs(in, out, t.transcode, t.start)
+	}
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{in}, Write: []string{filepath.Dir(out)}}, "ffmpeg", args...)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg %s track from %s (%s): %w: %s", t.kind, t.source, t.sourceDesc, err, strings.TrimSpace(string(b)))
 	}
@@ -357,6 +383,13 @@ func (p *Packager) packClean(ctx context.Context, itemID int64) (err error) {
 	if !ok {
 		return errors.New("the clean audio has no audio stream")
 	}
+	original, _, err := p.space.Track(d.LocalPath)
+	if err != nil {
+		return fmt.Errorf("original track: %w", err)
+	}
+	if len(original.Fragments) == 0 {
+		return errors.New("the original track has no fragments")
+	}
 	t := &track{
 		kind:       hls.Audio,
 		needed:     true,
@@ -364,6 +397,8 @@ func (p *Packager) packClean(ctx context.Context, itemID int64) (err error) {
 		transcode:  s.Codec != "aac",
 		sourceDesc: s.Codec,
 		cached:     "package/" + strconv.FormatInt(itemID, 10) + ".hls-audio.clean.m4a",
+		clean:      true,
+		start:      original.Fragments[0].Start,
 	}
 	defer func() {
 		if err == nil {

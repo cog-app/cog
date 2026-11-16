@@ -26,6 +26,14 @@ func TestPackageArgsAudioTranscode(t *testing.T) {
 	assert.True(t, strings.HasSuffix(got, " -i file:in.mp3 -map 0:a:0 -c:a aac -b:a 128k -movflags +empty_moov+default_base_moof+global_sidx -frag_duration 2000000 -f mp4 out.m4a"), got)
 }
 
+// A clean track starts at the Original's start, without its priming frame.
+func TestCleanTrackArgs(t *testing.T) {
+	got := strings.Join(cleanTrackArgs("in.m4a", "out.m4a", false, 1.47678), " ")
+	assert.True(t, strings.HasSuffix(got, ` -i file:in.m4a -map 0:a:0 -c copy -bsf:a noise=drop=lt(pts\,0) -output_ts_offset 1.476780 -avoid_negative_ts make_non_negative -movflags +empty_moov+default_base_moof+global_sidx+frag_discont -frag_duration 2000000 -f mp4 out.m4a`), got)
+	got = strings.Join(cleanTrackArgs("in.mp3", "out.m4a", true, 0), " ")
+	assert.True(t, strings.Contains(got, " -c:a aac -b:a 128k -bsf:a "), got)
+}
+
 func TestParseProbe(t *testing.T) {
 	out := []byte(`{
 		"programs": [],

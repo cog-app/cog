@@ -17,6 +17,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 func TestX264Profile(t *testing.T) {
@@ -626,5 +627,39 @@ func TestHLSSkipSubsTimestampMapOffset(t *testing.T) {
 	for _, u := range vtts {
 		seg := env.Get(t, child(skip, u)).Status(http.StatusOK).ReadBody()
 		assert.True(t, strings.Contains(seg, "X-TIMESTAMP-MAP=MPEGTS:132910,LOCAL:00:00:00.000\n"), seg)
+	}
+}
+
+// A cleaned item whose tracks start after 0 maps its captions the same in
+// skip and unskipped presentations: the clean track starts where the
+// Original does.
+func TestHLSSubsTimestampMapCleanOffset(t *testing.T) {
+	env := cogtest.New(t, feed.New(), profanity.New())
+	// Start is where the feed plugin finds the profanity plugin, without
+	// which a clean item's captions are withheld.
+	require.NoError(t, env.Providers.Plugins.Start(t.Context()))
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItemFrom(t, env, "alice", "audio-offset.m4a", "", testVTT)
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	b, err := os.ReadFile("testdata/media/audio-offset.m4a")
+	require.NoError(t, err)
+	name := "media/" + strconv.FormatInt(id, 10) + ".hls-audio.clean.m4a"
+	_, err = space.Own.Put(name, bytes.NewReader(b))
+	require.NoError(t, err)
+	store := feedStore(t, env, "alice")
+	require.NoError(t, store.SaveCleanTrack(id, name))
+	require.NoError(t, store.SetSilenceRanges(id, []feed.Range{{Start: 7, End: 14, Action: "skip"}}))
+
+	const want = "X-TIMESTAMP-MAP=MPEGTS:132910,LOCAL:00:00:00.000\n"
+	plain := env.Get(t, sibling(masterURL(t, env, "alice", id), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(plain, want), plain)
+	skip := skipMaster(t, env, "alice", id)
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	require.NotEqual(t, "", masterEdit(body), body)
+	subs := env.Get(t, child(skip, masterURI(t, body, "subs.m3u8"))).Status(http.StatusOK).ReadBody()
+	for _, u := range playlistURIs(subs) {
+		seg := env.Get(t, child(skip, u)).Status(http.StatusOK).ReadBody()
+		assert.True(t, strings.Contains(seg, want), seg)
 	}
 }
