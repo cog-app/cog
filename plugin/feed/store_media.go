@@ -180,16 +180,25 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 	if len(itemIDs) == 0 {
 		return false, nil
 	}
-	res, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1
+	// Read first: a master request for an item already wanted is the steady
+	// state and must not take the write lock.
+	rows, err := s.db.Query(`SELECT item_id FROM downloads
 		WHERE edges_wanted = 0 AND item_id IN (`+placeholders(len(itemIDs))+`)`, int64Args(itemIDs)...)
 	if err != nil {
 		return false, fmt.Errorf("want edges: %w", err)
 	}
-	n, err := res.RowsAffected()
+	unwanted, err := scanInt64IDs(rows, "want edges")
 	if err != nil {
+		return false, err
+	}
+	if len(unwanted) == 0 {
+		return false, nil
+	}
+	if _, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1
+		WHERE item_id IN (`+placeholders(len(unwanted))+`)`, int64Args(unwanted)...); err != nil {
 		return false, fmt.Errorf("want edges: %w", err)
 	}
-	return n > 0, nil
+	return true, nil
 }
 
 // PendingEdges returns up to limit wanted items whose edges are to be made:

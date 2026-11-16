@@ -252,6 +252,7 @@ func TestEdgesResetOnCleanTrack(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			store, id := edgesMade(t)
+			require.NoError(t, store.MarkEdgesError(id, "abcdefabcdef", "boom"))
 			require.NoError(t, reset(store, id))
 			d, err := store.GetDownload(id)
 			require.NoError(t, err)
@@ -339,4 +340,68 @@ func TestPackagedItemIDs(t *testing.T) {
 	ids, err = store.PackagedItemIDs()
 	require.NoError(t, err)
 	assert.Equal(t, []int64{id}, ids)
+}
+
+func TestEdgesNotPendingUntilWanted(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	assert.False(t, edgesPending(t, store, id), "not wanted")
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	assert.True(t, edgesPending(t, store, id))
+}
+
+func TestResetEdgesScopedToItems(t *testing.T) {
+	store, a := edgesMade(t)
+	b := secondItem(t, store, a)
+	require.NoError(t, store.MarkDownloadReady(b, "media/2.mp3", 100))
+	require.NoError(t, store.SavePackage(b, "media/2.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(b, nil))
+	_, err := store.WantEdges(b)
+	require.NoError(t, err)
+	require.NoError(t, store.SetEdges(b, "bbbbbbbbbbbb"))
+
+	require.NoError(t, store.ResetEdges(a))
+	da, err := store.GetDownload(a)
+	require.NoError(t, err)
+	db, err := store.GetDownload(b)
+	require.NoError(t, err)
+	assert.Equal(t, "", da.EdgesEdit)
+	assert.Equal(t, "bbbbbbbbbbbb", db.EdgesEdit)
+}
+
+func TestWantEdgesSeveralIDs(t *testing.T) {
+	store, a := readyItem(t)
+	b := secondItem(t, store, a)
+	wanted := func(id int64) bool {
+		t.Helper()
+		d, err := store.GetDownload(id)
+		require.NoError(t, err)
+		return d.EdgesWanted
+	}
+	changed, err := store.WantEdges(a)
+	require.NoError(t, err)
+	require.True(t, changed)
+	assert.False(t, wanted(b))
+	changed, err = store.WantEdges(a, b) // a mix of wanted and unwanted
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.True(t, wanted(a))
+	assert.True(t, wanted(b))
+	changed, err = store.WantEdges(a, b)
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+// secondItem adds another downloading item to the subscription of item a.
+func secondItem(t *testing.T, store *feed.Store, a int64) int64 {
+	t.Helper()
+	it, err := store.GetItem(a)
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: it.SubscriptionID, GUID: "ep2",
+		Type: "audio", Title: "Episode 2", MediaURL: "https://cdn.example.com/other.mp3"})
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueDownload(id))
+	return id
 }
