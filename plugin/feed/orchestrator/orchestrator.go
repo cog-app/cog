@@ -134,4 +134,8 @@ func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin,
 			log.Error("feed orchestrator: profanity", "user", username, "err", err)
 		}
 	}
+
+	if err := pkg.RunCleanOnce(ctx); err != nil {
+		log.Error("feed orchestrator: package clean", "user", username, "err", err)
+	}
 }

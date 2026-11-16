@@ -306,3 +306,76 @@ func (p *Packager) remux(ctx context.Context, t *track) error {
 	t.path, t.size = name, size
 	return nil
 }
+
+// RunCleanOnce makes every packaged download's cleaned audio an HLS audio
+// track, media/<id>.hls-audio.clean.m4a.
+func (p *Packager) RunCleanOnce(ctx context.Context) error {
+	ids, err := p.store.PendingCleanPackage(100)
+	if err != nil {
+		return fmt.Errorf("package clean list pending: %w", err)
+	}
+	for _, id := range ids {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := p.cleanOne(ctx, id); err != nil {
+			slog.Warn("feed package: clean track failed", "item_id", id, "err", err)
+		}
+	}
+	return nil
+}
+
+// cleanOne packages one download's clean audio. A failure is recorded, so the
+// item keeps playing the clean file progressively and is not tried again
+// every tick.
+func (p *Packager) cleanOne(ctx context.Context, itemID int64) error {
+	err := p.packClean(ctx, itemID)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if merr := p.store.MarkCleanTrackError(itemID, err.Error()); merr != nil {
+		return errors.Join(err, merr)
+	}
+	return err
+}
+
+// packClean makes the clean file an audio track whatever it is: AAC is
+// copied, anything else encoded, and a video stream is left out.
+func (p *Packager) packClean(ctx context.Context, itemID int64) (err error) {
+	d, err := p.store.GetDownload(itemID)
+	if err != nil {
+		return fmt.Errorf("get download: %w", err)
+	}
+	streams, err := p.probe(ctx, d.CleanAudioPath)
+	if err != nil {
+		return err
+	}
+	s, ok := firstStream(streams, "audio")
+	if !ok {
+		return errors.New("the clean audio has no audio stream")
+	}
+	t := &track{
+		kind:       hls.Audio,
+		needed:     true,
+		source:     d.CleanAudioPath,
+		transcode:  s.Codec != "aac",
+		sourceDesc: s.Codec,
+		cached:     "package/" + strconv.FormatInt(itemID, 10) + ".hls-audio.clean.m4a",
+	}
+	defer func() {
+		if err == nil {
+			return
+		}
+		err = errors.Join(err, p.space.Cache.Remove(t.cached))
+		if t.kept != "" {
+			err = errors.Join(err, p.space.Own.Remove(t.kept))
+		}
+	}()
+	if err := p.remux(ctx, t); err != nil {
+		return err
+	}
+	return p.store.SaveCleanTrack(itemID, t.path)
+}

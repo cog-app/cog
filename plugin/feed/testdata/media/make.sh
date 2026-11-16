@@ -26,3 +26,6 @@ $ff -f lavfi -i testsrc=size=160x90:rate=24:duration=12 -output_ts_offset 1.5 -a
 	-movflags +frag_keyframe+empty_moov+default_base_moof+global_sidx -f mp4 video-offset.mp4
 $ff -f lavfi -i sine=frequency=440:duration=12 -output_ts_offset 1.5 -avoid_negative_ts disabled -c:a aac -b:a 32k \
 	-movflags +empty_moov+default_base_moof+global_sidx -frag_duration 2000000 -f mp4 audio-offset.m4a
+# What the profanity worker leaves behind for an AAC download: plain
+# progressive AAC, not fragmented.
+$ff -f lavfi -i sine=frequency=440:duration=12 -c:a aac -b:a 32k -movflags +faststart plain-audio.m4a
