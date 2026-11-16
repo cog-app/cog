@@ -17,7 +17,7 @@ import (
 func TestHLSRemoteMaster(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	id := remoteItem(t, env, "alice")
 	master := masterURL(t, env, "alice", id)
@@ -54,7 +54,7 @@ func TestHLSRemoteDirectRedirects(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
 	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeDirect))
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 
@@ -80,7 +80,7 @@ func TestHLSRemoteProxyRange(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
 	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	data, err := os.ReadFile("testdata/media/video.mp4")
@@ -103,18 +103,78 @@ func TestHLSRemoteProxyRange(t *testing.T) {
 		Status(http.StatusRequestedRangeNotSatisfiable)
 }
 
+// The proxy sends googlevideo only the range it was asked: none of the
+// client's credentials, and none of googlevideo's cookies come back.
+func TestHLSRemoteProxyHeaders(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	srv := googlevideo(t)
+	stubTracks(t, env, srv)
+	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
+	const ifRange = `"v1"`
+
+	r := env.Get(t, sibling(master, "yt-video.mp4"),
+		cogtest.Header("Range", "bytes=0-99"),
+		cogtest.Header("If-Range", ifRange),
+		cogtest.Header("Cookie", "cog_session=secret"),
+		cogtest.BasicAuth("alice", "pw"),
+		cogtest.StopRedirect)
+	// googlevideo's fixture has no ETag, so If-Range does not match and the
+	// whole file comes back.
+	r.Status(http.StatusOK)
+	assert.Equal(t, "", r.Header.Get("Set-Cookie"))
+	up := srv.lastHeader()
+	assert.Equal(t, "bytes=0-99", up.Get("Range"))
+	assert.Equal(t, ifRange, up.Get("If-Range"))
+	assert.Equal(t, "", up.Get("Cookie"))
+	assert.Equal(t, "", up.Get("Authorization"))
+}
+
+// A URL still refused after the one refresh is a bad gateway.
+func TestHLSRemoteProxyRefusedTwice(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
+	srv := googlevideo(t)
+	stub := stubTracks(t, env, srv)
+	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
+	srv.refuse.Store(true)
+	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusBadGateway)
+	assert.Equal(t, 2, len(stub.asked()))
+	assert.Equal(t, int32(2), srv.hits.Load())
+}
+
+// A failing store is the server's fault, not googlevideo's.
+func TestHLSRemoteStoreFailure(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	srv := googlevideo(t)
+	stub := stubTracks(t, env, srv)
+	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
+	_, err := feedStore(t, env, "alice").DB().Exec(`DROP TABLE youtube_streams`)
+	require.NoError(t, err)
+	for _, f := range []string{"master.m3u8", "video.m3u8", "yt-video.mp4"} {
+		env.Get(t, sibling(master, f), cogtest.StopRedirect).Status(http.StatusInternalServerError)
+	}
+	assert.Equal(t, 0, len(stub.asked()))
+}
+
 func TestHLSRemoteProxyRefreshesOn403(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
 	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
-	srv, _, refuse := googlevideo(t)
+	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	env.Get(t, master).Status(http.StatusOK)
 
-	refuse.Store(true)
+	srv.refuse.Store(true)
 	stub.set(srv.URL+"/video2", srv.URL+"/audio2", nil)
+	before := srv.hits.Load()
 	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
+	// The refused URL, then the fresh one.
+	assert.Equal(t, int32(2), srv.hits.Load()-before)
 	asked := stub.asked()
 	require.Equal(t, 2, len(asked))
 	assert.Equal(t, "(137)+(140)", asked[1])
@@ -125,7 +185,7 @@ func TestHLSRemoteProxyUpstreamError(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
 	t.Cleanup(feed.SetYouTubeMode(feedPlugin(t, env), feed.YouTubeProxy))
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stubTracks(t, env, srv).set(srv.URL+"/missing", srv.URL+"/missing", nil)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	env.Get(t, sibling(master, "yt-audio.m4a")).Status(http.StatusBadGateway)
@@ -134,20 +194,20 @@ func TestHLSRemoteProxyUpstreamError(t *testing.T) {
 func TestHLSRemoteBadSignature(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	srv, hits, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	bad := strings.Replace(master, "sig=", "sig=AAAA", 1)
 	env.Get(t, bad, cogtest.StopRedirect).Status(http.StatusForbidden)
 	env.Get(t, sibling(bad, "yt-video.mp4"), cogtest.StopRedirect).Status(http.StatusForbidden)
 	assert.Equal(t, 0, len(stub.asked()))
-	assert.Equal(t, int32(0), hits.Load())
+	assert.Equal(t, int32(0), srv.hits.Load())
 }
 
 func TestHLSRemoteNotYouTube(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	id := seedAudioItem(t, feedStore(t, env, "alice"), "https://cdn.example.com/ep.mp3")
 	master := masterURL(t, env, "alice", id)
@@ -159,7 +219,7 @@ func TestHLSRemoteNotYouTube(t *testing.T) {
 func TestHLSRemoteResolveFails(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stub := stubTracks(t, env, srv)
 	stub.set("", "", errors.New("yt-dlp: video unavailable"))
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
@@ -173,7 +233,7 @@ func TestHLSRemoteResolveFails(t *testing.T) {
 func TestHLSRemoteSkipUnavailable(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
-	srv, _, _ := googlevideo(t)
+	srv := googlevideo(t)
 	stubTracks(t, env, srv)
 	id := remoteItem(t, env, "alice")
 	skip, err := feedPlugin(t, env).HLSSkipMasterURL(feedStore(t, env, "alice"), "alice", id)

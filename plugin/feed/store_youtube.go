@@ -138,7 +138,7 @@ func (p *Plugin) youtubeTracks(ctx context.Context, store *Store, username strin
 		if !resolved {
 			v, a, err = resolveTracks(rctx, watchURL, freshFormat)
 			if err != nil {
-				return nil, fmt.Errorf("resolve youtube tracks: %w", err)
+				return nil, fmt.Errorf("%w: resolve youtube tracks: %w", errUpstream, err)
 			}
 		}
 		if err := store.SaveYouTubeStreams(itemID, v, a); err != nil {

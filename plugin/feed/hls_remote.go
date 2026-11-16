@@ -14,6 +14,11 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
+// errUpstream marks a failure of what a remote presentation comes from:
+// yt-dlp's resolve or googlevideo. Such a request answers 502; anything else
+// (the store, say) is the server's own failure.
+var errUpstream = errors.New("feed: upstream failed")
+
 // YouTubeMode is how a remote presentation's segments reach the player.
 type YouTubeMode string
 
@@ -63,7 +68,7 @@ func (p *Plugin) remoteYouTube(ctx context.Context, store *Store, username strin
 		if errors.Is(err, errRefused) && !refresh {
 			return p.remoteYouTube(ctx, store, username, itemID, watchURL, true)
 		}
-		return remotePresentation{}, fmt.Errorf("youtube item %d: %w", itemID, err)
+		return remotePresentation{}, fmt.Errorf("%w: youtube item %d: %w", errUpstream, itemID, err)
 	}
 	return rp, nil
 }
@@ -80,7 +85,7 @@ func (p *Plugin) remoteIndex(ctx context.Context, store *Store, username string,
 		if errors.Is(err, errRefused) && !refresh {
 			return p.remoteIndex(ctx, store, username, itemID, watchURL, kind, true)
 		}
-		return hls.Track{}, fmt.Errorf("youtube item %d %s: %w", itemID, kind, err)
+		return hls.Track{}, fmt.Errorf("%w: youtube item %d %s: %w", errUpstream, itemID, kind, err)
 	}
 	return t, nil
 }
@@ -113,7 +118,7 @@ func (p *Plugin) serveRemoteHLS(w http.ResponseWriter, r *http.Request, store *S
 	case "master.m3u8":
 		rp, err := p.remoteYouTube(ctx, store, username, itemID, watchURL, false)
 		if err != nil {
-			badGateway(w, r, err)
+			remoteError(w, r, err)
 			return
 		}
 		pres := presentation(itemTracks{original: rp.AudioTrack, video: &rp.VideoTrack}, query, false)
@@ -128,7 +133,7 @@ func (p *Plugin) serveRemoteHLS(w http.ResponseWriter, r *http.Request, store *S
 		}
 		t, err := p.remoteIndex(ctx, store, username, itemID, watchURL, kind, false)
 		if err != nil {
-			badGateway(w, r, err)
+			remoteError(w, r, err)
 			return
 		}
 		writePlaylist(w, r, hls.MediaPlaylist(t, media+query))
@@ -151,7 +156,7 @@ func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *St
 	}
 	u, err := p.remoteURL(r.Context(), store, username, itemID, watchURL, kind, false)
 	if err != nil {
-		badGateway(w, r, err)
+		remoteError(w, r, err)
 		return
 	}
 	switch mode {
@@ -170,20 +175,20 @@ func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *St
 		// The URL has expired or been withdrawn: resolve afresh and try once more.
 		closeUpstream(resp)
 		if u, err = p.remoteURL(r.Context(), store, username, itemID, watchURL, kind, true); err != nil {
-			badGateway(w, r, err)
+			remoteError(w, r, err)
 			return
 		}
 		resp, err = proxyRange(r, u)
 	}
 	if err != nil {
-		badGateway(w, r, err)
+		remoteError(w, r, err)
 		return
 	}
 	defer closeUpstream(resp)
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusPartialContent, http.StatusRequestedRangeNotSatisfiable:
 	default:
-		badGateway(w, r, fmt.Errorf("feed hls: youtube item %d %s: upstream %s", itemID, kind, resp.Status))
+		remoteError(w, r, fmt.Errorf("%w: youtube item %d %s: %s", errUpstream, itemID, kind, resp.Status))
 		return
 	}
 	for _, h := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"} {
@@ -205,7 +210,7 @@ func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *St
 func proxyRange(r *http.Request, u string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("feed hls: upstream request: %w", err)
+		return nil, fmt.Errorf("feed hls: segment request: %w", err)
 	}
 	for _, h := range []string{"Range", "If-Range"} {
 		if v := r.Header.Get(h); v != "" {
@@ -214,7 +219,7 @@ func proxyRange(r *http.Request, u string) (*http.Response, error) {
 	}
 	resp, err := HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("feed hls: upstream: %w", err)
+		return nil, fmt.Errorf("%w: segment: %w", errUpstream, err)
 	}
 	return resp, nil
 }
@@ -225,9 +230,14 @@ func closeUpstream(resp *http.Response) {
 	}
 }
 
-// badGateway answers a request whose upstream (yt-dlp or googlevideo)
-// failed, logging why.
-func badGateway(w http.ResponseWriter, r *http.Request, err error) {
+// remoteError answers a remote request that failed: 502, with the cause
+// logged, when yt-dlp or googlevideo failed (errUpstream), and as hlsError
+// does otherwise.
+func remoteError(w http.ResponseWriter, r *http.Request, err error) {
+	if !errors.Is(err, errUpstream) {
+		hlsError(w, r, err)
+		return
+	}
 	httperr.Log(r, err)
 	http.Error(w, "Bad Gateway", http.StatusBadGateway)
 }

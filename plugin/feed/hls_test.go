@@ -486,19 +486,31 @@ func TestHLSSubsTimestampMapOffset(t *testing.T) {
 	assert.True(t, strings.Contains(seg, "00:00:03.000 --> 00:00:05.000\nHello there\n"), seg)
 }
 
-// googlevideo stands in for googlevideo: it serves the video and audio
+// fakeGooglevideo stands in for googlevideo: it serves the video and audio
 // fixtures at /video and /audio (and at /video2 and /audio2, which are never
 // refused) with byte ranges, answering /video and /audio with 403 while
-// refuse is set. hits counts every request.
-func googlevideo(t *testing.T) (srv *httptest.Server, hits *atomic.Int32, refuse *atomic.Bool) {
+// refuse is set. Every answer sets a cookie, which Cog must not relay.
+type fakeGooglevideo struct {
+	*httptest.Server
+	hits   atomic.Int32 // every request
+	refuse atomic.Bool
+	mu     sync.Mutex
+	header http.Header // the last request's
+}
+
+func googlevideo(t *testing.T) *fakeGooglevideo {
 	t.Helper()
-	hits, refuse = new(atomic.Int32), new(atomic.Bool)
+	gv := &fakeGooglevideo{}
 	serve := func(fixture string, refusable bool) http.HandlerFunc {
 		data, err := os.ReadFile("testdata/media/" + fixture)
 		require.NoError(t, err)
 		return func(w http.ResponseWriter, r *http.Request) {
-			hits.Add(1)
-			if refusable && refuse.Load() {
+			gv.hits.Add(1)
+			gv.mu.Lock()
+			gv.header = r.Header.Clone()
+			gv.mu.Unlock()
+			w.Header().Set("Set-Cookie", "YSC=upstream; Path=/")
+			if refusable && gv.refuse.Load() {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -510,9 +522,16 @@ func googlevideo(t *testing.T) (srv *httptest.Server, hits *atomic.Int32, refuse
 	mux.Handle("/audio", serve("audio.m4a", true))
 	mux.Handle("/video2", serve("video.mp4", false))
 	mux.Handle("/audio2", serve("audio.m4a", false))
-	srv = httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv, hits, refuse
+	gv.Server = httptest.NewServer(mux)
+	t.Cleanup(gv.Close)
+	return gv
+}
+
+// lastHeader is the header of the last request googlevideo got.
+func (gv *fakeGooglevideo) lastHeader() http.Header {
+	gv.mu.Lock()
+	defer gv.mu.Unlock()
+	return gv.header
 }
 
 // trackStub is the YouTube track resolver for a test: it answers with the
@@ -526,7 +545,7 @@ type trackStub struct {
 }
 
 // stubTracks installs a trackStub answering with srv's /video and /audio.
-func stubTracks(t *testing.T, env *cogtest.Env, srv *httptest.Server) *trackStub {
+func stubTracks(t *testing.T, env *cogtest.Env, srv *fakeGooglevideo) *trackStub {
 	t.Helper()
 	s := &trackStub{video: srv.URL + "/video", audio: srv.URL + "/audio"}
 	t.Cleanup(feed.SetTrackResolver(func(ctx context.Context, watchURL, format string) (feed.YouTubeTrack, feed.YouTubeTrack, error) {
