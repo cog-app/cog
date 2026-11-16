@@ -92,12 +92,19 @@ func desktopOneLine(s string) string {
 	}, crlf.Replace(s))
 }
 
+// desktopString is s as a Desktop Entry string value on one line: control
+// characters folded, then each backslash doubled, as the key-file format
+// reads a lone backslash as the start of an escape.
+func desktopString(s string) string {
+	return strings.ReplaceAll(desktopOneLine(s), `\`, `\\`)
+}
+
 // crlf makes a CRLF one space, not two.
 var crlf = strings.NewReplacer("\r\n", "\n")
 
 // desktopEntry is the launcher's text for an M3U URL and a list name.
 func desktopEntry(name, m3uURL string) string {
-	name = desktopOneLine(name)
+	name = desktopString(name)
 	var b strings.Builder
 	b.WriteString("[Desktop Entry]\n")
 	b.WriteString("Type=Application\n")

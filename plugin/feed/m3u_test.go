@@ -474,6 +474,8 @@ func TestM3ULauncher(t *testing.T) {
 
 	env.Get(t, path).Status(http.StatusUnauthorized)
 	env.Get(t, "/apps/feed/launchers/playlist/9999.m3u", alice.Auth).Status(http.StatusNotFound)
+	env.Get(t, "/apps/feed/launchers/folder/9999.m3u", alice.Auth).Status(http.StatusNotFound)
+	env.Get(t, "/apps/feed/launchers/sub/9999.m3u", alice.Auth).Status(http.StatusNotFound)
 	env.Get(t, "/apps/feed/launchers/playlist/x.m3u", alice.Auth).Status(http.StatusBadRequest)
 	env.Get(t, "/apps/feed/launchers/starred/7.m3u", alice.Auth).Status(http.StatusBadRequest)
 }
@@ -520,6 +522,11 @@ func TestM3ULauncherHostileTag(t *testing.T) {
 			disp := r.Header.Get("Content-Disposition")
 			assert.True(t, dispRE.MatchString(disp), disp)
 			body := r.ReadBody()
+			if tag == `a\b` {
+				// Name and Comment are key-file strings: a backslash is doubled.
+				assert.True(t, strings.Contains(body, "\nName=Cog: a\\\\b\n"), body)
+				assert.True(t, strings.Contains(body, "\nComment=Play a\\\\b from Cog"), body)
+			}
 			var keys []string
 			for _, l := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
 				keys = append(keys, strings.SplitN(l, "=", 2)[0])

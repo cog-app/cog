@@ -27,3 +27,9 @@ func TestLauncherSlug(t *testing.T) {
 	assert.Equal(t, "list", launcherSlug("日本語"))
 	assert.Equal(t, "list", launcherSlug(""))
 }
+
+func TestDesktopEntryDoublesBackslash(t *testing.T) {
+	lines := strings.Split(desktopEntry(`a\nb\`, "http://h/x"), "\n")
+	assert.Equal(t, `Name=Cog: a\\nb\\`, lines[2])
+	assert.Equal(t, `Comment=Play a\\nb\\ from Cog in mpv, silence skipped`, lines[3])
+}
