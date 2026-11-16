@@ -2,6 +2,7 @@ package feed_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -352,13 +353,15 @@ func TestRangesPackagedTrackMissing(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(logs.String(), "ranges without the track's duration"), logs.String())
 }
 
-// The web player's YouTube video downloads first, as ResolveMedia's does:
+// The web player's YouTube video downloads first when googlevideo fails,
+// as ResolveMedia's does:
 // stream-url queues it and says so, then answers the media route once the
 // download is ready.
 func TestStreamURLVideoDownloadsFirst(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "erin", "pass")
 	store := feedStore(t, env, u.Username)
+	stubTracks(t, env, googlevideo(t)).set("", "", errors.New("yt-dlp: sign in to confirm"))
 	subID, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/UC1", Title: "Talks"})
 	require.NoError(t, err)
 	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v1", Type: "video", Title: "Talk", MediaURL: "https://www.youtube.com/watch?v=abc"})
@@ -540,4 +543,28 @@ func captureLogs(t *testing.T) *lockedBuffer {
 	})
 	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
 	return logs
+}
+
+// The web player plays an undownloaded YouTube video from googlevideo over
+// HLS, without downloading it; one a mute filter matches is downloaded.
+func TestStreamURLRemoteYouTube(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "erin", "pass")
+	stub := stubTracks(t, env, googlevideo(t))
+	id := remoteItem(t, env, "erin")
+	store := feedStore(t, env, "erin")
+
+	got := streamURL(t, env, u, id)
+	hlsURL, _ := got["hls"].(string)
+	assert.True(t, strings.HasPrefix(hlsURL, "/apps/feed/hls/erin/"), fmt.Sprint(got))
+	d, err := store.FindDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.State)
+
+	muted := remoteItem(t, env, "erin")
+	muteAll(t, store, muted)
+	asked := len(stub.asked())
+	got = streamURL(t, env, u, muted)
+	assert.Equal(t, true, got["downloading"])
+	assert.Equal(t, asked, len(stub.asked()))
 }

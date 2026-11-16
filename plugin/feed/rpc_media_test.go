@@ -2,7 +2,9 @@ package feed_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,13 +91,14 @@ func TestResolveMediaNothingToPlay(t *testing.T) {
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }
 
-// A YouTube video Cog has not downloaded is downloaded first: YouTube serves
-// no stream with both picture and sound. Asking queues the download and
-// answers Unavailable until it is ready, without resolving a stream.
-func TestResolveMediaYouTubeVideoDownloads(t *testing.T) {
+// A YouTube video Cog has not downloaded, and cannot play from googlevideo,
+// is downloaded first. Asking queues the download and answers Unavailable
+// until it is ready, without resolving a stream.
+func TestResolveMediaYouTubeVideoDownloadsWhenRemoteFails(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")
 	store := feedStore(t, env, u.Username)
+	stubTracks(t, env, googlevideo(t)).set("", "", errors.New("yt-dlp: sign in to confirm"))
 	subID, err := store.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://www.youtube.com/channel/UC1", Title: "Talks"})
 	require.NoError(t, err)
 	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v1", Type: "video", Title: "Talk", MediaURL: "https://www.youtube.com/watch?v=abc"})
@@ -225,4 +228,97 @@ func TestResolveMediaCleanedAudioItem(t *testing.T) {
 	assert.Equal(t, "/apps/feed/items/"+strconv.FormatInt(id, 10)+"/media", src.Url)
 	assert.Equal(t, feedpb.Variant_VARIANT_AUDIO, src.Variant)
 	assert.True(t, src.Cleaned)
+}
+
+// resolveVideo asks ResolveMedia for an item's video.
+func resolveVideo(t *testing.T, env *cogtest.Env, u *cogtest.User, id int64) (*feedpb.MediaSource, error) {
+	t.Helper()
+	res, err := feedClient(t, env, u.AppPassword(t, "phone")).ResolveMedia(context.Background(),
+		connect.NewRequest(&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_VIDEO}))
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
+}
+
+// An undownloaded YouTube video plays its googlevideo tracks over HLS,
+// without downloading.
+func TestResolveMediaRemoteYouTube(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	stubTracks(t, env, googlevideo(t))
+	id := remoteItem(t, env, "alice")
+
+	src, err := resolveVideo(t, env, u, id)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(src.Url, "/apps/feed/hls/alice/"), src.Url)
+	assert.Equal(t, "application/vnd.apple.mpegurl", src.Mime)
+	assert.Equal(t, feedpb.Variant_VARIANT_VIDEO, src.Variant)
+	assert.True(t, src.ExpiresAt == nil)
+	d, err := feedStore(t, env, "alice").FindDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.State)
+}
+
+// Tracks that are not indexed fMP4 cannot be HLS: the video is downloaded.
+func TestResolveMediaRemoteUnindexedFallsBack(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	files := httptest.NewServer(http.FileServer(http.Dir("testdata/media")))
+	t.Cleanup(files.Close)
+	stubTracks(t, env, googlevideo(t)).set(files.URL+"/plain-video.mp4", files.URL+"/plain-audio.m4a", nil)
+	id := remoteItem(t, env, "alice")
+
+	_, err := resolveVideo(t, env, u, id)
+	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	d, err := feedStore(t, env, "alice").GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", d.State)
+}
+
+// A download under way plays remote meanwhile, and is left alone.
+func TestResolveMediaRemoteKeepsDownload(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	stubTracks(t, env, googlevideo(t))
+	id := remoteItem(t, env, "alice")
+	store := feedStore(t, env, "alice")
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkDownloadStart(id))
+
+	src, err := resolveVideo(t, env, u, id)
+	require.NoError(t, err)
+	assert.Equal(t, "application/vnd.apple.mpegurl", src.Mime)
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "downloading", d.State)
+}
+
+// muteAll makes a mute filter match every item, and applies it to id.
+func muteAll(t *testing.T, store *feed.Store, id int64) {
+	t.Helper()
+	_, err := store.CreateFilter(feed.Filter{SortOrder: 1, Query: "*", Action: "mute_profanity"})
+	require.NoError(t, err)
+	eng, err := feed.NewFilterEngine(store)
+	require.NoError(t, err)
+	require.NoError(t, eng.Apply(id))
+}
+
+// An item a mute filter matches never plays googlevideo's unclean audio: it
+// is downloaded, to be cleaned, without resolving its tracks.
+func TestResolveMediaRemoteMutedDownloads(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	stub := stubTracks(t, env, googlevideo(t))
+	id := remoteItem(t, env, "alice")
+	store := feedStore(t, env, "alice")
+	muteAll(t, store, id)
+
+	_, err := resolveVideo(t, env, u, id)
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	assert.True(t, strings.Contains(err.Error(), "Downloading the video"), err.Error())
+	assert.Equal(t, 0, len(stub.asked()))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", d.State)
 }

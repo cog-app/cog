@@ -574,6 +574,13 @@ type Download struct {
 	TranscribeError string // why transcription last failed; "" if it has not
 }
 
+// muted is whether the item's audio is to be muted: a mute filter matched it
+// (EnqueueProfanity), muting is pending or failed, or a clean file exists.
+// Such an item plays only its clean audio, never one it was not made from.
+func (d Download) muted() bool {
+	return d.NeedsProfanity || d.CleanAudioPath != ""
+}
+
 // Range is a time span within a media item with an associated player action.
 // Action is "mute" (drop volume during the span) or "skip" (seek past it).
 type Range struct {

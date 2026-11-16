@@ -23,11 +23,13 @@ var resolveStream = ResolveYouTubeStreamURL
 // needs no credentials. Other media Cog holds (a download's audio, or its
 // profanity-cleaned audio) plays from the item's media route, a path on this
 // server the client fetches with its own credentials. A YouTube item Cog has
-// not downloaded plays its audio from a resolved stream. Its video is
-// downloaded first: YouTube serves picture and sound apart, and only HLS
-// presents them together, so asking for it queues the download and answers
-// Unavailable until it is downloaded and packaged, which a client asks again
-// on. Any other enclosure plays from its origin.
+// not downloaded plays its audio from a resolved stream, and its video, while
+// no download is ready, from a signed HLS master over googlevideo's tracks
+// (remoteMaster), leaving any download queued or running alone. When those
+// tracks cannot be HLS, or the item is to be muted, its video is downloaded
+// first: asking queues the download and answers Unavailable until it is
+// downloaded and packaged, which a client asks again on. Any other enclosure
+// plays from its origin.
 func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[feedpb.ResolveMediaRequest]) (*connect.Response[feedpb.MediaSource], error) {
 	store, err := s.store(ctx)
 	if err != nil {
@@ -88,6 +90,14 @@ func (s *FeedService) ResolveMedia(ctx context.Context, req *connect.Request[fee
 	}
 	audio := req.Msg.Variant == feedpb.Variant_VARIANT_AUDIO || ip.Type == "audio"
 	if !audio {
+		username := plugin.UserFromContext(ctx).Username
+		master, ok, err := s.plugin.remoteMaster(ctx, store, username, id, ip.MediaURL)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return connect.NewResponse(&feedpb.MediaSource{Url: master, Mime: hlsMIME, Variant: feedpb.Variant_VARIANT_VIDEO}), nil
+		}
 		return nil, s.downloadFirst(ctx, store, id, dl)
 	}
 	stream, err := resolveStream(ctx, ip.MediaURL, audio)
@@ -139,6 +149,37 @@ func videoPlayOf(dl Download) videoPlay {
 		return playPackageFailed
 	}
 	return playPreparing
+}
+
+// remoteMaster answers the signed master of an undownloaded YouTube video
+// after checking both tracks resolve to indexed fMP4; ok is false (err nil)
+// when they don't, and the caller falls back to downloading.
+//
+// It is also false for an item that is to be muted (Download.muted): its
+// clean audio is made from a download, and googlevideo's is never clean.
+func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string, itemID int64, watchURL string) (master string, ok bool, err error) {
+	dl, err := store.FindDownload(itemID)
+	if err != nil {
+		return "", false, err
+	}
+	if dl.muted() {
+		p.youtubeLog().Info("youtube remote: item is to be muted; downloading", "item", itemID)
+		return "", false, nil
+	}
+	if _, err := p.remoteYouTube(ctx, store, username, itemID, watchURL, false); err != nil {
+		if !errors.Is(err, errUpstream) {
+			return "", false, err
+		}
+		// No index, more than one track, a parse or resolve error, or a
+		// refusal that a fresh resolve did not cure.
+		p.youtubeLog().Info("youtube remote: cannot play over HLS; downloading", "item", itemID, "error", err)
+		return "", false, nil
+	}
+	master, err = p.HLSMasterURL(store, username, itemID, hlsOptions{})
+	if err != nil {
+		return "", false, err
+	}
+	return master, true, nil
 }
 
 // downloadFirst queues an item's video and answers why it cannot play yet.

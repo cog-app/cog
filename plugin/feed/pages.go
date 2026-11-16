@@ -1512,8 +1512,9 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 
 // StreamURL answers where the player plays a YouTube item from: with
 // ?variant=audio, or for an audio item, its best audio-only stream; a video
-// from its download, which it queues, answering {"downloading": true} with
-// why until the download is ready.
+// from its download once ready, and until then from googlevideo over HLS
+// (remoteMaster). When that cannot be, it queues the download, answering
+// {"downloading": true} with why until the download is ready.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1559,6 +1560,15 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			default:
 				plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
 			}
+			return
+		}
+		master, ok, err := h.plugin.remoteMaster(r.Context(), store, plugin.Username(r), id, it.MediaURL)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if ok {
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"hls": master})
 			return
 		}
 		why, err := queueVideo(store, h.plugin, plugin.Username(r), id, dl)
