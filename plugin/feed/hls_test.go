@@ -3,6 +3,7 @@ package feed_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -545,16 +546,19 @@ func (gv *fakeGooglevideo) lastHeader() http.Header {
 // formats 137 and 140 at base+video and base+audio, expiring 6 h from the
 // test's clock, or with err, and records the formats it was asked for.
 type trackStub struct {
-	mu           sync.Mutex
-	video, audio string
-	err          error
-	formats      []string
+	mu               sync.Mutex
+	video, audio     string
+	videoID, audioID string
+	err              error
+	formats          []string
+	pinsDead         bool // a request for pinned formats fails
 }
 
 // stubTracks installs a trackStub answering with srv's /video and /audio.
 func stubTracks(t *testing.T, env *cogtest.Env, srv *fakeGooglevideo) *trackStub {
 	t.Helper()
-	s := &trackStub{video: srv.URL + "/video", audio: srv.URL + "/audio"}
+	s := &trackStub{video: srv.URL + "/video", audio: srv.URL + "/audio", videoID: "137", audioID: "140"}
+	fresh := feed.YouTubeFormat(feed.YouTubeVideoFormat, feed.YouTubeAudioFormat)
 	t.Cleanup(feed.SetTrackResolver(func(ctx context.Context, watchURL, format string) (feed.YouTubeTrack, feed.YouTubeTrack, error) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -562,11 +566,23 @@ func stubTracks(t *testing.T, env *cogtest.Env, srv *fakeGooglevideo) *trackStub
 		if s.err != nil {
 			return feed.YouTubeTrack{}, feed.YouTubeTrack{}, s.err
 		}
+		if s.pinsDead && format != fresh {
+			return feed.YouTubeTrack{}, feed.YouTubeTrack{}, errors.New("yt-dlp: requested format is not available")
+		}
 		exp := env.Clock.Now().Add(6 * time.Hour)
-		return feed.YouTubeTrack{Kind: hls.Video, FormatID: "137", URL: s.video, ExpiresAt: exp},
-			feed.YouTubeTrack{Kind: hls.Audio, FormatID: "140", URL: s.audio, ExpiresAt: exp}, nil
+		return feed.YouTubeTrack{Kind: hls.Video, FormatID: s.videoID, URL: s.video, ExpiresAt: exp},
+			feed.YouTubeTrack{Kind: hls.Audio, FormatID: s.audioID, URL: s.audio, ExpiresAt: exp}, nil
 	}))
 	return s
+}
+
+// repick makes the formats pinned so far unavailable: a fresh resolve
+// answers with videoID and audioID at video and audio.
+func (s *trackStub) repick(videoID, audioID, video, audio string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pinsDead = true
+	s.videoID, s.audioID, s.video, s.audio = videoID, audioID, video, audio
 }
 
 // set changes what the stub answers from now on.
@@ -611,7 +627,7 @@ func TestHLSRemoteMutedRefused(t *testing.T) {
 
 	muteAll(t, feedStore(t, env, "alice"), id)
 	asked, hits := len(stub.asked()), gv.hits.Load()
-	for _, u := range []string{master, sibling(master, "video.m3u8"), sibling(master, "yt-video.mp4")} {
+	for _, u := range []string{master, sibling(master, "video.m3u8"), sibling(master, "yt-video-137.mp4")} {
 		env.Get(t, u, cogtest.StopRedirect).Status(http.StatusServiceUnavailable)
 	}
 	assert.Equal(t, asked, len(stub.asked()))

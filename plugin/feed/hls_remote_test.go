@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -37,11 +38,11 @@ func TestHLSRemoteMaster(t *testing.T) {
 	pl := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK)
 	assert.Equal(t, "private, no-cache", pl.Header.Get("Cache-Control"))
 	vp := pl.ReadBody()
-	for _, want := range []string{"#EXT-X-BYTERANGE:", "yt-video.mp4?sig=", `#EXT-X-MAP:URI="yt-video.mp4?sig=`} {
+	for _, want := range []string{"#EXT-X-BYTERANGE:", "yt-video-137.mp4?sig=", `#EXT-X-MAP:URI="yt-video-137.mp4?sig=`} {
 		assert.True(t, strings.Contains(vp, want), "%q not in\n%s", want, vp)
 	}
 	ap := env.Get(t, sibling(master, "audio.m3u8")).Status(http.StatusOK).ReadBody()
-	assert.True(t, strings.Contains(ap, "yt-audio.m4a?sig="), ap)
+	assert.True(t, strings.Contains(ap, "yt-audio-140.m4a?sig="), ap)
 	// The local presentation's files are not the remote one's.
 	for _, f := range []string{"audio.m4a", "video.mp4", "clean.m3u8", "subs.m3u8", "subs-0.vtt"} {
 		env.Get(t, sibling(master, f)).Status(http.StatusNotFound)
@@ -58,7 +59,7 @@ func TestHLSRemoteDirectRedirects(t *testing.T) {
 	stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 
-	r := env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+	r := env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
 		Status(http.StatusFound)
 	loc := r.Header.Get("Location")
 	assert.Equal(t, srv.URL+"/video", loc)
@@ -72,7 +73,7 @@ func TestHLSRemoteDirectRedirects(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusPartialContent, resp.StatusCode)
 
-	r = env.Get(t, sibling(master, "yt-audio.m4a"), cogtest.StopRedirect).Status(http.StatusFound)
+	r = env.Get(t, sibling(master, "yt-audio-140.m4a"), cogtest.StopRedirect).Status(http.StatusFound)
 	assert.Equal(t, srv.URL+"/audio", r.Header.Get("Location"))
 }
 
@@ -87,7 +88,7 @@ func TestHLSRemoteProxyRange(t *testing.T) {
 	require.NoError(t, err)
 	size := strconv.Itoa(len(data))
 
-	r := env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=10-109"), cogtest.StopRedirect).
+	r := env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=10-109"), cogtest.StopRedirect).
 		Status(http.StatusPartialContent)
 	assert.Equal(t, "bytes 10-109/"+size, r.Header.Get("Content-Range"))
 	assert.Equal(t, "100", r.Header.Get("Content-Length"))
@@ -95,11 +96,11 @@ func TestHLSRemoteProxyRange(t *testing.T) {
 	assert.Equal(t, "private, max-age=86400", r.Header.Get("Cache-Control"))
 	assert.True(t, r.ReadBody() == string(data[10:110]), "proxied bytes differ")
 
-	h := env.Head(t, sibling(master, "yt-video.mp4")).Status(http.StatusOK)
+	h := env.Head(t, sibling(master, "yt-video-137.mp4")).Status(http.StatusOK)
 	assert.Equal(t, size, h.Header.Get("Content-Length"))
 	assert.Equal(t, "bytes", h.Header.Get("Accept-Ranges"))
 
-	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes="+size+"-")).
+	env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes="+size+"-")).
 		Status(http.StatusRequestedRangeNotSatisfiable)
 }
 
@@ -114,7 +115,7 @@ func TestHLSRemoteProxyHeaders(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	const ifRange = `"v1"`
 
-	r := env.Get(t, sibling(master, "yt-video.mp4"),
+	r := env.Get(t, sibling(master, "yt-video-137.mp4"),
 		cogtest.Header("Range", "bytes=0-99"),
 		cogtest.Header("If-Range", ifRange),
 		cogtest.Header("Cookie", "cog_session=secret"),
@@ -140,7 +141,7 @@ func TestHLSRemoteProxyRefusedTwice(t *testing.T) {
 	stub := stubTracks(t, env, srv)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	srv.refuse.Store(true)
-	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusBadGateway)
+	env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusBadGateway)
 	assert.Equal(t, 2, len(stub.asked()))
 	assert.Equal(t, int32(2), srv.hits.Load())
 }
@@ -154,7 +155,7 @@ func TestHLSRemoteStoreFailure(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	_, err := feedStore(t, env, "alice").DB().Exec(`DROP TABLE youtube_streams`)
 	require.NoError(t, err)
-	for _, f := range []string{"master.m3u8", "video.m3u8", "yt-video.mp4"} {
+	for _, f := range []string{"master.m3u8", "video.m3u8", "yt-video-137.mp4"} {
 		env.Get(t, sibling(master, f), cogtest.StopRedirect).Status(http.StatusInternalServerError)
 	}
 	assert.Equal(t, 0, len(stub.asked()))
@@ -172,7 +173,7 @@ func TestHLSRemoteProxyRefreshesOn403(t *testing.T) {
 	srv.refuse.Store(true)
 	stub.set(srv.URL+"/video2", srv.URL+"/audio2", nil)
 	before := srv.hits.Load()
-	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
+	env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
 	// The refused URL, then the fresh one.
 	assert.Equal(t, int32(2), srv.hits.Load()-before)
 	asked := stub.asked()
@@ -188,7 +189,7 @@ func TestHLSRemoteProxyUpstreamError(t *testing.T) {
 	srv := googlevideo(t)
 	stubTracks(t, env, srv).set(srv.URL+"/missing", srv.URL+"/missing", nil)
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
-	env.Get(t, sibling(master, "yt-audio.m4a")).Status(http.StatusBadGateway)
+	env.Get(t, sibling(master, "yt-audio-140.m4a")).Status(http.StatusBadGateway)
 }
 
 func TestHLSRemoteBadSignature(t *testing.T) {
@@ -199,7 +200,7 @@ func TestHLSRemoteBadSignature(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	bad := strings.Replace(master, "sig=", "sig=AAAA", 1)
 	env.Get(t, bad, cogtest.StopRedirect).Status(http.StatusForbidden)
-	env.Get(t, sibling(bad, "yt-video.mp4"), cogtest.StopRedirect).Status(http.StatusForbidden)
+	env.Get(t, sibling(bad, "yt-video-137.mp4"), cogtest.StopRedirect).Status(http.StatusForbidden)
 	assert.Equal(t, 0, len(stub.asked()))
 	assert.Equal(t, int32(0), srv.hits.Load())
 }
@@ -212,7 +213,7 @@ func TestHLSRemoteNotYouTube(t *testing.T) {
 	id := seedAudioItem(t, feedStore(t, env, "alice"), "https://cdn.example.com/ep.mp3")
 	master := masterURL(t, env, "alice", id)
 	env.Get(t, master).Status(http.StatusNotFound)
-	env.Get(t, sibling(master, "yt-audio.m4a"), cogtest.StopRedirect).Status(http.StatusNotFound)
+	env.Get(t, sibling(master, "yt-audio-140.m4a"), cogtest.StopRedirect).Status(http.StatusNotFound)
 	assert.Equal(t, 0, len(stub.asked()))
 }
 
@@ -225,7 +226,7 @@ func TestHLSRemoteResolveFails(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 	r := env.Get(t, master).Status(http.StatusBadGateway)
 	assert.False(t, strings.Contains(r.ReadBody(), "#EXTM3U"))
-	env.Get(t, sibling(master, "yt-video.mp4"), cogtest.StopRedirect).Status(http.StatusBadGateway)
+	env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.StopRedirect).Status(http.StatusBadGateway)
 }
 
 // A remote presentation has no download, so it has no silences to skip:
@@ -248,7 +249,7 @@ func TestHLSRemoteSkipUnavailable(t *testing.T) {
 		}
 	}
 	pl := env.Get(t, sibling(skip, "video.m3u8")).Status(http.StatusOK).ReadBody()
-	assert.True(t, strings.Contains(pl, "yt-video.mp4?sig="), pl)
+	assert.True(t, strings.Contains(pl, "yt-video-137.mp4?sig="), pl)
 	assert.False(t, strings.Contains(pl, "#EXT-X-DISCONTINUITY"), pl)
 	env.Get(t, sibling(skip, "video.m3u8")+"&edit=abcdef012345").Status(http.StatusNotFound)
 }
@@ -271,17 +272,70 @@ func TestHLSRemotePackagedMidSession(t *testing.T) {
 			master := masterURL(t, env, "alice", id)
 			env.Get(t, master).Status(http.StatusOK)
 			vp := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
-			assert.True(t, strings.Contains(vp, "yt-video.mp4?sig="), vp)
+			assert.True(t, strings.Contains(vp, "yt-video-137.mp4?sig="), vp)
 
 			packageItem(t, env, "alice", id, "audio.m4a", "video.mp4")
 
-			env.Get(t, sibling(master, "yt-video.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+			env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
 				Status(tc.want)
-			env.Get(t, sibling(master, "yt-audio.m4a"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+			env.Get(t, sibling(master, "yt-audio-140.m4a"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
 				Status(tc.want)
 			// A new start plays the download.
 			body := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
 			assert.True(t, strings.Contains(body, "video.mp4?sig=") && !strings.Contains(body, "yt-video"), body)
 		})
+	}
+}
+
+// A player holding playlists for formats that no longer resolve gets 410
+// for their segments, never another format's bytes at the old offsets. A
+// new master lists the formats now chosen. The cache expiring and proxy
+// mode's refresh on 403 both find the change.
+func TestHLSRemoteFormatGone(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode feed.YouTubeMode
+		want int // the new format's segment
+	}{{"expired", feed.YouTubeDirect, http.StatusFound}, {"refused", feed.YouTubeProxy, http.StatusPartialContent}} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := cogtest.New(t, feed.New())
+			env.CreateUser(t, "alice", "pw")
+			setYouTubeMode(t, env, tc.mode)
+			srv := googlevideo(t)
+			stub := stubTracks(t, env, srv)
+			master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
+			vp := env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
+			assert.True(t, strings.Contains(vp, "yt-video-137.mp4?sig="), vp)
+
+			stub.repick("136", "140", srv.URL+"/video2", srv.URL+"/audio2")
+			if tc.name == "expired" {
+				env.Clock.Advance(6 * time.Hour)
+			} else {
+				srv.refuse.Store(true)
+			}
+			env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+				Status(http.StatusGone)
+
+			vp = env.Get(t, sibling(master, "video.m3u8")).Status(http.StatusOK).ReadBody()
+			assert.True(t, strings.Contains(vp, "yt-video-136.mp4?sig="), vp)
+			env.Get(t, sibling(master, "yt-video-136.mp4"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+				Status(tc.want)
+			env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.StopRedirect).Status(http.StatusGone)
+			// The audio format survived the re-pick, so its playlists still hold.
+			env.Get(t, sibling(master, "yt-audio-140.m4a"), cogtest.Header("Range", "bytes=0-99"), cogtest.StopRedirect).
+				Status(tc.want)
+		})
+	}
+}
+
+// A segment name the presentation never handed out is not found.
+func TestHLSRemoteSegmentNames(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	srv := googlevideo(t)
+	stubTracks(t, env, srv)
+	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
+	for _, f := range []string{"yt-video.mp4", "yt-audio.m4a", "yt-video-.mp4", "yt-video-140.m4a", "yt-audio-137.mp4"} {
+		env.Get(t, sibling(master, f), cogtest.StopRedirect).Status(http.StatusNotFound)
 	}
 }

@@ -89,9 +89,9 @@ var resolveTracks = ResolveYouTubeTracks
 // set. A resolve with tracks cached pins their format ids, so the segment
 // index made against them stays valid. If the pinned formats no longer
 // resolve, the cache is forgotten and one fresh resolve selects anew; it may
-// choose other ids, so byte ranges a player holds can be wrong. That is
-// accepted: the alternative is failing forever. Concurrent calls for one user/item
-// share one resolve.
+// choose other ids, and a segment request for the old ones is then refused
+// (remoteSegment) rather than failing forever. Concurrent calls for one
+// user/item share one resolve.
 func (p *Plugin) youtubeTracks(ctx context.Context, store *Store, username string, itemID int64, watchURL string, now time.Time, refresh bool) (video, audio YouTubeTrack, err error) {
 	fresh := func() (v, a YouTubeTrack, cached, ok bool, err error) {
 		v, a, cached, err = store.YouTubeStreams(itemID)

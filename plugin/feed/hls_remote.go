@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 
@@ -84,40 +86,71 @@ func (p *Plugin) remoteYouTube(ctx context.Context, store *Store, username strin
 }
 
 // remoteIndex reads the index of one of the item's tracks, as remoteYouTube
-// does both.
-func (p *Plugin) remoteIndex(ctx context.Context, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, refresh bool) (hls.Track, error) {
-	u, err := p.remoteURL(ctx, store, username, itemID, watchURL, kind, refresh)
+// does both, and says which format it is.
+func (p *Plugin) remoteIndex(ctx context.Context, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, refresh bool) (hls.Track, string, error) {
+	yt, err := p.remoteTrack(ctx, store, username, itemID, watchURL, kind, refresh)
 	if err != nil {
-		return hls.Track{}, err
+		return hls.Track{}, "", err
 	}
-	t, err := RemoteTrack(ctx, HTTP, u)
+	t, err := RemoteTrack(ctx, HTTP, yt.URL)
 	if err != nil {
 		if errors.Is(err, errRefused) && !refresh {
 			return p.remoteIndex(ctx, store, username, itemID, watchURL, kind, true)
 		}
-		return hls.Track{}, fmt.Errorf("%w: youtube item %d %s: %w", errUpstream, itemID, kind, err)
+		return hls.Track{}, "", fmt.Errorf("%w: youtube item %d %s: %w", errUpstream, itemID, kind, err)
 	}
-	return t, nil
+	return t, yt.FormatID, nil
 }
 
-// remoteURL is the current googlevideo URL of the item's track of kind.
-func (p *Plugin) remoteURL(ctx context.Context, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, refresh bool) (string, error) {
+// remoteTrack is the item's current googlevideo track of kind.
+func (p *Plugin) remoteTrack(ctx context.Context, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, refresh bool) (YouTubeTrack, error) {
 	v, a, err := p.youtubeTracks(ctx, store, username, itemID, watchURL, p.ctx.Now(), refresh)
 	if err != nil {
-		return "", err
+		return YouTubeTrack{}, err
 	}
 	if kind == hls.Video {
-		return v.URL, nil
+		return v, nil
 	}
-	return a.URL, nil
+	return a, nil
 }
 
 // remoteSegmentPrefix starts the name of every remote segment file, and
 // of no file of a local presentation.
 const remoteSegmentPrefix = "yt-"
 
-// serveRemoteHLS answers master.m3u8, audio.m3u8, video.m3u8, yt-audio.m4a,
-// yt-video.mp4 for an undownloaded YouTube item, whose tracks are
+// remoteSegmentName is the file name of format formatID's track of kind:
+// yt-video-<id>.mp4 or yt-audio-<id>.m4a. The format is in the name so a
+// request for a format no longer chosen is refused rather than served
+// another format's bytes at its offsets.
+func remoteSegmentName(kind hls.Kind, formatID string) string {
+	name := remoteSegmentPrefix + "audio-" + url.PathEscape(formatID) + ".m4a"
+	if kind == hls.Video {
+		name = remoteSegmentPrefix + "video-" + url.PathEscape(formatID) + ".mp4"
+	}
+	return name
+}
+
+// parseRemoteSegment is the kind and format a remote segment file names.
+func parseRemoteSegment(file string) (kind hls.Kind, formatID string, ok bool) {
+	for _, k := range []struct {
+		kind        hls.Kind
+		prefix, ext string
+	}{{hls.Video, "yt-video-", ".mp4"}, {hls.Audio, "yt-audio-", ".m4a"}} {
+		id, found := strings.CutPrefix(file, k.prefix)
+		if !found {
+			continue
+		}
+		id, found = strings.CutSuffix(id, k.ext)
+		if !found || id == "" {
+			return "", "", false
+		}
+		return k.kind, id, true
+	}
+	return "", "", false
+}
+
+// serveRemoteHLS answers master.m3u8, audio.m3u8, video.m3u8 and the
+// segment files (remoteSegmentName) for an undownloaded YouTube item, whose tracks are
 // googlevideo's. It has no captions, no Clean rendition and no skip: a skip
 // master plays the item whole and says the skip is unavailable.
 func (p *Plugin) serveRemoteHLS(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, watchURL, file string, opts hlsOptions, sig string) {
@@ -141,38 +174,46 @@ func (p *Plugin) serveRemoteHLS(w http.ResponseWriter, r *http.Request, store *S
 		}
 		writePlaylist(w, r, hls.Master(pres))
 	case "audio.m3u8", "video.m3u8":
-		kind, media := hls.Audio, "yt-audio.m4a"
+		kind := hls.Audio
 		if file == "video.m3u8" {
-			kind, media = hls.Video, "yt-video.mp4"
+			kind = hls.Video
 		}
-		t, err := p.remoteIndex(ctx, store, username, itemID, watchURL, kind, false)
+		t, formatID, err := p.remoteIndex(ctx, store, username, itemID, watchURL, kind, false)
 		if err != nil {
 			remoteError(w, r, err)
 			return
 		}
-		writePlaylist(w, r, hls.MediaPlaylist(t, media+query))
-	case "yt-audio.m4a":
-		p.remoteSegment(w, r, store, username, itemID, watchURL, hls.Audio)
-	case "yt-video.mp4":
-		p.remoteSegment(w, r, store, username, itemID, watchURL, hls.Video)
+		writePlaylist(w, r, hls.MediaPlaylist(t, remoteSegmentName(kind, formatID)+query))
 	default:
-		http.NotFound(w, r)
+		kind, formatID, ok := parseRemoteSegment(file)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		p.remoteSegment(w, r, store, username, itemID, watchURL, kind, formatID)
 	}
 }
 
-// remoteSegment answers a request for a byte range of a remote track: a
-// redirect to googlevideo in direct mode, the range relayed in proxy mode.
-func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, watchURL string, kind hls.Kind) {
+// remoteSegment answers a request for a byte range of format formatID's
+// remote track of kind: a redirect to googlevideo in direct mode, the range
+// relayed in proxy mode. A format the item no longer resolves to is gone
+// (410): its byte ranges are not the current format's.
+func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, formatID string) {
 	mode, err := p.youtubeMode()
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	u, err := p.remoteURL(r.Context(), store, username, itemID, watchURL, kind, false)
+	yt, err := p.remoteTrack(r.Context(), store, username, itemID, watchURL, kind, false)
 	if err != nil {
 		remoteError(w, r, err)
 		return
 	}
+	if yt.FormatID != formatID {
+		formatGone(w, r, itemID, kind, formatID, yt.FormatID)
+		return
+	}
+	u := yt.URL
 	switch mode {
 	case YouTubeDirect:
 		// The URL expires, so neither the redirect nor where it goes is kept.
@@ -188,11 +229,15 @@ func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *St
 	if err == nil && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusGone) {
 		// The URL has expired or been withdrawn: resolve afresh and try once more.
 		closeUpstream(resp)
-		if u, err = p.remoteURL(r.Context(), store, username, itemID, watchURL, kind, true); err != nil {
+		if yt, err = p.remoteTrack(r.Context(), store, username, itemID, watchURL, kind, true); err != nil {
 			remoteError(w, r, err)
 			return
 		}
-		resp, err = proxyRange(r, u)
+		if yt.FormatID != formatID {
+			formatGone(w, r, itemID, kind, formatID, yt.FormatID)
+			return
+		}
+		resp, err = proxyRange(r, yt.URL)
 	}
 	if err != nil {
 		remoteError(w, r, err)
@@ -218,6 +263,14 @@ func (p *Plugin) remoteSegment(w http.ResponseWriter, r *http.Request, store *St
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		slog.Debug("feed hls: relay youtube segment", "item", itemID, "kind", kind, "err", err)
 	}
+}
+
+// formatGone answers a segment request for a format the item's track of
+// kind is no longer: the player's playlists are stale, and it must start
+// again.
+func formatGone(w http.ResponseWriter, r *http.Request, itemID int64, kind hls.Kind, asked, now string) {
+	httperr.Log(r, fmt.Errorf("feed hls: youtube item %d %s format %s is gone; it is now %s", itemID, kind, asked, now))
+	http.Error(w, "Gone", http.StatusGone)
 }
 
 // proxyRange asks u for what r asks: the same method, Range and If-Range.

@@ -89,14 +89,18 @@ any run of segments by byte range out of one file.
     `youtube_streams` until 10 minutes before the URLs' `expire`, with the
     format ids pinned, so a re-resolve picks the same formats and the byte
     ranges in an issued playlist stay valid. If the pinned ids are dead, the
-    row is dropped and one fresh resolve runs in the same flight (held ranges
-    may break once; the player restarts).
+    row is dropped and one fresh resolve runs in the same flight. Segment
+    names carry the format id, so a player holding playlists for a format no
+    longer chosen gets 410 for its segments, never another format's bytes,
+    and restarts.
   - Cog reads each track's `sidx` and `moov` with one Range request (about
     256 KB, `RemoteTrack`) and writes the master and media playlists with the
     same presentation code as a local item. Captions are absent (none without
     a download).
-  - Every segment is a request to `yt-*.m4a` or `yt-*.mp4` on Cog, signed like
-    any HLS link. In `direct` mode Cog answers 302 to the googlevideo URL (a
+  - Every segment is a request to `yt-audio-<format>.m4a` or
+    `yt-video-<format>.mp4` on Cog, signed like any HLS link. It is served
+    remote whatever the package state, so a player that started before the
+    download was packaged finishes remote; its next master is local. In `direct` mode Cog answers 302 to the googlevideo URL (a
     fresh one if the cached one is near expiry). In `proxy` mode Cog streams
     the range itself through safehttp (redirects followed, addresses checked
     at dial) and, on a 403, refreshes the URL once and retries.

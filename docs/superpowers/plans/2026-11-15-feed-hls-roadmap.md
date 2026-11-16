@@ -43,7 +43,7 @@ Phases 2–4 touch the same files (`hls/playlist.go`, `hls_serve.go`) and run st
 6. **Video edges are re-encoded only for `avc1` video**, with libx264 at the source's resolution, no profile above the source's, and software encoding (VAAPI stays an open question). For any other video codec the skip presentation keeps the video unskipped and says so: the master gets `EXT-X-SESSION-DATA` `us.duckfam.cog.skip`=`unsupported`, and the skip is not applied. **Cost if wrong:** mpv plays the silences of a VP9 or AV1 video, which only happens when no H.264 format is available.
 7. **The edit list identifies the timeline.** The master of a skip presentation carries `#EXT-X-SESSION-DATA:DATA-ID="us.duckfam.cog.edits",VALUE="<edit>"`. The cuts of every edit id that was served are stored in `hls_edits(id TEXT PRIMARY KEY, item_id, cuts TEXT JSON, created_at)`. `ReportProgressRequest` gains `string edit_list = 6`, and the server maps presentation time back to item time. **Cog's own clients never set it**: they skip natively and report item time.
 8. **Remote YouTube (phase 5): every segment URI points at Cog.**
-   - Segment URIs are `yt-audio.m4a` and `yt-video.mp4` under the same signed path. That route answers either with a 302 to the current googlevideo URL (**direct**) or by proxying the byte range (**proxy**).
+   - Segment URIs are `yt-audio-<format>.m4a` and `yt-video-<format>.mp4` under the same signed path (410 when the format is no longer the item's). That route answers either with a 302 to the current googlevideo URL (**direct**) or by proxying the byte range (**proxy**).
    - The mode is the setting `hls_youtube_mode` (`direct` or `proxy`). Its default is decided by the off-Wi-Fi test, the plan's Task 1 gate.
    - Resolved URLs are cached in `youtube_streams(item_id, kind, url, expires_at)` until 10 minutes before they expire.
    - The `sidx` is read over HTTP Range with the phase-1 parser, through a `ReaderAt` that fetches the first 256 KB in one request.
@@ -138,7 +138,7 @@ There is no `TimestampMap`.
 | `subs.m3u8`, `subs-<n>.vtt` (n = segment index) | 2 |
 | `clean.m3u8`, `clean.m4a` | 3 |
 | `edge-<edit>-<track>-<n>.mp4` (track `a` or `v`) | 4 |
-| `yt-audio.m4a`, `yt-video.mp4` | 5 |
+| `yt-audio-<format>.m4a`, `yt-video-<format>.mp4` | 5 |
 
 Every URI written into a playlist is relative and carries `?sig=…` plus the presentation's canonical options.
 
