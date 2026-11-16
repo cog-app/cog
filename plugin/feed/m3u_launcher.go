@@ -109,16 +109,22 @@ func desktopEntry(name, m3uURL string) string {
 	return b.String()
 }
 
-// desktopExecArg quotes s for an Exec key: inside double quotes, `"`, "`",
-// `$` and `\` are backslash-escaped, and % becomes %% (a field code
-// otherwise). s must be one line; desktopEntry's callers see to it.
+// desktopExecArg quotes s for an Exec key, in the two levels the Desktop
+// Entry spec ("The Exec key", and "Basic format of the file" for string
+// values) lays down. Inside double quotes, `"`, "`", `$` and `\` each take a
+// backslash; then the whole value is a string, where every backslash is
+// doubled. So `$` is written `\\$`, and a literal backslash `\\\\`. % becomes
+// %% (a field code otherwise). s must be one line; Launcher sees to it.
 func desktopExecArg(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, c := range s {
 		switch c {
 		case '"', '`', '$', '\\':
-			b.WriteByte('\\')
+			b.WriteString(`\\`)
+			if c == '\\' {
+				b.WriteRune(c)
+			}
 		case '%':
 			b.WriteByte('%')
 		}

@@ -9,7 +9,9 @@ import (
 
 func TestM3ULauncherEscapes(t *testing.T) {
 	assert.Equal(t, `"http://h/a%%20b?sig=x&skip=silence"`, desktopExecArg("http://h/a%20b?sig=x&skip=silence"))
-	assert.Equal(t, `"a\"b\$c\\d\`+"`"+`e"`, desktopExecArg("a\"b$c\\d`e"))
+	// Two levels (Desktop Entry spec, "The Exec key" and "Basic format of
+	// the file"): quote-level escapes, then every backslash doubled.
+	assert.Equal(t, `"a\\"b\\$c\\\\d\\`+"`"+`e"`, desktopExecArg("a\"b$c\\d`e"))
 }
 
 func TestDesktopEntryFoldsNewlines(t *testing.T) {

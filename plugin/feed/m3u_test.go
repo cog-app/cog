@@ -437,7 +437,10 @@ func execURL(t *testing.T, line string) string {
 	require.True(t, ok, line)
 	arg, ok = strings.CutSuffix(arg, `"`)
 	require.True(t, ok, line)
-	// Inside quotes, a backslash makes the next character itself.
+	// Read back as a Desktop Entry reader does: the string level makes \\
+	// one backslash, then inside quotes a backslash makes the next
+	// character itself.
+	arg = strings.ReplaceAll(arg, `\\`, `\`)
 	var b strings.Builder
 	for i := 0; i < len(arg); i++ {
 		if arg[i] == '\\' && i+1 < len(arg) {
