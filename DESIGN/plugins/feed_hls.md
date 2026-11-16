@@ -541,8 +541,15 @@ option and is refused with 400. A desktop launcher is just `mpv <that URL>`.
 
 - **Web:** hls.js (desktop Chrome and Firefox; Safari plays HLS natively).
   Mute becomes the clean rendition and skip moves into the playlist.
-- **Android:** Media3's HLS module. In the background, disable the video
-  renderer and the track selector moves to the audio-only variant.
+- **Android:** Media3's HLS module, with video decoded only in the
+  foreground while a surface shows it. Disabling the video track does not
+  stop Media3 fetching video: it always loads the main variant (here the
+  video playlist) and drops audio-only variants when video variants exist,
+  as a phone check confirmed. So after 3 s in the background the app
+  reloads a video item from its audio (`ResolveMedia` with the audio
+  variant) at the current position, and reloads the HLS master when it
+  returns with a surface. A video item the queue reaches in the background
+  starts from its audio.
 - **Desktop (mpv):** plays the signed URLs as they are.
 
 ## Phases
