@@ -2193,6 +2193,7 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	oldMinSilence := cur.SkipSilenceMinSec
 	// Only overwrite fields actually present in the form (partial updates).
 	if v := r.FormValue("speed"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
@@ -2232,6 +2233,11 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		slog.Error("feed: save player prefs", "err", err)
 		httperr.Internal(w, r, err)
 		return
+	}
+	if cur.SkipSilenceMinSec != oldMinSilence {
+		// SavePlayerPrefs forgot every item's edges: the worker makes the
+		// wanted ones again.
+		h.plugin.TriggerFetch(plugin.Username(r), 0)
 	}
 	if r.Header.Get("HX-Target") == "feed-sidebar" {
 		sb, ok := h.sidebar(w, r, store, sidebarPath(currentPath(r)))

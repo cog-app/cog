@@ -487,6 +487,23 @@ func TestHLSSkipRejectsOtherPlans(t *testing.T) {
 	}
 }
 
+// A master that finds the item's edges still to be made wakes the worker,
+// though the item was wanted before: a pref change reset its edges.
+func TestHLSSkipPendingWakesWorker(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	_, skip, _ := fullSkipItem(t, env)
+	store := feedStore(t, env, "alice")
+	prefs, err := store.LoadPlayerPrefs()
+	require.NoError(t, err)
+	prefs.SkipSilenceMinSec = 2
+	require.NoError(t, store.SavePlayerPrefs(prefs))
+	poked(t, env)
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	require.True(t, strings.Contains(body, `VALUE="pending"`), body)
+	assert.True(t, poked(t, env), "worker not woken")
+}
+
 // A cache that lost the edges sends the item back to the worker (R13).
 func TestHLSSkipSelfHealsMissingEdge(t *testing.T) {
 	env := cogtest.New(t, feed.New())

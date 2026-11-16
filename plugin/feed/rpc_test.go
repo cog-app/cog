@@ -424,16 +424,21 @@ func TestSetPlayerPrefsSkipSilenceMin(t *testing.T) {
 	prefs := get()
 	assert.Equal(t, 1.0, prefs.SkipSilenceMinSec)
 
+	// A new shortest silence resets every item's edges and wakes the
+	// worker to make them again.
+	poked(t, env)
 	prefs.SkipSilenceMinSec = 2.5
 	_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
 	require.NoError(t, err)
 	assert.Equal(t, 2.5, get().SkipSilenceMinSec)
+	assert.True(t, poked(t, env), "worker not woken")
 
 	// Zero is a client that predates the field: the stored value stays.
 	prefs.SkipSilenceMinSec = 0
 	prefs.Speed = 1.25
 	_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
 	require.NoError(t, err)
+	assert.False(t, poked(t, env), "nothing reset")
 	after := get()
 	assert.Equal(t, 2.5, after.SkipSilenceMinSec)
 	assert.Equal(t, 1.25, after.Speed)

@@ -150,11 +150,15 @@ func TestSavePlayerPrefsFormResetsEdges(t *testing.T) {
 		return d.EdgesEdit
 	}
 
+	poked(t, env)
 	post("skip_silence_min_sec", "1") // the default
 	post("speed", "1.5")
 	assert.Equal(t, "abcdefabcdef", edit())
+	assert.False(t, poked(t, env))
+	// The worker is woken to make them again.
 	post("skip_silence_min_sec", "3")
 	assert.Equal(t, "", edit())
+	assert.True(t, poked(t, env), "worker not woken")
 }
 
 func TestSidebarHidesEmptyWhenEnabled(t *testing.T) {

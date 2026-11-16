@@ -139,22 +139,20 @@ func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 		}
 		return skipSelection{status: "failed"}, nil
 	}
-	healed := false
 	if stale := h.d.EdgesEdit != "" && h.d.EdgesEdit != o.plan.Edit; stale || o.ready {
 		// o.ready here is a made plan whose edges are gone.
 		slog.Info("feed hls: edges made again", "item", item, "had", h.d.EdgesEdit, "plan", o.plan.Edit)
 		if err := h.store.ForgetEdges(item, h.d.EdgesEdit); err != nil {
 			return skipSelection{}, err
 		}
-		healed = true
 	}
-	wanted, err := h.store.WantEdges(item)
-	if err != nil {
+	if _, err := h.store.WantEdges(item); err != nil {
 		return skipSelection{}, err
 	}
-	if wanted || healed {
-		h.p.TriggerFetch(h.username, 0)
-	}
+	// The edges are to be made: newly wanted, forgotten above, or reset
+	// since they were wanted (a pref change, a new clean track). The worker
+	// may be asleep until its next tick.
+	h.p.TriggerFetch(h.username, 0)
 	if o.coarse != nil {
 		return *o.coarse, h.store.RecordEdit(item, o.coarse.edit, o.coarse.cuts, o.plan.Duration)
 	}

@@ -33,6 +33,21 @@ func feedPlugin(t *testing.T, env *cogtest.Env) *feed.Plugin {
 	return raw.(*feed.Plugin)
 }
 
+// poked drains the plugin's pokes and reports whether there were any: a
+// TriggerFetch since the last call.
+func poked(t *testing.T, env *cogtest.Env) bool {
+	t.Helper()
+	pokes, any := feedPlugin(t, env).Pokes(), false
+	for {
+		select {
+		case <-pokes:
+			any = true
+		default:
+			return any
+		}
+	}
+}
+
 // packagedItem stores the packaged fixtures as a downloaded item's tracks,
 // with a video track when withVideo, and returns its ID.
 func packagedItem(t *testing.T, env *cogtest.Env, username string, withVideo bool) int64 {

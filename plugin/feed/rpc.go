@@ -673,6 +673,11 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 	if err := store.SavePlayerPrefs(p); err != nil {
 		return nil, err
 	}
+	if minSilence != cur.SkipSilenceMinSec {
+		// SavePlayerPrefs forgot every item's edges: the worker makes the
+		// wanted ones again.
+		s.plugin.TriggerFetch(plugin.UserFromContext(ctx).Username, 0)
+	}
 	return connect.NewResponse(playerPrefsPB(p)), nil
 }
 
