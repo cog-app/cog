@@ -510,8 +510,10 @@ func TestHLSSkipSelfHealsMissingEdge(t *testing.T) {
 	assert.Equal(t, edit, masterEdit(env.Get(t, skip).Status(http.StatusOK).ReadBody()))
 }
 
-// Edges that failed for the current plan are not retried by the route:
-// the item plays as pending, and the error stays.
+// Edges that failed for the current plan are not retried by the route (the
+// worker retries them later): the item plays unskipped and says so, and the
+// error stays. So does an item whose tracks could not be loaded, which
+// records its error with no edit.
 func TestHLSSkipEdgesErrorNoLoop(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	env.CreateUser(t, "alice", "pw")
@@ -521,15 +523,32 @@ func TestHLSSkipEdgesErrorNoLoop(t *testing.T) {
 	edit := masterEdit(env.Get(t, skip).Status(http.StatusOK).ReadBody())
 	require.NotEqual(t, "", edit)
 	store := feedStore(t, env, "alice")
-	require.NoError(t, store.MarkEdgesError(id, edit, "ffmpeg: boom"))
-	for range 2 {
-		body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
-		assert.True(t, strings.Contains(body, `VALUE="pending"`), body)
-		d := download(t, env, "alice", id)
-		assert.Equal(t, edit, d.EdgesEdit)
-		assert.Equal(t, "ffmpeg: boom", d.EdgesError)
+	for _, failed := range []string{edit, ""} {
+		require.NoError(t, store.MarkEdgesError(id, failed, "ffmpeg: boom"))
+		for range 2 {
+			body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+			assert.True(t, strings.Contains(body, `DATA-ID="us.duckfam.cog.skip",VALUE="failed"`), body)
+			assert.Equal(t, "", masterEdit(body))
+			d := download(t, env, "alice", id)
+			assert.Equal(t, failed, d.EdgesEdit)
+			assert.Equal(t, "ffmpeg: boom", d.EdgesError)
+		}
 	}
 	env.Get(t, sibling(skip, "video.m3u8")+"&edit="+edit).Status(http.StatusNotFound)
+}
+
+// An audio-only item whose edges failed keeps its coarse cut, and says the
+// full one is not coming.
+func TestHLSSkipAudioFailedCoarse(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	// {5.6,12} at 1 s: the segment [6,12) is wholly inside it.
+	id, skip := skipItem(t, env, "alice", false, []feed.Range{{Start: 5.5, End: 13, Action: "skip"}})
+	store := feedStore(t, env, "alice")
+	require.NoError(t, store.MarkEdgesError(id, "", "original track: boom"))
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, `DATA-ID="us.duckfam.cog.skip",VALUE="failed"`), body)
+	assert.NotEqual(t, "", masterEdit(body), "coarse edit")
 }
 
 // fullSkipItem is a video skip item whose edges are made, its skip master

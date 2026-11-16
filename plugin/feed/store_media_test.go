@@ -298,6 +298,20 @@ func TestEdgesWaitForProfanity(t *testing.T) {
 	assert.True(t, edgesPending(t, store, id), "profanity cannot run")
 }
 
+// Failed edges are tried again after edgesRetryAfter, in case what failed
+// was passing (a full disk, a killed ffmpeg).
+func TestEdgesRetriedAfterFailure(t *testing.T) {
+	store, id := edgesMade(t)
+	require.NoError(t, store.MarkEdgesError(id, "abcdefabcdef", "boom"))
+	assert.False(t, edgesPending(t, store, id), "just failed")
+	_, err := store.DB().Exec(`UPDATE downloads SET edges_failed_at = unixepoch() - 5*3600 WHERE item_id = ?`, id)
+	require.NoError(t, err)
+	assert.False(t, edgesPending(t, store, id), "failed 5 h ago")
+	_, err = store.DB().Exec(`UPDATE downloads SET edges_failed_at = unixepoch() - 7*3600 WHERE item_id = ?`, id)
+	require.NoError(t, err)
+	assert.True(t, edgesPending(t, store, id), "failed 7 h ago")
+}
+
 func TestEdgesResetOnRepackage(t *testing.T) {
 	store, id := edgesMade(t)
 	require.NoError(t, store.SavePackage(id, "media/2.hls-audio.m4a", "", 300))

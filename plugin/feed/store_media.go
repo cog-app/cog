@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
@@ -235,9 +236,14 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 	return true, nil
 }
 
+// edgesRetryAfter is how long after failing an item's edges are tried
+// again: what failed may have been passing (a full disk, a killed ffmpeg).
+const edgesRetryAfter = 6 * time.Hour
+
 // PendingEdges returns up to limit wanted items whose edges are to be made,
 // most recently asked for first: packaged, silence detected, and neither
-// made nor failed. The Clean
+// made nor failed less than edgesRetryAfter ago (the worker clears the
+// error of a failed item it takes, RetryEdges). The Clean
 // rendition is part of the plan, so an item whose clean audio is still to
 // come waits: a clean file waiting for its track, or profanity muting still
 // to run (once its captions are made, which it needs). Edges made before
@@ -245,10 +251,11 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 func (s *Store) PendingEdges(limit int) ([]int64, error) {
 	rows, err := s.db.Query(`SELECT item_id FROM downloads
 		WHERE edges_wanted = 1 AND package_state = 'done' AND silence_state = 'done'
-			AND edges_edit = '' AND edges_error = ''
+			AND (edges_edit = '' AND edges_error = ''
+				OR edges_error != '' AND edges_failed_at < unixepoch() - ?)
 			AND NOT (clean_audio_path != '' AND clean_track_path = '' AND clean_track_error = '')
 			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1))
-		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`, limit)
+		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`, int64(edgesRetryAfter/time.Second), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending edges: %w", err)
 	}
@@ -271,14 +278,26 @@ func (s *Store) SetEdges(itemID int64, edit string, index EdgesIndex) error {
 	return nil
 }
 
-// MarkEdgesError records that the edges for the edit list could not be made.
-// The edit is kept, so it is not tried again until an input changes and
-// ResetEdges clears it.
+// MarkEdgesError records that the edges for the edit list ("" when the
+// item could not be planned) could not be made. The edit is kept, so it is
+// not tried again until an input changes and ResetEdges clears it, or
+// edgesRetryAfter passes.
 func (s *Store) MarkEdgesError(itemID int64, edit, msg string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = ?, edges_index = ''
+	_, err := s.db.Exec(`UPDATE downloads SET edges_edit = ?, edges_error = ?, edges_index = '',
+			edges_failed_at = unixepoch()
 		WHERE item_id = ?`, edit, msg, itemID)
 	if err != nil {
 		return fmt.Errorf("mark edges error: %w", err)
+	}
+	return nil
+}
+
+// RetryEdges clears the error of an item whose edges failed, so the worker
+// makes them again. It is the worker's, for an item PendingEdges returned.
+func (s *Store) RetryEdges(itemID int64) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET edges_edit = '', edges_error = '', edges_index = ''
+		WHERE item_id = ? AND edges_error != ''`, itemID); err != nil {
+		return fmt.Errorf("retry edges: %w", err)
 	}
 	return nil
 }

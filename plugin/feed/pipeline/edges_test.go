@@ -300,6 +300,25 @@ func TestEdgesFailureNotRetried(t *testing.T) {
 	assert.Equal(t, 0, len(cacheNames(t, space, "edges")))
 }
 
+// The worker takes a failed item again once it is due, clearing its error.
+func TestEdgesFailureRetried(t *testing.T) {
+	s, space, id := skipItem(t)
+	require.NoError(t, space.Own.Remove("media/1.m4a"))
+	runEdges(t, s, space)
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	require.NotEqual(t, "", d.EdgesError)
+
+	putFixture(t, space, "audio.m4a", "media/1.m4a")
+	_, err = s.DB().Exec(`UPDATE downloads SET edges_failed_at = unixepoch() - 7*3600 WHERE item_id = ?`, id)
+	require.NoError(t, err)
+	runEdges(t, s, space)
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesError)
+	assert.Equal(t, plan(t, s, space, id).Edit, d.EdgesEdit)
+}
+
 // An encode that fails part way is recorded against its edit and leaves
 // nothing behind.
 func TestEdgesEncodeFailure(t *testing.T) {

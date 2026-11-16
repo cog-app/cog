@@ -25,7 +25,8 @@ type skipSelection struct {
 	// lists the default audio rendition alone.
 	full, coarse bool
 	// status is the us.duckfam.cog.skip session data: "pending" while the
-	// edges are made, "unsupported" when they cannot be.
+	// edges are made, "failed" when making them failed, "unsupported" when
+	// they cannot be.
 	status string
 }
 
@@ -98,12 +99,14 @@ func (o skipOptions) full() skipSelection {
 //   - unskipped and "unsupported" when edges cannot be made;
 //   - the full plan when its edges are in the cache, or it has none;
 //   - otherwise the coarse plan of an audio-only item, or the video item
-//     unskipped and "pending", while the edges worker is asked for them.
+//     unskipped, "pending" while the edges worker is asked for them and
+//     "failed" when they could not be made for this plan.
 //
 // An edit list it serves is recorded, so a player's report of it can be
 // read back. Edges recorded for another plan, or recorded and since lost
 // from the cache, are forgotten so the worker makes them again; edges that
-// failed for this plan are not retried until an input changes.
+// failed for this plan are left to the worker, which tries again some
+// hours on, or until an input changes.
 func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 	o, err := h.skipOptions(t)
 	if err != nil {
@@ -125,6 +128,16 @@ func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 			sel := o.full()
 			return sel, h.store.RecordEdit(item, sel.edit, sel.cuts, o.plan.Duration)
 		}
+	}
+	if h.d.EdgesError != "" && (h.d.EdgesEdit == o.plan.Edit || h.d.EdgesEdit == "") {
+		// This plan's edges failed (or the item could not be planned): the
+		// worker tries again later, and an input change resets them.
+		if o.coarse != nil {
+			sel := *o.coarse
+			sel.status = "failed"
+			return sel, h.store.RecordEdit(item, sel.edit, sel.cuts, o.plan.Duration)
+		}
+		return skipSelection{status: "failed"}, nil
 	}
 	healed := false
 	if stale := h.d.EdgesEdit != "" && h.d.EdgesEdit != o.plan.Edit; stale || o.ready {

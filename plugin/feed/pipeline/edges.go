@@ -121,11 +121,19 @@ type rendition struct {
 }
 
 // processOne makes one item's edges. A failure is recorded against the
-// edit, so the item is not tried again until an input changes.
+// edit, so the item is not tried again until an input changes or some
+// hours pass (PendingEdges).
 func (w *Edges) processOne(ctx context.Context, itemID int64, deadline time.Time) error {
 	d, err := w.store.GetDownload(itemID)
 	if err != nil {
 		return fmt.Errorf("get download: %w", err)
+	}
+	if d.EdgesError != "" {
+		// Failed long enough ago to try again (PendingEdges).
+		slog.Info("feed edges: trying failed edges again", "item_id", itemID, "edit", d.EdgesEdit, "err", d.EdgesError)
+		if err := w.store.RetryEdges(itemID); err != nil {
+			return err
+		}
 	}
 	plan, rs, err := w.load(d)
 	if err != nil {
