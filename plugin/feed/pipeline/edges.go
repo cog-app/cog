@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/ffargs"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
@@ -24,8 +24,12 @@ import (
 // leaves is re-encoded into a track file of its own in the cache,
 // feed.EdgeName. Each rendition is planned and cut on its own segment grid.
 // Audio is cut to the sample; H.264 video is re-encoded from the keyframe
-// before the cut. A presentation whose video is anything else is not
-// skipped, so it gets no edges at all.
+// before the cut. A presentation with a rendition whose edges cannot be
+// made (feed.EdgesSupported) is not skipped, so it gets no edges at all.
+//
+// It runs on the goroutine every user's workers share, so one run takes a
+// few items and stops after a time budget, between edges. What it made is
+// kept: the next run checks it and goes on from there.
 //
 // An edge must decode under its source's init section as well as its own:
 // ffmpeg's HLS demuxer (mpv) keeps the first moov it sees. So it keeps the
@@ -36,24 +40,47 @@ type Edges struct {
 	space feed.Space
 	// afterEncode, when set, runs between encoding and recording (tests).
 	afterEncode func()
+	limit       int           // items a run takes
+	budget      time.Duration // how long a run encodes
 }
+
+// A run's default budget: an hour-long episode has hundreds of edges per
+// rendition, and a playlist may want many episodes.
+const (
+	edgesPerRun    = 2
+	edgesRunBudget = 60 * time.Second
+)
+
+// errOutOfTime stops a run between edges; the item stays pending.
+var errOutOfTime = errors.New("edges: out of time")
 
 // NewEdges creates an Edges worker over the downloads in space.
 func NewEdges(s *feed.Store, space feed.Space) *Edges {
-	return &Edges{store: s, space: space}
+	return &Edges{store: s, space: space, limit: edgesPerRun, budget: edgesRunBudget}
 }
 
-// RunOnce makes the edges of every item that wants them and has none.
+// RunOnce makes the edges of the first few items that want them and have
+// none, for as long as its budget lasts.
 func (w *Edges) RunOnce(ctx context.Context) error {
-	ids, err := w.store.PendingEdges(100)
+	ids, err := w.store.PendingEdges(w.limit)
 	if err != nil {
 		return fmt.Errorf("edges list pending: %w", err)
 	}
-	for _, id := range ids {
+	deadline := time.Now().Add(w.budget)
+	for i, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := w.processOne(ctx, id); err != nil {
+		// The first item always gets an edge, so every run makes progress.
+		if i > 0 && time.Now().After(deadline) {
+			return nil
+		}
+		err := w.processOne(ctx, id, deadline)
+		if errors.Is(err, errOutOfTime) {
+			slog.Info("feed edges: out of time; going on next run", "item_id", id)
+			return nil
+		}
+		if err != nil {
 			slog.Warn("feed edges: process failed", "item_id", id, "err", err)
 		}
 	}
@@ -70,7 +97,7 @@ type rendition struct {
 
 // processOne makes one item's edges. A failure is recorded against the
 // edit, so the item is not tried again until an input changes.
-func (w *Edges) processOne(ctx context.Context, itemID int64) error {
+func (w *Edges) processOne(ctx context.Context, itemID int64, deadline time.Time) error {
 	d, err := w.store.GetDownload(itemID)
 	if err != nil {
 		return fmt.Errorf("get download: %w", err)
@@ -80,7 +107,10 @@ func (w *Edges) processOne(ctx context.Context, itemID int64) error {
 		return w.fail(itemID, "", err)
 	}
 	dir := path.Join(feed.EdgesDir(itemID), plan.Edit)
-	if err := w.make(ctx, itemID, plan.Edit, rs); err != nil {
+	if err := w.make(ctx, itemID, plan.Edit, rs, deadline); err != nil {
+		if errors.Is(err, errOutOfTime) {
+			return err // keep what was made
+		}
 		err = errors.Join(err, w.space.Cache.RemoveAll(dir))
 		if ctx.Err() != nil {
 			return err
@@ -98,7 +128,8 @@ func (w *Edges) processOne(ctx context.Context, itemID int64) error {
 	if err != nil || stale {
 		rmErr := w.space.Cache.RemoveAll(dir)
 		if err != nil {
-			return errors.Join(fmt.Errorf("check plan again: %w", err), rmErr)
+			// Recorded, or every run would encode the item again.
+			return errors.Join(w.fail(itemID, plan.Edit, fmt.Errorf("check plan again: %w", err)), rmErr)
 		}
 		slog.Info("feed edges: inputs changed while encoding; made again next run", "item_id", itemID, "edit", plan.Edit)
 		return rmErr
@@ -116,8 +147,8 @@ func (w *Edges) fail(itemID int64, edit string, err error) error {
 	return err
 }
 
-// load reads d's tracks and plans them. A presentation whose video is not
-// H.264 is not skipped, so it has no renditions to cut.
+// load reads d's tracks and plans them. An Unsupported plan is not
+// skipped, so it has no renditions to cut.
 func (w *Edges) load(d feed.Download) (feed.EdgePlan, []rendition, error) {
 	original, _, err := w.space.Track(d.LocalPath)
 	if err != nil {
@@ -142,7 +173,7 @@ func (w *Edges) load(d feed.Download) (feed.EdgePlan, []rendition, error) {
 	if err != nil {
 		return feed.EdgePlan{}, nil, fmt.Errorf("skip plan: %w", err)
 	}
-	if plan.VideoUnsupported {
+	if plan.Unsupported {
 		return plan, nil, nil
 	}
 	rs := []rendition{{feed.EdgeOriginal, d.LocalPath, original, plan.Original}}
@@ -172,12 +203,11 @@ func (w *Edges) stale(itemID int64, edit string) (bool, error) {
 	return plan.Edit != edit, nil
 }
 
-// make encodes and checks every edge piece of every rendition into the
-// edit's directory, which it empties first.
-func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendition) error {
-	if err := w.space.Cache.RemoveAll(path.Join(feed.EdgesDir(itemID), edit)); err != nil {
-		return fmt.Errorf("clear edges: %w", err)
-	}
+// make encodes every edge piece of every rendition into the edit's
+// directory and checks it. An edge an earlier run made that passes the
+// check is kept. It stops with errOutOfTime once an edge is made after the
+// deadline.
+func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendition, deadline time.Time) error {
 	for _, r := range rs {
 		edges := hls.Edges(r.pieces)
 		if len(edges) == 0 {
@@ -193,8 +223,18 @@ func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendit
 		}
 		for n, piece := range edges {
 			name := feed.EdgeName(itemID, edit, r.key, n)
-			if err := w.encode(ctx, in, name, piece, src); err != nil {
+			if w.made(name, piece, src) {
+				continue
+			}
+			err := w.encode(ctx, in, name, piece, src)
+			if err == nil {
+				err = w.check(name, piece, src)
+			}
+			if err != nil {
 				return fmt.Errorf("edge %s (%.3f-%.3f s of %s): %w", name, piece.Start, piece.End, r.stored, err)
+			}
+			if time.Now().After(deadline) {
+				return errOutOfTime
 			}
 		}
 	}
@@ -293,9 +333,20 @@ func ratio(s string) (a, b int, ok bool) {
 	return a, b, errA == nil && errB == nil && a > 0 && b > 0
 }
 
-// encode makes one edge and checks it is a track of the piece: one track
-// with an index, of src's kind, starting, ending and lasting as the piece
-// does to within a frame.
+// made reports whether an earlier run made the edge and it passes check.
+// One that does not is made again.
+func (w *Edges) made(name string, piece hls.Piece, src edgeSource) bool {
+	if _, err := w.space.Cache.Stat(name); err != nil {
+		return false
+	}
+	if err := w.check(name, piece, src); err != nil {
+		slog.Info("feed edges: making a kept edge again", "name", name, "err", err)
+		return false
+	}
+	return true
+}
+
+// encode makes one edge.
 func (w *Edges) encode(ctx context.Context, in, name string, piece hls.Piece, src edgeSource) error {
 	out, err := w.space.Cache.LocalPath(name)
 	if err != nil {
@@ -309,6 +360,14 @@ func (w *Edges) encode(ctx context.Context, in, name string, piece hls.Piece, sr
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(b)))
 	}
+	return nil
+}
+
+// check reports how the edge at name is not a track of the piece: one track
+// with an index, of src's kind, starting, ending and lasting as the piece
+// does to within a frame, and placed where its index says (its first tfdt,
+// by which players place it).
+func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	tr, _, err := w.space.CachedTrack(name)
 	if err != nil {
 		return err
@@ -329,6 +388,13 @@ func (w *Edges) encode(ctx context.Context, in, name string, piece hls.Piece, sr
 	tol := src.Frame + 1e-3
 	if math.Abs(start-piece.Start) > tol || math.Abs(end-piece.End) > tol || math.Abs((end-start)-(piece.End-piece.Start)) > tol {
 		return fmt.Errorf("made %.4f-%.4f s, want %.4f-%.4f s to within %.4f s", start, end, piece.Start, piece.End, tol)
+	}
+	tfdt, err := w.space.CachedDecodeTime(name)
+	if err != nil {
+		return err
+	}
+	if math.Abs(tfdt-start) > 1e-3 {
+		return fmt.Errorf("first fragment decodes at %.4f s; its index says %.4f s", tfdt, start)
 	}
 	return nil
 }
@@ -357,8 +423,11 @@ func (w *Edges) removeOthers(itemID int64, edit string) error {
 // It seeks before the input, so audio is cut to the sample and video is
 // decoded from the keyframe before the piece. Seeking counts from the
 // track's own start (src.T0); -output_ts_offset puts the edge back in item
-// time, which -avoid_negative_ts disabled keeps: the mp4 muxer would
-// otherwise move it to 0. Video keeps the source's frame times
+// time. Two flags keep it there: frag_discont writes it into the fragments'
+// tfdt as well as the sidx (without it tfdt stays 0, and players place
+// fragments by tfdt), and -avoid_negative_ts make_non_negative stops the
+// muxer moving the edge to 0, but still moves an edge at the track's start
+// whose AAC priming frame would come before 0, as the source's was. Video keeps the source's frame times
 // (passthrough, at the demuxer's time base, in the source's timescale), and
 // its length is an output -t a millisecond short of the piece (an input -to
 // keeps a frame up to 20 ms past it), so a frame that starts where the
@@ -376,10 +445,10 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 		head = append(head, "-to", sec(piece.End-src.T0))
 		tail = []string{"-map", "0:a:0", "-c:a", "aac", "-b:a", "128k",
 			"-ar", strconv.Itoa(src.SampleRate), "-ac", strconv.Itoa(src.Channels),
-			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "disabled",
-			"-movflags", "+empty_moov+default_base_moof+global_sidx", "-frag_duration", "2000000", "-f", "mp4", out}
+			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
+			"-movflags", "+empty_moov+default_base_moof+global_sidx+frag_discont", "-frag_duration", "2000000", "-f", "mp4", out}
 	case hls.Video:
-		profile, level, ok := x264Profile(src.Codecs)
+		profile, level, ok := feed.X264Profile(src.Codecs)
 		if !ok {
 			return nil, fmt.Errorf("video edge: %q is not H.264 x264 can match", src.Codecs)
 		}
@@ -390,41 +459,10 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 			"-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", profile, "-level", level,
 			"-pix_fmt", "yuv420p", "-x264-params", "repeat-headers=1",
 			"-video_track_timescale", strconv.Itoa(src.Timescale),
-			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "disabled",
-			"-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx", "-f", "mp4", out}
+			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
+			"-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx+frag_discont", "-f", "mp4", out}
 	default:
 		return nil, fmt.Errorf("edge of a %q track", src.Kind)
 	}
 	return append(append(head, ffargs.Input(in)...), tail...), nil
-}
-
-// x264Profile is the x264 profile and level of an H.264 codecs string
-// (avc1.PPCCLL): baseline, main or high, and the level as "3.1". Other
-// profiles are not matched.
-func x264Profile(codecs string) (profile, level string, ok bool) {
-	rest, found := strings.CutPrefix(codecs, "avc1.")
-	if !found {
-		rest, found = strings.CutPrefix(codecs, "avc3.")
-	}
-	if !found || len(rest) != 6 {
-		return "", "", false
-	}
-	b, err := hex.DecodeString(rest)
-	if err != nil {
-		return "", "", false
-	}
-	switch b[0] {
-	case 0x42:
-		profile = "baseline"
-	case 0x4D:
-		profile = "main"
-	case 0x64:
-		profile = "high"
-	default:
-		return "", "", false
-	}
-	if b[2] < 10 {
-		return "", "", false
-	}
-	return profile, fmt.Sprintf("%d.%d", b[2]/10, b[2]%10), true
 }

@@ -79,10 +79,30 @@ func (s Space) CachedTrack(name string) (hls.Track, int64, error) {
 	return readTrack(s.Cache, name)
 }
 
-func readTrack(from plugin.Storage, stored string) (hls.Track, int64, error) {
+func readTrack(from plugin.Storage, stored string) (t hls.Track, size int64, err error) {
+	err = readAt(from, stored, func(r io.ReaderAt, n int64) error {
+		t, size, err = hls.Track{}, n, nil
+		t, err = hls.ReadTrack(r, n)
+		return err
+	})
+	return t, size, err
+}
+
+// CachedDecodeTime is hls.FirstDecodeTime of a track file in the cache:
+// where players put its first fragment.
+func (s Space) CachedDecodeTime(name string) (t float64, err error) {
+	err = readAt(s.Cache, name, func(r io.ReaderAt, n int64) error {
+		t, err = hls.FirstDecodeTime(r, n)
+		return err
+	})
+	return t, err
+}
+
+// readAt opens a track file for reading at offsets and calls read on it.
+func readAt(from plugin.Storage, stored string, read func(r io.ReaderAt, size int64) error) error {
 	f, err := from.Open(stored)
 	if err != nil {
-		return hls.Track{}, 0, fmt.Errorf("open track: %w", err)
+		return fmt.Errorf("open track: %w", err)
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -91,15 +111,14 @@ func readTrack(from plugin.Storage, stored string) (hls.Track, int64, error) {
 	}()
 	ra, ok := f.(io.ReaderAt)
 	if !ok {
-		return hls.Track{}, 0, fmt.Errorf("track %s: storage file %T cannot be read at an offset", stored, f)
+		return fmt.Errorf("track %s: storage file %T cannot be read at an offset", stored, f)
 	}
 	st, err := f.Stat()
 	if err != nil {
-		return hls.Track{}, 0, fmt.Errorf("stat track: %w", err)
+		return fmt.Errorf("stat track: %w", err)
 	}
-	t, err := hls.ReadTrack(ra, st.Size())
-	if err != nil {
-		return hls.Track{}, 0, fmt.Errorf("track %s: %w", stored, err)
+	if err := read(ra, st.Size()); err != nil {
+		return fmt.Errorf("track %s: %w", stored, err)
 	}
-	return t, st.Size(), nil
+	return nil
 }

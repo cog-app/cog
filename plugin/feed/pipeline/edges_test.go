@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -52,6 +53,13 @@ func plan(t *testing.T, s *feed.Store, space feed.Space, id int64) feed.EdgePlan
 	p, err := feed.SkipPlan(s, d, original, nil, video)
 	require.NoError(t, err)
 	return p
+}
+
+func decodeTime(t *testing.T, space feed.Space, name string) float64 {
+	t.Helper()
+	tfdt, err := space.CachedDecodeTime(name)
+	require.NoError(t, err, name)
+	return tfdt
 }
 
 func cachedTrack(t *testing.T, space feed.Space, name string) hls.Track {
@@ -100,6 +108,11 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 		first, last := tr.Fragments[0], tr.Fragments[len(tr.Fragments)-1]
 		// AAC priming puts one frame (23 ms) before the piece.
 		assert.InDelta(t, piece.Start, first.Start, 0.05, "audio edge %d start", n)
+		// Players place fragments by tfdt, not the sidx: it is item time too,
+		// at most one AAC frame (plus rounding) from the piece.
+		tfdt := decodeTime(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, n))
+		assert.InDelta(t, first.Start, tfdt, 1e-3, "audio edge %d tfdt", n)
+		assert.InDelta(t, piece.Start, tfdt, 1024.0/44100+1e-3, "audio edge %d tfdt", n)
 		assert.InDelta(t, piece.End, last.Start+last.Duration, 0.05, "audio edge %d end", n)
 	}
 	a0 := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0))
@@ -112,6 +125,9 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 		assert.Equal(t, 160, tr.Width)
 		last := tr.Fragments[len(tr.Fragments)-1]
 		assert.InDelta(t, piece.Start, tr.Fragments[0].Start, 1.0/24, "video edge %d start", n)
+		tfdt := decodeTime(t, space, feed.EdgeName(id, p.Edit, feed.EdgeVideo, n))
+		// The source's frames are at k/24 s: the edge keeps their times.
+		assert.InDelta(t, math.Ceil(piece.Start*24-1e-6)/24, tfdt, 1e-6, "video edge %d tfdt", n)
 		assert.InDelta(t, piece.End, last.Start+last.Duration, 1.0/24, "video edge %d end", n)
 	}
 	v1 := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeVideo, 1))
@@ -215,7 +231,7 @@ func TestEdgesNonAVCVideo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", d.EdgesError)
 	p := plan(t, s, space, id)
-	assert.True(t, p.VideoUnsupported)
+	assert.True(t, p.Unsupported)
 	assert.Equal(t, 0, len(p.Video))
 	assert.Equal(t, p.Edit, d.EdgesEdit)
 	assert.Equal(t, 0, len(cacheNames(t, space, "edges")))
@@ -350,8 +366,90 @@ func TestEdgesOffsetTracks(t *testing.T) {
 	require.Equal(t, 2, len(v))
 	tr := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeVideo, 1))
 	assert.InDelta(t, 5.6, tr.Fragments[0].Start, 1.0/24)
+	assert.InDelta(t, tr.Fragments[0].Start, decodeTime(t, space, feed.EdgeName(id, p.Edit, feed.EdgeVideo, 1)), 1e-6)
 	a := hls.Edges(p.Original)
 	require.Equal(t, 2, len(a))
 	tr = cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0))
 	assert.InDelta(t, a[0].Start, tr.Fragments[0].Start, 0.05)
+}
+
+// The race check failing is recorded too, so the item is not encoded again
+// every tick.
+func TestEdgesRecheckFailure(t *testing.T) {
+	s, space, id := skipItem(t)
+	w := pipeline.NewEdges(s, space)
+	w.SetAfterEncode(func() { require.NoError(t, space.Own.Remove("media/1.m4a")) })
+	require.NoError(t, w.RunOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Contains(t, d.EdgesError, "original track")
+	pending, err := s.PendingEdges(10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(pending))
+	assert.Equal(t, 0, len(cacheNames(t, space, feed.EdgesDir(id))))
+}
+
+// skipItems makes n packaged audio items with silence {2.5,4.2}, wanted.
+func skipItems(t *testing.T, n int) (*feed.Store, feed.Space, []int64) {
+	t.Helper()
+	needFFmpeg(t)
+	s, space := newPipeline(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://example.com/feed"})
+	require.NoError(t, err)
+	var ids []int64
+	for i := range n {
+		id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g" + strconv.Itoa(i), Type: "audio", MediaURL: "https://example.com/ep"})
+		require.NoError(t, err)
+		require.NoError(t, s.EnqueueDownload(id))
+		name := "media/" + strconv.FormatInt(id, 10) + ".m4a"
+		putFixture(t, space, "audio.m4a", name)
+		require.NoError(t, s.MarkDownloadReady(id, name, 1))
+		require.NoError(t, s.SetSilenceRanges(id, []feed.Range{{Start: 2.5, End: 4.2, Action: "skip"}}))
+		ids = append(ids, id)
+	}
+	require.NoError(t, pipeline.NewPackager(s, space).RunOnce(context.Background()))
+	_, err = s.WantEdges(ids...)
+	require.NoError(t, err)
+	return s, space, ids
+}
+
+// One run takes only a few items, so it cannot hold up every other user.
+func TestEdgesRunTakesFewItems(t *testing.T) {
+	s, space, ids := skipItems(t, 3)
+	runEdges(t, s, space)
+	pending, err := s.PendingEdges(10)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{ids[2]}, pending)
+	runEdges(t, s, space)
+	pending, err = s.PendingEdges(10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(pending))
+}
+
+// A run out of time stops between edges; the next run keeps what it made.
+func TestEdgesBudgetResumes(t *testing.T) {
+	s, space, ids := skipItems(t, 1)
+	id := ids[0]
+	w := pipeline.NewEdges(s, space)
+	w.SetBudget(2, time.Nanosecond)
+	require.NoError(t, w.RunOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+	assert.Equal(t, "", d.EdgesError)
+	p := plan(t, s, space, id)
+	require.Equal(t, 2, len(hls.Edges(p.Original)))
+	first := feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0)
+	assert.Equal(t, []string{"a-0.mp4"}, cacheNames(t, space, feed.EdgesDir(id)+"/"+p.Edit))
+	made, err := space.Cache.Stat(first)
+	require.NoError(t, err)
+
+	runEdges(t, s, space)
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, p.Edit, d.EdgesEdit)
+	assert.Equal(t, 2, len(cacheNames(t, space, feed.EdgesDir(id)+"/"+p.Edit)))
+	again, err := space.Cache.Stat(first)
+	require.NoError(t, err)
+	assert.Equal(t, made.ModTime(), again.ModTime(), "edge 0 made again")
 }
