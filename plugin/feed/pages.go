@@ -1652,8 +1652,11 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 				audio, _, err := space.Track(d.LocalPath)
 				if err != nil {
 					// The ranges stay useful unclamped; failing here would
-					// cost the player its mute ranges too.
-					slog.Warn("feed: ranges without the track's duration", "id", id, "path", d.LocalPath, "err", err)
+					// cost the player its mute ranges too. The player polls,
+					// so this is logged once per item.
+					if _, seen := h.plugin.rangesWarned.LoadOrStore(rangesWarning{u.Username, id}, true); !seen {
+						slog.Warn("feed: ranges without the track's duration", "id", id, "path", d.LocalPath, "err", err)
+					}
 				} else if n := len(audio.Fragments); n > 0 {
 					last := audio.Fragments[n-1]
 					duration = last.Start + last.Duration

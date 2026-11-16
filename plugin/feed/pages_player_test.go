@@ -1,7 +1,9 @@
 package feed_test
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -327,13 +329,21 @@ func TestRangesPackagedTrackMissing(t *testing.T) {
 	require.NoError(t, store.SavePackage(id, "media/gone.m4a", "", 1))
 	require.NoError(t, store.SetSilenceRanges(id, []feed.Range{{Start: 3, End: 6, Action: "skip"}}))
 
-	var got struct {
-		Ranges []feed.Range `json:"ranges"`
+	// The player polls ranges: the track is warned about once, not on
+	// every poll.
+	var logs bytes.Buffer
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	for range 3 {
+		var got struct {
+			Ranges []feed.Range `json:"ranges"`
+		}
+		env.Get(t, "/apps/feed/api/ranges/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).JSON(&got)
+		require.Equal(t, 1, len(got.Ranges))
+		assert.InDelta(t, 3.1, got.Ranges[0].Start, 1e-9)
+		assert.InDelta(t, 5.9, got.Ranges[0].End, 1e-9)
 	}
-	env.Get(t, "/apps/feed/api/ranges/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).JSON(&got)
-	require.Equal(t, 1, len(got.Ranges))
-	assert.InDelta(t, 3.1, got.Ranges[0].Start, 1e-9)
-	assert.InDelta(t, 5.9, got.Ranges[0].End, 1e-9)
+	assert.Equal(t, 1, strings.Count(logs.String(), "ranges without the track's duration"), logs.String())
 }
 
 // The web player's YouTube video downloads first, as ResolveMedia's does:

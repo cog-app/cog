@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"sync"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/assets"
@@ -70,6 +71,15 @@ type Plugin struct {
 	profanity    *profanity.Plugin // discovered in Start; may be nil
 	runOrchestra OrchestratorRunner
 	pokes        chan PokeRequest
+	// rangesWarned holds the items (rangesWarning) whose unreadable track
+	// Ranges has logged: the player polls it.
+	rangesWarned sync.Map
+}
+
+// rangesWarning keys Plugin.rangesWarned.
+type rangesWarning struct {
+	user string
+	item int64
 }
 
 // New creates a new feed plugin instance.
