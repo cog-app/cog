@@ -94,6 +94,19 @@ any run of segments by byte range out of one file.
     names carry the format id, so a player holding playlists for a format no
     longer chosen gets 410 for its segments, never another format's bytes,
     and restarts.
+  - **A URL is not served the moment it is resolved.** yt-dlp's JSON gives
+    each https format an `available_at` (unix seconds, a few seconds after
+    the resolve; yt-dlp itself sleeps for it), and googlevideo answers 403
+    to a request before then. `youtube_streams.available_at` keeps it with
+    the URL (0 = none). Before Cog's own first request (the index read,
+    a proxied range) and before a direct-mode 302, Cog waits for it
+    (`AwaitAvailable`, in `remoteYouTube` and `remoteTrack`): server-side,
+    so a player is never redirected to a URL that would refuse it. A cached
+    URL past its time is not waited for. The wait is bounded: a URL more
+    than 30 s off is googlevideo failing (502, or a download from
+    `ResolveMedia`), not a long hold; and it ends with the request's
+    context, so a client that leaves causes no wait-then-fetch. A 403 after
+    `available_at` still means the URL is dead: resolve afresh, as below.
   - Cog reads each track's `sidx` and `moov` with one Range request (about
     256 KB, `RemoteTrack`) and writes the master and media playlists with the
     same presentation code as a local item. Captions are absent (none without

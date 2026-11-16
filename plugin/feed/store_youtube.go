@@ -22,7 +22,7 @@ const youtubeResolveTimeout = 2 * time.Minute
 // are present.
 func (s *Store) YouTubeStreams(itemID int64) (video, audio YouTubeTrack, ok bool, err error) {
 	rows, err := s.db.Query(
-		`SELECT kind, format_id, url, expires_at FROM youtube_streams WHERE item_id = ?`, itemID)
+		`SELECT kind, format_id, url, expires_at, available_at FROM youtube_streams WHERE item_id = ?`, itemID)
 	if err != nil {
 		return video, audio, false, fmt.Errorf("youtube streams: %w", err)
 	}
@@ -31,12 +31,15 @@ func (s *Store) YouTubeStreams(itemID int64) (video, audio YouTubeTrack, ok bool
 	for rows.Next() {
 		var t YouTubeTrack
 		var kind string
-		var expires int64
-		if err := rows.Scan(&kind, &t.FormatID, &t.URL, &expires); err != nil {
+		var expires, available int64
+		if err := rows.Scan(&kind, &t.FormatID, &t.URL, &expires, &available); err != nil {
 			return video, audio, false, fmt.Errorf("youtube streams: %w", err)
 		}
 		t.Kind = hls.Kind(kind)
 		t.ExpiresAt = time.Unix(expires, 0)
+		if available != 0 {
+			t.AvailableAt = time.Unix(available, 0)
+		}
 		switch t.Kind {
 		case hls.Video:
 			video, haveVideo = t, true
@@ -58,11 +61,15 @@ func (s *Store) SaveYouTubeStreams(itemID int64, video, audio YouTubeTrack) erro
 	}
 	defer tx.Rollback()
 	for _, t := range []YouTubeTrack{video, audio} {
+		var available int64
+		if !t.AvailableAt.IsZero() {
+			available = t.AvailableAt.Unix()
+		}
 		_, err := tx.Exec(
-			`INSERT INTO youtube_streams(item_id, kind, format_id, url, expires_at) VALUES(?, ?, ?, ?, ?)
+			`INSERT INTO youtube_streams(item_id, kind, format_id, url, expires_at, available_at) VALUES(?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(item_id, kind) DO UPDATE SET format_id = excluded.format_id,
-			   url = excluded.url, expires_at = excluded.expires_at`,
-			itemID, string(t.Kind), t.FormatID, t.URL, t.ExpiresAt.Unix())
+			   url = excluded.url, expires_at = excluded.expires_at, available_at = excluded.available_at`,
+			itemID, string(t.Kind), t.FormatID, t.URL, t.ExpiresAt.Unix(), available)
 		if err != nil {
 			return fmt.Errorf("save youtube streams: %w", err)
 		}

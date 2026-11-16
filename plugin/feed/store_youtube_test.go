@@ -52,6 +52,8 @@ func TestYouTubeStreamsRoundTrip(t *testing.T) {
 	id := youtubeItem(t, s)
 	exp := time.Unix(1_800_000_000, 0)
 	v, a := tracks(exp)
+	// A track with no available_at reads back with none.
+	v.AvailableAt = time.Unix(1_799_999_000, 0)
 	require.NoError(t, s.SaveYouTubeStreams(id, v, a))
 	gv, ga, ok, err := s.YouTubeStreams(id)
 	require.NoError(t, err)

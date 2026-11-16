@@ -66,6 +66,9 @@ func (p *Plugin) remoteYouTube(ctx context.Context, store *Store, username strin
 	if err != nil {
 		return remotePresentation{}, err
 	}
+	if err := p.awaitTracks(ctx, itemID, v, a); err != nil {
+		return remotePresentation{}, err
+	}
 	rp := remotePresentation{Video: v, Audio: a}
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
@@ -102,16 +105,39 @@ func (p *Plugin) remoteIndex(ctx context.Context, store *Store, username string,
 	return t, yt.FormatID, nil
 }
 
-// remoteTrack is the item's current googlevideo track of kind.
+// remoteTrack is the item's current googlevideo track of kind, once its URL
+// is available (awaitTracks): whoever asks for it next, Cog or a player
+// redirected there, is not refused for asking early.
 func (p *Plugin) remoteTrack(ctx context.Context, store *Store, username string, itemID int64, watchURL string, kind hls.Kind, refresh bool) (YouTubeTrack, error) {
 	v, a, err := p.youtubeTracks(ctx, store, username, itemID, watchURL, p.ctx.Now(), refresh)
 	if err != nil {
 		return YouTubeTrack{}, err
 	}
+	t := a
 	if kind == hls.Video {
-		return v, nil
+		t = v
 	}
-	return a, nil
+	if err := p.awaitTracks(ctx, itemID, t); err != nil {
+		return YouTubeTrack{}, err
+	}
+	return t, nil
+}
+
+// awaitTracks waits until googlevideo serves the tracks' URLs
+// (AwaitAvailable): yt-dlp hands out URLs that are refused (403) for a few
+// seconds. A cached URL past its time is not waited for. A URL further off
+// than youtubeAvailableWait is googlevideo failing (errUpstream); a client
+// that leaves ends the wait with its context's error.
+func (p *Plugin) awaitTracks(ctx context.Context, itemID int64, tracks ...YouTubeTrack) error {
+	err := AwaitAvailable(ctx, p.ctx.Now(), tracks...)
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
+		return fmt.Errorf("youtube item %d: %w", itemID, err)
+	default:
+		return fmt.Errorf("%w: youtube item %d: %w", errUpstream, itemID, err)
+	}
 }
 
 // remoteSegmentPrefix starts the name of every remote segment file, and

@@ -498,12 +498,16 @@ func TestHLSSubsTimestampMapOffset(t *testing.T) {
 // fixtures at /video and /audio (and at /video2 and /audio2, which are never
 // refused) with byte ranges, answering /video and /audio with 403 while
 // refuse is set. Every answer sets a cookie, which Cog must not relay.
+// Like googlevideo, it refuses every path, 403, while early says so (see
+// refuseEarly).
 type fakeGooglevideo struct {
 	*httptest.Server
-	hits   atomic.Int32 // every request
-	refuse atomic.Bool
-	mu     sync.Mutex
-	header http.Header // the last request's
+	hits    atomic.Int32 // every request
+	refuse  atomic.Bool
+	refused atomic.Int32 // 403s answered
+	mu      sync.Mutex
+	header  http.Header // the last request's
+	early   func() bool
 }
 
 func googlevideo(t *testing.T) *fakeGooglevideo {
@@ -516,9 +520,11 @@ func googlevideo(t *testing.T) *fakeGooglevideo {
 			gv.hits.Add(1)
 			gv.mu.Lock()
 			gv.header = r.Header.Clone()
+			early := gv.early != nil && gv.early()
 			gv.mu.Unlock()
 			w.Header().Set("Set-Cookie", "YSC=upstream; Path=/")
-			if refusable && gv.refuse.Load() {
+			if early || (refusable && gv.refuse.Load()) {
+				gv.refused.Add(1)
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -533,6 +539,18 @@ func googlevideo(t *testing.T) *fakeGooglevideo {
 	gv.Server = httptest.NewServer(mux)
 	t.Cleanup(gv.Close)
 	return gv
+}
+
+// refuseEarly makes gv refuse, as googlevideo does, every request made on
+// env's clock before the available_at s last handed out.
+func (gv *fakeGooglevideo) refuseEarly(env *cogtest.Env, s *trackStub) {
+	gv.mu.Lock()
+	defer gv.mu.Unlock()
+	gv.early = func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return env.Clock.Now().Before(s.availableAt)
+	}
 }
 
 // lastHeader is the header of the last request googlevideo got.
@@ -551,7 +569,9 @@ type trackStub struct {
 	videoID, audioID string
 	err              error
 	formats          []string
-	pinsDead         bool // a request for pinned formats fails
+	pinsDead         bool          // a request for pinned formats fails
+	availableIn      time.Duration // each resolve's available_at, from env's clock
+	availableAt      time.Time     // the last resolve's
 }
 
 // stubTracks installs a trackStub answering with srv's /video and /audio.
@@ -570,8 +590,13 @@ func stubTracks(t *testing.T, env *cogtest.Env, srv *fakeGooglevideo) *trackStub
 			return feed.YouTubeTrack{}, feed.YouTubeTrack{}, errors.New("yt-dlp: requested format is not available")
 		}
 		exp := env.Clock.Now().Add(6 * time.Hour)
-		return feed.YouTubeTrack{Kind: hls.Video, FormatID: s.videoID, URL: s.video, ExpiresAt: exp},
-			feed.YouTubeTrack{Kind: hls.Audio, FormatID: s.audioID, URL: s.audio, ExpiresAt: exp}, nil
+		var avail time.Time
+		if s.availableIn != 0 {
+			avail = env.Clock.Now().Add(s.availableIn)
+		}
+		s.availableAt = avail
+		return feed.YouTubeTrack{Kind: hls.Video, FormatID: s.videoID, URL: s.video, ExpiresAt: exp, AvailableAt: avail},
+			feed.YouTubeTrack{Kind: hls.Audio, FormatID: s.audioID, URL: s.audio, ExpiresAt: exp, AvailableAt: avail}, nil
 	}))
 	return s
 }
@@ -590,6 +615,14 @@ func (s *trackStub) set(video, audio string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.video, s.audio, s.err = video, audio, err
+}
+
+// availableAfter makes each resolve from now on hand out URLs available d
+// after it, on env's clock.
+func (s *trackStub) availableAfter(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.availableIn = d
 }
 
 // asked is the formats the stub was asked for, in order.

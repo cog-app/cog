@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
@@ -28,6 +29,14 @@ func SetTrackResolver(f func(ctx context.Context, watchURL, format string) (YouT
 	old := resolveTracks
 	resolveTracks = f
 	return func() { resolveTracks = old }
+}
+
+// SetAvailableSleep makes AwaitAvailable wait with f, and returns what puts
+// the real wait back.
+func SetAvailableSleep(f func(ctx context.Context, d time.Duration) error) func() {
+	old := sleepFor
+	sleepFor = f
+	return func() { sleepFor = old }
 }
 
 // YouTubeModeOf is how p serves remote segments.

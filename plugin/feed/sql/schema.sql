@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS youtube_streams (
     kind TEXT NOT NULL CHECK (kind IN ('audio','video')),
     format_id TEXT NOT NULL,
     url TEXT NOT NULL,
-    expires_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL, available_at INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (item_id, kind)
 );
 
