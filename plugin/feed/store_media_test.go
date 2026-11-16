@@ -331,15 +331,23 @@ func TestRecordEdit(t *testing.T) {
 	assert.True(t, errors.Is(err, feed.ErrEditNotFound))
 }
 
-func TestPackagedItemIDs(t *testing.T) {
+func TestPackagedEdges(t *testing.T) {
 	store, id := readyItem(t)
-	ids, err := store.PackagedItemIDs()
+	edges, err := store.PackagedEdges()
 	require.NoError(t, err)
-	assert.Equal(t, 0, len(ids))
+	assert.Equal(t, 0, len(edges))
 	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
-	ids, err = store.PackagedItemIDs()
+	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
-	assert.Equal(t, []int64{id}, ids)
+	assert.Equal(t, map[int64]string{id: ""}, edges)
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	edges, err = store.PackagedEdges()
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]string{id: "abcdefabcdef"}, edges)
+	require.NoError(t, store.MarkEdgesError(id, "abcdefabcdef", "boom"))
+	edges, err = store.PackagedEdges()
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]string{id: ""}, edges, "failed edges are not kept")
 }
 
 func TestEdgesNotPendingUntilWanted(t *testing.T) {

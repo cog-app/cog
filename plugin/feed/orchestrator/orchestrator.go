@@ -138,4 +138,9 @@ func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin,
 	if err := pkg.RunCleanOnce(ctx); err != nil {
 		log.Error("feed orchestrator: package clean", "user", username, "err", err)
 	}
+
+	// Last: the clean track RunCleanOnce makes is one of the renditions cut.
+	if err := pipeline.NewEdges(store, space).RunOnce(ctx); err != nil {
+		log.Error("feed orchestrator: edges", "user", username, "err", err)
+	}
 }

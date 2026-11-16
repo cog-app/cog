@@ -71,7 +71,16 @@ func (s Space) Keep(name, tmp string) (int64, error) {
 // Track reads the fragment index of a stored track file (hls.ReadTrack),
 // which reads only the head of the file, and returns it with the file's size.
 func (s Space) Track(stored string) (hls.Track, int64, error) {
-	f, err := s.Own.Open(Name(stored))
+	return readTrack(s.Own, Name(stored))
+}
+
+// CachedTrack is Track for a track file in the cache, such as an edge.
+func (s Space) CachedTrack(name string) (hls.Track, int64, error) {
+	return readTrack(s.Cache, name)
+}
+
+func readTrack(from plugin.Storage, stored string) (hls.Track, int64, error) {
+	f, err := from.Open(stored)
 	if err != nil {
 		return hls.Track{}, 0, fmt.Errorf("open track: %w", err)
 	}

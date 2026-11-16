@@ -163,14 +163,28 @@ func newHLSKey() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// PackagedItemIDs returns the item ids of every packaged download, ordered.
-func (s *Store) PackagedItemIDs() ([]int64, error) {
-	rows, err := s.db.Query(`SELECT item_id FROM downloads
-		WHERE package_state = 'done' ORDER BY item_id`)
+// PackagedEdges maps every packaged download's item id to the edit whose
+// edges it keeps: "" when it has none made, or they failed.
+func (s *Store) PackagedEdges() (map[int64]string, error) {
+	rows, err := s.db.Query(`SELECT item_id, CASE WHEN edges_error = '' THEN edges_edit ELSE '' END
+		FROM downloads WHERE package_state = 'done'`)
 	if err != nil {
-		return nil, fmt.Errorf("packaged item ids: %w", err)
+		return nil, fmt.Errorf("packaged edges: %w", err)
 	}
-	return scanInt64IDs(rows, "packaged item ids")
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var edit string
+		if err := rows.Scan(&id, &edit); err != nil {
+			return nil, fmt.Errorf("packaged edges: %w", err)
+		}
+		out[id] = edit
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("packaged edges: %w", err)
+	}
+	return out, nil
 }
 
 // WantEdges records that players want the skip presentation of the items. It

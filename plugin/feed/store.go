@@ -916,12 +916,17 @@ func (s *Store) GetSilenceRanges(itemID int64) ([]Range, error) {
 	if err != nil {
 		return nil, err
 	}
+	return d.silenceRanges()
+}
+
+// silenceRanges decodes d's cached silence ranges.
+func (d Download) silenceRanges() ([]Range, error) {
 	if d.SilenceRanges == "" {
 		return nil, nil
 	}
 	var rs []Range
 	if err := json.Unmarshal([]byte(d.SilenceRanges), &rs); err != nil {
-		return nil, fmt.Errorf("decode silence ranges for item %d: %w", itemID, err)
+		return nil, fmt.Errorf("decode silence ranges for item %d: %w", d.ItemID, err)
 	}
 	return rs, nil
 }
