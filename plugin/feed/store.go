@@ -1995,6 +1995,8 @@ var (
 	settingAutoplayNext  = BoolSetting("autoplay_next", true)
 	settingSkipSilence   = BoolSetting("skip_silence", false)
 	settingHideEmpty     = BoolSetting("hide_empty", false)
+
+	settingSkipSilenceMinSec = FloatSetting("skip_silence_min_sec", 1.0)
 )
 
 // The bounds of the player preferences a client may set.
@@ -2003,6 +2005,9 @@ const (
 	MaxSpeed   = 4.0
 	MinSkipSec = 1
 	MaxSkipSec = 120
+
+	MinSkipSilenceSec = 0.5
+	MaxSkipSilenceSec = 10.0
 )
 
 // PlayerPrefs is the per-user set of media-player preferences.
@@ -2014,6 +2019,9 @@ type PlayerPrefs struct {
 	AutoplayNext bool    `json:"autoplayNext"`
 	SkipSilence  bool    `json:"skipSilence"`
 	HideEmpty    bool    `json:"hideEmpty"`
+
+	// SkipSilenceMinSec is the shortest silence skip silence cuts.
+	SkipSilenceMinSec float64 `json:"skipSilenceMinSec"`
 }
 
 // LoadPlayerPrefs reads the per-user player preferences, falling back to defaults.
@@ -2041,6 +2049,9 @@ func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
 	if p.HideEmpty, err = settingHideEmpty.Get(s.db); err != nil {
 		return p, fmt.Errorf("load hide_empty: %w", err)
 	}
+	if p.SkipSilenceMinSec, err = settingSkipSilenceMinSec.Get(s.db); err != nil {
+		return p, fmt.Errorf("load skip_silence_min_sec: %w", err)
+	}
 	return p, nil
 }
 
@@ -2066,6 +2077,9 @@ func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
 	}
 	if err := settingHideEmpty.Set(s.db, p.HideEmpty); err != nil {
 		return fmt.Errorf("save hide_empty: %w", err)
+	}
+	if err := settingSkipSilenceMinSec.Set(s.db, p.SkipSilenceMinSec); err != nil {
+		return fmt.Errorf("save skip_silence_min_sec: %w", err)
 	}
 	return nil
 }

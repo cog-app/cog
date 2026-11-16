@@ -1437,6 +1437,10 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 				flex-wrap: wrap;
 				margin-bottom: 0.5rem;
 			}
+			.feed-player .player-gear-speeds button[aria-pressed="true"] {
+				background: var(--color-primary);
+				color: #fff;
+			}
 			.feed-player .player-gear-toggle {
 				display: block;
 				width: 100%;
@@ -1534,6 +1538,12 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 						<button class="btn btn-outline btn-sm" data-speed="1.25" type="button">1.25&times;</button>
 						<button class="btn btn-outline btn-sm" data-speed="1.5" type="button">1.5&times;</button>
 						<button class="btn btn-outline btn-sm" data-speed="2" type="button">2&times;</button>
+					</div>
+					<div class="player-gear-label">Shortest silence skipped</div>
+					<div class="player-gear-speeds">
+						for _, m := range []string{"0.5", "1", "2", "3", "5"} {
+							<button class="btn btn-outline btn-sm" data-min-silence={ m } type="button" aria-pressed={ strconv.FormatBool(m == strconv.FormatFloat(prefs.SkipSilenceMinSec, 'f', -1, 64)) }>{ m } s</button>
+						}
 					</div>
 					<button class="player-gear-toggle" data-toggle="skip_silence" type="button" aria-pressed={ strconv.FormatBool(prefs.SkipSilence) }>Skip silence</button>
 					<button class="player-gear-toggle" data-toggle="autoplay_next" type="button" aria-pressed={ strconv.FormatBool(prefs.AutoplayNext) }>Autoplay next</button>

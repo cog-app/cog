@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
@@ -1637,7 +1639,37 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 				httperr.Internal(w, r, err)
 				return
 			}
-			ranges = append(ranges, skips...)
+			prefs, err := store.LoadPlayerPrefs()
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			// The end of the item bounds the cuts when it is known; the
+			// package knows it, and silencedetect never reports a range
+			// that runs to the end of the file.
+			duration := math.Inf(1)
+			if d.PackageState == "done" {
+				audio, _, err := space.Track(d.LocalPath)
+				if err != nil {
+					httperr.Internal(w, r, err)
+					return
+				}
+				if n := len(audio.Fragments); n > 0 {
+					last := audio.Fragments[n-1]
+					duration = last.Start + last.Duration
+				}
+			}
+			var silences []hls.Cut
+			for _, sk := range skips {
+				if sk.Action == "skip" {
+					silences = append(silences, hls.Cut{Start: sk.Start, End: sk.End})
+				} else {
+					ranges = append(ranges, sk)
+				}
+			}
+			for _, c := range hls.EffectiveCuts(silences, prefs.SkipSilenceMinSec, duration) {
+				ranges = append(ranges, Range{Start: c.Start, End: c.End, Action: "skip"})
+			}
 		} else {
 			pending = true
 		}
@@ -2190,6 +2222,11 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.FormValue("hide_empty"); v != "" {
 		cur.HideEmpty = v == "true" || v == "1" || v == "on"
+	}
+	if v := r.FormValue("skip_silence_min_sec"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cur.SkipSilenceMinSec = min(max(f, MinSkipSilenceSec), MaxSkipSilenceSec)
+		}
 	}
 	if err := store.SavePlayerPrefs(cur); err != nil {
 		slog.Error("feed: save player prefs", "err", err)

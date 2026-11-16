@@ -2589,16 +2589,18 @@ func (*GetPlayerPrefsRequest) Descriptor() ([]byte, []int) {
 }
 
 type PlayerPrefs struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Speed         float64                `protobuf:"fixed64,1,opt,name=speed,proto3" json:"speed,omitempty"`
-	SkipBackSec   int32                  `protobuf:"varint,2,opt,name=skip_back_sec,json=skipBackSec,proto3" json:"skip_back_sec,omitempty"`
-	SkipFwdSec    int32                  `protobuf:"varint,3,opt,name=skip_fwd_sec,json=skipFwdSec,proto3" json:"skip_fwd_sec,omitempty"`
-	Volume        float64                `protobuf:"fixed64,4,opt,name=volume,proto3" json:"volume,omitempty"`
-	AutoplayNext  bool                   `protobuf:"varint,5,opt,name=autoplay_next,json=autoplayNext,proto3" json:"autoplay_next,omitempty"`
-	SkipSilence   bool                   `protobuf:"varint,6,opt,name=skip_silence,json=skipSilence,proto3" json:"skip_silence,omitempty"`
-	HideEmpty     bool                   `protobuf:"varint,7,opt,name=hide_empty,json=hideEmpty,proto3" json:"hide_empty,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Speed        float64                `protobuf:"fixed64,1,opt,name=speed,proto3" json:"speed,omitempty"`
+	SkipBackSec  int32                  `protobuf:"varint,2,opt,name=skip_back_sec,json=skipBackSec,proto3" json:"skip_back_sec,omitempty"`
+	SkipFwdSec   int32                  `protobuf:"varint,3,opt,name=skip_fwd_sec,json=skipFwdSec,proto3" json:"skip_fwd_sec,omitempty"`
+	Volume       float64                `protobuf:"fixed64,4,opt,name=volume,proto3" json:"volume,omitempty"`
+	AutoplayNext bool                   `protobuf:"varint,5,opt,name=autoplay_next,json=autoplayNext,proto3" json:"autoplay_next,omitempty"`
+	SkipSilence  bool                   `protobuf:"varint,6,opt,name=skip_silence,json=skipSilence,proto3" json:"skip_silence,omitempty"`
+	HideEmpty    bool                   `protobuf:"varint,7,opt,name=hide_empty,json=hideEmpty,proto3" json:"hide_empty,omitempty"`
+	// Shortest silence skipped, in seconds. 0 means unchanged on a set.
+	SkipSilenceMinSec float64 `protobuf:"fixed64,8,opt,name=skip_silence_min_sec,json=skipSilenceMinSec,proto3" json:"skip_silence_min_sec,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PlayerPrefs) Reset() {
@@ -2678,6 +2680,13 @@ func (x *PlayerPrefs) GetHideEmpty() bool {
 		return x.HideEmpty
 	}
 	return false
+}
+
+func (x *PlayerPrefs) GetSkipSilenceMinSec() float64 {
+	if x != nil {
+		return x.SkipSilenceMinSec
+	}
+	return 0
 }
 
 type ChangesRequest struct {
@@ -3879,7 +3888,7 @@ const file_feed_proto_rawDesc = "" +
 	"\x11STATE_DOWNLOADING\x10\x03\x12\x0f\n" +
 	"\vSTATE_READY\x10\x04\x12\x0f\n" +
 	"\vSTATE_ERROR\x10\x05\"\x17\n" +
-	"\x15GetPlayerPrefsRequest\"\xe8\x01\n" +
+	"\x15GetPlayerPrefsRequest\"\x99\x02\n" +
 	"\vPlayerPrefs\x12\x14\n" +
 	"\x05speed\x18\x01 \x01(\x01R\x05speed\x12\"\n" +
 	"\rskip_back_sec\x18\x02 \x01(\x05R\vskipBackSec\x12 \n" +
@@ -3889,7 +3898,8 @@ const file_feed_proto_rawDesc = "" +
 	"\rautoplay_next\x18\x05 \x01(\bR\fautoplayNext\x12!\n" +
 	"\fskip_silence\x18\x06 \x01(\bR\vskipSilence\x12\x1d\n" +
 	"\n" +
-	"hide_empty\x18\a \x01(\bR\thideEmpty\"<\n" +
+	"hide_empty\x18\a \x01(\bR\thideEmpty\x12/\n" +
+	"\x14skip_silence_min_sec\x18\b \x01(\x01R\x11skipSilenceMinSec\"<\n" +
 	"\x0eChangesRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xfa\x03\n" +

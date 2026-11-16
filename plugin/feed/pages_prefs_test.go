@@ -81,6 +81,28 @@ func TestSavePlayerPrefsEndpoint(t *testing.T) {
 	}
 }
 
+func TestSavePlayerPrefsFormSkipSilenceMin(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "carol", "pass")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+	store := feedStore(t, env, u.Username)
+
+	for value, want := range map[string]float64{"3": 3, "99": 10, "0.1": 0.5} {
+		env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+			"csrf_token":           {csrfToken},
+			"skip_silence_min_sec": {value},
+		}, sessionCookie).Status(http.StatusNoContent)
+		got, err := store.LoadPlayerPrefs()
+		require.NoError(t, err)
+		if got.SkipSilenceMinSec != want {
+			t.Errorf("skip_silence_min_sec=%s stored %g, want %g", value, got.SkipSilenceMinSec, want)
+		}
+	}
+}
+
 func TestSidebarHidesEmptyWhenEnabled(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "u", "pass")

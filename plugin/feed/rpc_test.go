@@ -321,6 +321,48 @@ func TestPlayerPrefsOverGRPC(t *testing.T) {
 	}
 }
 
+func TestSetPlayerPrefsSkipSilenceMin(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+	get := func() *feedpb.PlayerPrefs {
+		t.Helper()
+		res, err := client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+		require.NoError(t, err)
+		return res.Msg
+	}
+
+	prefs := get()
+	assert.Equal(t, 1.0, prefs.SkipSilenceMinSec)
+
+	prefs.SkipSilenceMinSec = 2.5
+	_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+	require.NoError(t, err)
+	assert.Equal(t, 2.5, get().SkipSilenceMinSec)
+
+	// Zero is a client that predates the field: the stored value stays.
+	prefs.SkipSilenceMinSec = 0
+	prefs.Speed = 1.25
+	_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+	require.NoError(t, err)
+	after := get()
+	assert.Equal(t, 2.5, after.SkipSilenceMinSec)
+	assert.Equal(t, 1.25, after.Speed)
+
+	for _, bad := range []float64{0.4, 10.5, -1} {
+		prefs.SkipSilenceMinSec = bad
+		_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%g", bad)
+	}
+	assert.Equal(t, 2.5, get().SkipSilenceMinSec)
+}
+
+// Changing the shortest silence changes the plan, so the edges are remade.
+func TestSetPlayerPrefsResetsEdges(t *testing.T) {
+	t.Skip("Task 6")
+}
+
 func TestExportOPMLOverGRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")

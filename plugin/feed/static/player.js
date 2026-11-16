@@ -348,14 +348,17 @@
 			Object.assign(pendingPrefs, partial);
 			clearTimeout(prefTimer);
 			prefTimer = setTimeout(function () {
+				var reload = "skipSilenceMinSec" in pendingPrefs;
 				var body = Object.keys(pendingPrefs)
 					.map(function (k) {
-						var form = { speed: "speed", volume: "volume", skipSilence: "skip_silence", autoplayNext: "autoplay_next" }[k] || k;
+						var form = { speed: "speed", volume: "volume", skipSilence: "skip_silence", autoplayNext: "autoplay_next", skipSilenceMinSec: "skip_silence_min_sec" }[k] || k;
 						return form + "=" + encodeURIComponent(pendingPrefs[k]);
 					})
 					.join("&");
 				pendingPrefs = {};
 				post("/apps/feed/player/prefs", body, cfg.csrf)
+					// The ranges follow the pref, so read them once it is stored.
+					.then(function () { if (reload) loadRanges(); })
 					.catch(function (e) { console.error("feed: prefs", e); });
 			}, 400);
 		}
@@ -382,6 +385,14 @@
 		if (gearMenu) gearMenu.addEventListener("click", function (e) {
 			var sp = e.target.getAttribute("data-speed");
 			if (sp) { setSpeed(parseFloat(sp)); return; }
+			var ms = e.target.getAttribute("data-min-silence");
+			if (ms) {
+				gearMenu.querySelectorAll("[data-min-silence]").forEach(function (b) {
+					b.setAttribute("aria-pressed", b === e.target ? "true" : "false");
+				});
+				savePrefs({ skipSilenceMinSec: parseFloat(ms) });
+				return;
+			}
 			var tg = e.target.getAttribute("data-toggle");
 			if (tg === "skip_silence") {
 				cfg.skipSilence = !cfg.skipSilence;

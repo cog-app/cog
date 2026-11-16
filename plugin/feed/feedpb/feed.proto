@@ -370,6 +370,8 @@ message PlayerPrefs {
   bool autoplay_next = 5;
   bool skip_silence = 6;
   bool hide_empty = 7;
+  // Shortest silence skipped, in seconds. 0 means unchanged on a set.
+  double skip_silence_min_sec = 8;
 }
 
 // --- Sync --------------------------------------------------------------------

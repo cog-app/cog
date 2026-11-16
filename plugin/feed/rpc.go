@@ -608,10 +608,22 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skips must be in [%d, %d] seconds", MinSkipSec, MaxSkipSec))
 	case m.Volume < 0 || m.Volume > 1:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("volume must be in [0, 1]"))
+	case m.SkipSilenceMinSec != 0 && (m.SkipSilenceMinSec < MinSkipSilenceSec || m.SkipSilenceMinSec > MaxSkipSilenceSec):
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skip_silence_min_sec must be in [%g, %g]", MinSkipSilenceSec, MaxSkipSilenceSec))
 	}
 	store, err := s.store(ctx)
 	if err != nil {
 		return nil, err
+	}
+	cur, err := store.LoadPlayerPrefs()
+	if err != nil {
+		return nil, err
+	}
+	// Zero is "unchanged": clients that predate the field send whole
+	// PlayerPrefs without it.
+	minSilence := cur.SkipSilenceMinSec
+	if m.SkipSilenceMinSec != 0 {
+		minSilence = m.SkipSilenceMinSec
 	}
 	p := PlayerPrefs{
 		Speed:        m.Speed,
@@ -621,6 +633,8 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 		AutoplayNext: m.AutoplayNext,
 		SkipSilence:  m.SkipSilence,
 		HideEmpty:    m.HideEmpty,
+
+		SkipSilenceMinSec: minSilence,
 	}
 	if err := store.SavePlayerPrefs(p); err != nil {
 		return nil, err
@@ -637,6 +651,8 @@ func playerPrefsPB(p PlayerPrefs) *feedpb.PlayerPrefs {
 		AutoplayNext: p.AutoplayNext,
 		SkipSilence:  p.SkipSilence,
 		HideEmpty:    p.HideEmpty,
+
+		SkipSilenceMinSec: p.SkipSilenceMinSec,
 	}
 }
 

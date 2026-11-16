@@ -257,11 +257,42 @@ func TestRangesPendingUntilAnalysed(t *testing.T) {
 	assert.True(t, got.Pending)
 	assert.Equal(t, 0, len(got.Ranges))
 
-	require.NoError(t, store.SetSilenceRanges(itemID, []feed.Range{{Start: 1, End: 2, Action: "skip"}}))
+	require.NoError(t, store.SetSilenceRanges(itemID, []feed.Range{{Start: 1, End: 3, Action: "skip"}}))
 	got.Pending, got.Ranges = true, nil
 	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&got)
 	assert.False(t, got.Pending)
-	assert.Equal(t, []feed.Range{{Start: 1, End: 2, Action: "skip"}}, got.Ranges)
+	assert.Equal(t, []feed.Range{{Start: 1.1, End: 2.9, Action: "skip"}}, got.Ranges)
+}
+
+// The ranges endpoint applies the same effective cuts as a skip
+// presentation: short silences dropped, the rest shrunk at both ends.
+func TestRangesApplyMinSkip(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	store := feedStore(t, env, u.Username)
+	itemID := seedAudioItem(t, store, "https://cdn.example.com/ep6.mp3")
+	require.NoError(t, store.EnqueueDownload(itemID))
+	require.NoError(t, store.MarkDownloadStart(itemID))
+	require.NoError(t, store.MarkDownloadReady(itemID, "media/6.mp3", 10))
+	require.NoError(t, store.SetSilenceRanges(itemID, []feed.Range{{Start: 1, End: 1.5, Action: "skip"}, {Start: 3, End: 6, Action: "skip"}}))
+	path := "/apps/feed/api/ranges/" + strconv.FormatInt(itemID, 10)
+
+	var got struct {
+		Ranges []feed.Range `json:"ranges"`
+	}
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&got)
+	require.Equal(t, 1, len(got.Ranges))
+	assert.InDelta(t, 3.1, got.Ranges[0].Start, 1e-9)
+	assert.InDelta(t, 5.9, got.Ranges[0].End, 1e-9)
+
+	// A shorter minimum keeps the first silence as well.
+	prefs, err := store.LoadPlayerPrefs()
+	require.NoError(t, err)
+	prefs.SkipSilenceMinSec = 0.5
+	require.NoError(t, store.SavePlayerPrefs(prefs))
+	got.Ranges = nil
+	env.Get(t, path, u.Auth).Status(http.StatusOK).JSON(&got)
+	assert.Equal(t, 2, len(got.Ranges))
 }
 
 // The web player's YouTube video downloads first, as ResolveMedia's does:
