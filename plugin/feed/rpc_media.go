@@ -157,6 +157,7 @@ func videoPlayOf(dl Download) videoPlay {
 //
 // It is also false for an item that is to be muted (Download.muted): its
 // clean audio is made from a download, and googlevideo's is never clean.
+// A client that goes away meanwhile gets ctx's error, never a download.
 func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string, itemID int64, watchURL string) (master string, ok bool, err error) {
 	dl, err := store.FindDownload(itemID)
 	if err != nil {
@@ -167,6 +168,11 @@ func (p *Plugin) remoteMaster(ctx context.Context, store *Store, username string
 		return "", false, nil
 	}
 	if _, err := p.remoteYouTube(ctx, store, username, itemID, watchURL, false); err != nil {
+		if ctx.Err() != nil {
+			// The client went away; googlevideo did not fail, so there
+			// is nothing to fall back from.
+			return "", false, fmt.Errorf("youtube item %d: %w", itemID, ctx.Err())
+		}
 		if !errors.Is(err, errUpstream) {
 			return "", false, err
 		}

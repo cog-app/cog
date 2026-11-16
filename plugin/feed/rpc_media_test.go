@@ -3,6 +3,7 @@ package feed_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 func TestResolveMediaEnclosure(t *testing.T) {
@@ -266,11 +268,13 @@ func TestResolveMediaRemoteUnindexedFallsBack(t *testing.T) {
 	u := env.CreateUser(t, "alice", "pass")
 	files := httptest.NewServer(http.FileServer(http.Dir("testdata/media")))
 	t.Cleanup(files.Close)
-	stubTracks(t, env, googlevideo(t)).set(files.URL+"/plain-video.mp4", files.URL+"/plain-audio.m4a", nil)
+	stub := stubTracks(t, env, googlevideo(t))
+	stub.set(files.URL+"/plain-video.mp4", files.URL+"/plain-audio.m4a", nil)
 	id := remoteItem(t, env, "alice")
 
 	_, err := resolveVideo(t, env, u, id)
 	assert.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	assert.Equal(t, 1, len(stub.asked()))
 	d, err := feedStore(t, env, "alice").GetDownload(id)
 	require.NoError(t, err)
 	assert.Equal(t, "queued", d.State)
@@ -321,4 +325,28 @@ func TestResolveMediaRemoteMutedDownloads(t *testing.T) {
 	d, err := store.GetDownload(id)
 	require.NoError(t, err)
 	assert.Equal(t, "queued", d.State)
+}
+
+// A client that goes away while the tracks are checked gets its own error
+// back: googlevideo did not fail, so nothing is downloaded.
+func TestResolveMediaRemoteClientGone(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pass")
+	gv := googlevideo(t)
+	id := remoteItem(t, env, "alice")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	t.Cleanup(feed.SetTrackResolver(func(context.Context, string, string) (feed.YouTubeTrack, feed.YouTubeTrack, error) {
+		cancel()
+		exp := env.Clock.Now().Add(6 * time.Hour)
+		return feed.YouTubeTrack{Kind: hls.Video, FormatID: "137", URL: gv.URL + "/video", ExpiresAt: exp},
+			feed.YouTubeTrack{Kind: hls.Audio, FormatID: "140", URL: gv.URL + "/audio", ExpiresAt: exp}, nil
+	}))
+
+	_, err := feed.ResolveMediaAs(ctx, feedPlugin(t, env), "alice",
+		&feedpb.ResolveMediaRequest{ItemId: id, Variant: feedpb.Variant_VARIANT_VIDEO})
+	require.True(t, errors.Is(err, context.Canceled), fmt.Sprint(err))
+	d, err := feedStore(t, env, "alice").FindDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.State)
 }

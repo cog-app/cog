@@ -1,6 +1,13 @@
 package feed
 
-import "context"
+import (
+	"context"
+
+	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
+
+	"connectrpc.com/connect"
+)
 
 // SetStreamResolver makes ResolveMedia resolve YouTube streams with f, and
 // returns what puts the real one back.
@@ -27,4 +34,15 @@ func SetYouTubeMode(p *Plugin, mode YouTubeMode) func() {
 	old := p.youtubeModeOverride
 	p.youtubeModeOverride = mode
 	return func() { p.youtubeModeOverride = old }
+}
+
+// ResolveMediaAs calls ResolveMedia in process as username, with ctx, so a
+// test can cancel ctx as a client that goes away would.
+func ResolveMediaAs(ctx context.Context, p *Plugin, username string, req *feedpb.ResolveMediaRequest) (*feedpb.MediaSource, error) {
+	ctx = plugin.WithUserInfo(ctx, &plugin.UserInfo{Username: username})
+	res, err := (&FeedService{plugin: p}).ResolveMedia(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
 }
