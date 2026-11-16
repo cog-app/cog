@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/pipeline"
@@ -100,4 +101,32 @@ func TestTranscribeNoneSkips(t *testing.T) {
 	if d.NeedsTranscribe {
 		t.Error("flag should be cleared even when skipping")
 	}
+}
+
+// A transcription failure (here whisper-cli missing) is recorded, so what
+// waits on the captions can stop waiting; the flag stays, and the next tick
+// tries again.
+func TestTranscribeRecordsError(t *testing.T) {
+	s, space := newPipeline(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "rss", URL: "u"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "g", Type: "audio"})
+	require.NoError(t, err)
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, s.MarkDownloadStart(id))
+	_, err = space.Own.Put("media/in.wav", strings.NewReader("dummy"))
+	require.NoError(t, err)
+	require.NoError(t, s.MarkDownloadReady(id, "media/in.wav", 5))
+	require.NoError(t, s.EnqueueTranscribe(id))
+	modelsDir := filepath.Join(t.TempDir(), "models")
+	require.NoError(t, os.MkdirAll(modelsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(modelsDir, "ggml-base.en.bin"), []byte("fake"), 0o644))
+	require.NoError(t, s.SetSetting("whisper_models_dir", modelsDir))
+	require.NoError(t, s.SetSetting("whisper_cli_path", filepath.Join(t.TempDir(), "no-whisper-cli")))
+
+	require.NoError(t, pipeline.NewTranscribe(s, space).RunOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Contains(t, d.TranscribeError, "whisper-cli")
+	assert.True(t, d.NeedsTranscribe)
 }

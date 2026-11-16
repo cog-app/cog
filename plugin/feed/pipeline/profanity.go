@@ -52,6 +52,14 @@ func (w *Profanity) RunOnce(ctx context.Context) error {
 		}
 		if err := w.processOne(ctx, id); err != nil {
 			slog.Warn("feed profanity: process failed", "item_id", id, "err", err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Recorded so edges stop waiting for a clean rendition; the
+			// flag stays and the next tick tries again.
+			if err := w.store.MarkProfanityError(id, err.Error()); err != nil {
+				slog.Error("feed profanity: record error", "item_id", id, "err", err)
+			}
 		}
 	}
 	return nil

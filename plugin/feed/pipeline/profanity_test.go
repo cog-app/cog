@@ -167,3 +167,28 @@ func TestProfanityWorkerNoRangesDropsOldClean(t *testing.T) {
 	_, err = space.Own.Open(old)
 	assert.True(t, errors.Is(err, fs.ErrNotExist), "open old clean: %v", err)
 }
+
+// failing is a Processor that fails.
+type failing struct{}
+
+func (failing) Process(context.Context, string, string, []cogplugin.CaptionSegment) error {
+	return errors.New("tts: not configured")
+}
+
+// A muting failure is recorded, so what waits on muting can stop waiting;
+// the flag stays, and the next tick tries again. A success clears it.
+func TestProfanityWorkerRecordsError(t *testing.T) {
+	s, space := newPipeline(t)
+	id := noRangesItem(t, s, space)
+	require.NoError(t, pipeline.NewProfanity(s, space, failing{}).RunOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Contains(t, d.ProfanityError, "tts: not configured")
+	assert.True(t, d.NeedsProfanity)
+
+	require.NoError(t, pipeline.NewProfanity(s, space, &captureProcessor{}).RunOnce(context.Background()))
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.ProfanityError)
+	assert.False(t, d.NeedsProfanity)
+}

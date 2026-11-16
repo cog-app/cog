@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     edges_error TEXT NOT NULL DEFAULT '',
     edges_index TEXT NOT NULL DEFAULT '',
     edges_wanted_at INTEGER NOT NULL DEFAULT 0,
-    edges_failed_at INTEGER NOT NULL DEFAULT 0
+    edges_failed_at INTEGER NOT NULL DEFAULT 0,
+    profanity_error TEXT NOT NULL DEFAULT '',
+    transcribe_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (

@@ -246,9 +246,18 @@ The cuts are the same, so every rendition ends up the same length.
   in the orchestrator tick, two items or 60 s per run, **most recently asked
   first** (`edges_wanted_at`, refreshed when a pending item is asked for
   again, at most once a minute). An item whose clean audio is still to come
-  waits: a clean file without its track, or profanity muting that can still
-  run (it has captions, or they are being made). The Clean track is part of
-  the plan, and edges made before it landed would be reset under a player. The result is `downloads.edges_edit` (the plan's id) and
+  waits: a clean file without its track (until it is packaged or
+  `clean_track_error`), or profanity muting that can still run. Muting can
+  run when the profanity plugin is there (the orchestrator tells the worker),
+  `downloads.profanity_error` is empty, and the captions it needs are there
+  or being made with `downloads.transcribe_error` empty. The transcribe and
+  profanity workers record those errors (whisper-cli missing or failing, a
+  muting failure other than nothing to mute) and keep retrying every tick as
+  before; a success clears them, as do new captions (profanity) and a new
+  download (both). The Clean track is part of the plan, and edges made
+  before it landed would be reset under a player; once muting cannot finish,
+  the edges are made from what there is, and made again if a retry lands a
+  clean track. The result is `downloads.edges_edit` (the plan's id) and
   `downloads.edges_index` (each edge's byte layout), so playlists open no edge
   files. Edges live in the cache under `edges/<item>/<edit>/<a|c|v>-<n>.mp4`
   and are served as `edge-<edit>-<a|c|v>-<n>.mp4`.

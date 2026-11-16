@@ -181,7 +181,7 @@ func TestMarkDownloadReadyLeavesUncleanedAlone(t *testing.T) {
 // edgesPending reports whether the edges worker has the item to do.
 func edgesPending(t *testing.T, store *feed.Store, id int64) bool {
 	t.Helper()
-	ids, err := store.PendingEdges(10)
+	ids, err := store.PendingEdges(10, true)
 	require.NoError(t, err)
 	return len(ids) == 1 && ids[0] == id
 }
@@ -328,6 +328,53 @@ func TestForgetEdgesIfUnchanged(t *testing.T) {
 	assert.Equal(t, "", d.EdgesEdit)
 	assert.Equal(t, "", d.EdgesIndex)
 	assert.True(t, edgesPending(t, store, id))
+}
+
+// Profanity muting that cannot finish does not hold the edges back: a
+// transcription or muting failure is recorded, and without the profanity
+// plugin nothing mutes at all. The edges are then made from what there is.
+func TestEdgesProfanityCannotFinish(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	require.NoError(t, store.EnqueueProfanity(id))
+	require.NoError(t, store.EnqueueTranscribe(id))
+	require.False(t, edgesPending(t, store, id), "captions to come")
+	pending, err := store.PendingEdges(10, false)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{id}, pending, "no profanity plugin")
+
+	// Whisper failed: the captions are not coming.
+	require.NoError(t, store.MarkTranscribeError(id, "whisper-cli: not found"))
+	assert.True(t, edgesPending(t, store, id), "transcription failed")
+	// Captions came after all (a retry): muting can run again.
+	require.NoError(t, store.SetCaptionsPath(id, "captions/1.vtt"))
+	require.NoError(t, store.ClearNeedsTranscribe(id))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.TranscribeError)
+	assert.False(t, edgesPending(t, store, id), "profanity to run")
+
+	// Muting failed.
+	require.NoError(t, store.MarkProfanityError(id, "tts: not configured"))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "tts: not configured", d.ProfanityError)
+	assert.True(t, edgesPending(t, store, id), "muting failed")
+	// New captions are a new input: muting is tried again.
+	require.NoError(t, store.SetCaptionsPath(id, "captions/1b.vtt"))
+	assert.False(t, edgesPending(t, store, id), "new captions")
+
+	// A new download forgets both errors.
+	require.NoError(t, store.MarkTranscribeError(id, "boom"))
+	require.NoError(t, store.MarkProfanityError(id, "boom"))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.TranscribeError)
+	assert.Equal(t, "", d.ProfanityError)
 }
 
 func TestEdgesResetOnRepackage(t *testing.T) {

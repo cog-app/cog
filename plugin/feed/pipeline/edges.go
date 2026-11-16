@@ -50,8 +50,11 @@ type Edges struct {
 	afterEncode func()
 	// afterEdge, when set, runs after each edge is made (tests).
 	afterEdge func()
-	limit     int           // items a run takes
-	budget    time.Duration // how long a run encodes
+	// muting is whether profanity muting runs (the profanity plugin is
+	// there): only then do edges wait for it (Store.PendingEdges).
+	muting bool
+	limit  int           // items a run takes
+	budget time.Duration // how long a run encodes
 }
 
 // A run's default budget: an hour-long episode has hundreds of edges per
@@ -76,15 +79,16 @@ const edgeParamSetID = 1
 // errOutOfTime stops a run between edges; the item stays pending.
 var errOutOfTime = errors.New("edges: out of time")
 
-// NewEdges creates an Edges worker over the downloads in space.
-func NewEdges(s *feed.Store, space feed.Space) *Edges {
-	return &Edges{store: s, space: space, limit: edgesPerRun, budget: edgesRunBudget}
+// NewEdges creates an Edges worker over the downloads in space; muting is
+// whether profanity muting runs.
+func NewEdges(s *feed.Store, space feed.Space, muting bool) *Edges {
+	return &Edges{store: s, space: space, muting: muting, limit: edgesPerRun, budget: edgesRunBudget}
 }
 
 // RunOnce makes the edges of the first few items that want them and have
 // none, for as long as its budget lasts.
 func (w *Edges) RunOnce(ctx context.Context) error {
-	ids, err := w.store.PendingEdges(w.limit)
+	ids, err := w.store.PendingEdges(w.limit, w.muting)
 	if err != nil {
 		return fmt.Errorf("edges list pending: %w", err)
 	}

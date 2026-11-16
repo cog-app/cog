@@ -570,6 +570,8 @@ type Download struct {
 	EdgesEdit       string // the edit list the edges were made for; "" = none yet
 	EdgesError      string // why they could not be made
 	EdgesIndex      string // JSON EdgesIndex of the edges of EdgesEdit; "" until made
+	ProfanityError  string // why profanity muting last failed; "" if it has not
+	TranscribeError string // why transcription last failed; "" if it has not
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -811,6 +813,7 @@ func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64
 			completed_at = unixepoch(), package_state = '', package_error = '',
 			clean_track_path = '', clean_track_error = '',
 			edges_edit = '', edges_error = '', edges_index = '',
+			profanity_error = '', transcribe_error = '',
 			needs_profanity = CASE WHEN clean_audio_path != '' THEN 1 ELSE needs_profanity END,
 			clean_audio_path = ''
 		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
@@ -868,9 +871,10 @@ func (s *Store) DownloadFiles() ([]string, error) {
 	return out, rows.Err()
 }
 
-// SetCaptionsPath updates the captions_path for a download row.
+// SetCaptionsPath updates the captions_path for a download row. Muting
+// reads the captions, so its error is forgotten and it is tried afresh.
 func (s *Store) SetCaptionsPath(itemID int64, path string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ? WHERE item_id = ?`, path, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ?, profanity_error = '' WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set captions path: %w", err)
 	}
@@ -895,12 +899,14 @@ func (s *Store) GetDownload(itemID int64) (Download, error) {
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
 		       silence_ranges, silence_state, video_path, package_state, package_error,
-		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error, edges_index
+		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error, edges_index,
+		       profanity_error, transcribe_error
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
 		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
 		&d.CleanTrackPath, &d.CleanTrackError, &wanted, &d.EdgesEdit, &d.EdgesError, &d.EdgesIndex,
+		&d.ProfanityError, &d.TranscribeError,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
@@ -1012,9 +1018,31 @@ func (s *Store) PendingProfanityWithCaptions(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending profanity with captions")
 }
 
-// ClearNeedsProfanity clears the needs_profanity flag for a download.
+// MarkProfanityError records why profanity muting failed. needs_profanity
+// stays set, so the worker tries again; edges stop waiting for the clean
+// rendition (PendingEdges). New captions, a new download or a success
+// clear it.
+func (s *Store) MarkProfanityError(itemID int64, msg string) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET profanity_error = ? WHERE item_id = ?`, msg, itemID); err != nil {
+		return fmt.Errorf("mark profanity error: %w", err)
+	}
+	return nil
+}
+
+// MarkTranscribeError records why transcription failed. needs_transcribe
+// stays set, so the worker tries again; edges stop waiting for the captions
+// muting needs (PendingEdges). A new download or a success clear it.
+func (s *Store) MarkTranscribeError(itemID int64, msg string) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET transcribe_error = ? WHERE item_id = ?`, msg, itemID); err != nil {
+		return fmt.Errorf("mark transcribe error: %w", err)
+	}
+	return nil
+}
+
+// ClearNeedsProfanity clears the needs_profanity flag for a download, and
+// the error of an earlier try.
 func (s *Store) ClearNeedsProfanity(itemID int64) error {
-	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0 WHERE item_id = ?`, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0, profanity_error = '' WHERE item_id = ?`, itemID)
 	if err != nil {
 		return fmt.Errorf("clear needs profanity: %w", err)
 	}
@@ -1056,9 +1084,10 @@ func (s *Store) PendingTranscribeReady(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending transcribe ready")
 }
 
-// ClearNeedsTranscribe clears the needs_transcribe flag for a download.
+// ClearNeedsTranscribe clears the needs_transcribe flag for a download, and
+// the error of an earlier try.
 func (s *Store) ClearNeedsTranscribe(itemID int64) error {
-	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0 WHERE item_id = ?`, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0, transcribe_error = '' WHERE item_id = ?`, itemID)
 	if err != nil {
 		return fmt.Errorf("clear needs transcribe: %w", err)
 	}

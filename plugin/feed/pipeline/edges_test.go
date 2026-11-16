@@ -86,7 +86,7 @@ func cacheNames(t *testing.T, space feed.Space, dir string) []string {
 
 func runEdges(t *testing.T, s *feed.Store, space feed.Space) {
 	t.Helper()
-	require.NoError(t, pipeline.NewEdges(s, space).RunOnce(context.Background()))
+	require.NoError(t, pipeline.NewEdges(s, space, true).RunOnce(context.Background()))
 }
 
 func TestEdgesMakesExactPieces(t *testing.T) {
@@ -187,7 +187,7 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 	// source, where a re-timed encode would start at 4.1 + 1/24.
 	assert.InDelta(t, 4.125, v1.Fragments[0].Start, 0.001)
 
-	pending, err := s.PendingEdges(10)
+	pending, err := s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(pending))
 }
@@ -294,7 +294,7 @@ func TestEdgesFailureNotRetried(t *testing.T) {
 	d, err := s.GetDownload(id)
 	require.NoError(t, err)
 	assert.NotEqual(t, "", d.EdgesError)
-	pending, err := s.PendingEdges(10)
+	pending, err := s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(pending))
 	assert.Equal(t, 0, len(cacheNames(t, space, "edges")))
@@ -360,7 +360,7 @@ func TestEdgesInputsChangeDuringEncode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, space, id := skipItem(t)
 			stale := plan(t, s, space, id).Edit
-			w := pipeline.NewEdges(s, space)
+			w := pipeline.NewEdges(s, space, true)
 			w.SetAfterEncode(func() { change(t, s, id) })
 			require.NoError(t, w.RunOnce(context.Background()))
 			d, err := s.GetDownload(id)
@@ -446,13 +446,13 @@ func TestEdgesOffsetTracks(t *testing.T) {
 // every tick.
 func TestEdgesRecheckFailure(t *testing.T) {
 	s, space, id := skipItem(t)
-	w := pipeline.NewEdges(s, space)
+	w := pipeline.NewEdges(s, space, true)
 	w.SetAfterEncode(func() { require.NoError(t, space.Own.Remove("media/1.m4a")) })
 	require.NoError(t, w.RunOnce(context.Background()))
 	d, err := s.GetDownload(id)
 	require.NoError(t, err)
 	assert.Contains(t, d.EdgesError, "original track")
-	pending, err := s.PendingEdges(10)
+	pending, err := s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(pending))
 	assert.Equal(t, 0, len(cacheNames(t, space, feed.EdgesDir(id))))
@@ -486,11 +486,11 @@ func skipItems(t *testing.T, n int) (*feed.Store, feed.Space, []int64) {
 func TestEdgesRunTakesFewItems(t *testing.T) {
 	s, space, ids := skipItems(t, 3)
 	runEdges(t, s, space)
-	pending, err := s.PendingEdges(10)
+	pending, err := s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{ids[2]}, pending)
 	runEdges(t, s, space)
-	pending, err = s.PendingEdges(10)
+	pending, err = s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(pending))
 }
@@ -500,7 +500,7 @@ func TestEdgesRunTakesFewItems(t *testing.T) {
 func TestEdgesBudgetResumes(t *testing.T) {
 	s, space, ids := skipItems(t, 1)
 	id := ids[0]
-	w := pipeline.NewEdges(s, space)
+	w := pipeline.NewEdges(s, space, true)
 	w.SetBudget(2, time.Nanosecond)
 	require.NoError(t, w.RunOnce(context.Background()))
 	d, err := s.GetDownload(id)
@@ -534,7 +534,7 @@ func TestEdgesCancelKeepsMade(t *testing.T) {
 	first := feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := pipeline.NewEdges(s, space)
+	w := pipeline.NewEdges(s, space, true)
 	w.SetAfterEdge(cancel)
 	err := w.RunOnce(ctx)
 	assert.True(t, errors.Is(err, context.Canceled), "run: %v", err)
@@ -563,7 +563,7 @@ func TestEdgesMostRecentlyWantedFirst(t *testing.T) {
 		_, err := s.DB().Exec(`UPDATE downloads SET edges_wanted_at = ? WHERE item_id = ?`, at, ids[i])
 		require.NoError(t, err)
 	}
-	pending, err := s.PendingEdges(10)
+	pending, err := s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{ids[1], ids[2], ids[0]}, pending)
 
@@ -571,7 +571,7 @@ func TestEdgesMostRecentlyWantedFirst(t *testing.T) {
 	asked, err := s.WantEdges(ids[0])
 	require.NoError(t, err)
 	assert.True(t, asked)
-	pending, err = s.PendingEdges(10)
+	pending, err = s.PendingEdges(10, true)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{ids[0], ids[1], ids[2]}, pending)
 	// Asked again at once, it does not write.

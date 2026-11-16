@@ -7,6 +7,9 @@
 -- edges_wanted_at is when a player last asked for a pending item (unix
 -- seconds): the worker makes the most recently asked first. edges_failed_at
 -- is when edges_error was recorded: the worker tries again some hours on.
+-- profanity_error and transcribe_error say why muting or transcription last
+-- failed (their workers retry every tick; a success clears them): edges stop
+-- waiting for a clean rendition that cannot come.
 -- hls_edits keeps the cuts of every edit list a player was served, so a
 -- progress report can map its position back onto the item. duration is the
 -- media duration the cuts were planned against, where the item ends.
@@ -17,6 +20,8 @@ ALTER TABLE downloads ADD COLUMN edges_error TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN edges_index TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN edges_wanted_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE downloads ADD COLUMN edges_failed_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE downloads ADD COLUMN profanity_error TEXT NOT NULL DEFAULT '';
+ALTER TABLE downloads ADD COLUMN transcribe_error TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS hls_edits (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     id TEXT NOT NULL,

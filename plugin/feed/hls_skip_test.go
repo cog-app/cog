@@ -129,7 +129,7 @@ func runEdges(t *testing.T, env *cogtest.Env, username string) {
 	needFFmpeg(t)
 	space, err := feedPlugin(t, env).Space(username)
 	require.NoError(t, err)
-	require.NoError(t, pipeline.NewEdges(feedStore(t, env, username), space).RunOnce(context.Background()))
+	require.NoError(t, pipeline.NewEdges(feedStore(t, env, username), space, true).RunOnce(context.Background()))
 }
 
 var (

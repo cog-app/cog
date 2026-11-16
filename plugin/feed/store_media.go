@@ -77,7 +77,7 @@ func (s *Store) SaveCleanTrack(itemID int64, path string) error {
 // ResetCleanAudio forgets a clean file that no longer exists and asks for the
 // item to be cleaned again.
 func (s *Store) ResetCleanAudio(itemID int64) error {
-	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = '', needs_profanity = 1,
+	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = '', needs_profanity = 1, profanity_error = '',
 			edges_edit = '', edges_error = '', edges_index = ''
 		WHERE item_id = ?`, itemID)
 	if err != nil {
@@ -245,17 +245,23 @@ const edgesRetryAfter = 6 * time.Hour
 // made nor failed less than edgesRetryAfter ago (the worker clears the
 // error of a failed item it takes, RetryEdges). The Clean
 // rendition is part of the plan, so an item whose clean audio is still to
-// come waits: a clean file waiting for its track, or profanity muting still
-// to run (once its captions are made, which it needs). Edges made before
-// the clean track lands would be reset under a player and made twice.
-func (s *Store) PendingEdges(limit int) ([]int64, error) {
+// come waits: a clean file waiting for its track, or profanity muting that
+// can still run: muting runs at all (muting, the profanity plugin is
+// there), has not failed, and has its captions or they are being made and
+// have not failed. Edges made before the clean track lands would be reset
+// under a player and made twice. A failure (MarkProfanityError,
+// MarkTranscribeError) ends the wait: the edges are made from what there
+// is, and are made again if a retry lands a clean track.
+func (s *Store) PendingEdges(limit int, muting bool) ([]int64, error) {
 	rows, err := s.db.Query(`SELECT item_id FROM downloads
 		WHERE edges_wanted = 1 AND package_state = 'done' AND silence_state = 'done'
 			AND (edges_edit = '' AND edges_error = ''
 				OR edges_error != '' AND edges_failed_at < unixepoch() - ?)
 			AND NOT (clean_audio_path != '' AND clean_track_path = '' AND clean_track_error = '')
-			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1))
-		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`, int64(edgesRetryAfter/time.Second), limit)
+			AND NOT (? AND needs_profanity = 1 AND profanity_error = ''
+				AND (captions_path != '' OR needs_transcribe = 1 AND transcribe_error = ''))
+		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`,
+		int64(edgesRetryAfter/time.Second), muting, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending edges: %w", err)
 	}
