@@ -535,3 +535,67 @@ func TestEdgesCancelKeepsMade(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(made, again), "edge 0 made again")
 }
+
+// The worker makes the edges of the items most recently asked for first: a
+// playlist wanted long ago waits behind the episode being played now.
+func TestEdgesMostRecentlyWantedFirst(t *testing.T) {
+	s, _, ids := skipItems(t, 3)
+	for i, at := range []int64{100, 300, 200} {
+		_, err := s.DB().Exec(`UPDATE downloads SET edges_wanted_at = ? WHERE item_id = ?`, at, ids[i])
+		require.NoError(t, err)
+	}
+	pending, err := s.PendingEdges(10)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{ids[1], ids[2], ids[0]}, pending)
+
+	// Asking again for an item still pending puts it first.
+	asked, err := s.WantEdges(ids[0])
+	require.NoError(t, err)
+	assert.True(t, asked)
+	pending, err = s.PendingEdges(10)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{ids[0], ids[1], ids[2]}, pending)
+	// Asked again at once, it does not write.
+	asked, err = s.WantEdges(ids[0])
+	require.NoError(t, err)
+	assert.False(t, asked)
+}
+
+// A pref change that leaves an item's cuts as they were leaves its edit:
+// its edges are kept and reused, not made again.
+func TestEdgesReusedAfterPrefChange(t *testing.T) {
+	s, space, id := skipItem(t)
+	runEdges(t, s, space)
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	edit := d.EdgesEdit
+	require.NotEqual(t, "", edit)
+	dir := feed.EdgesDir(id) + "/" + edit
+	made := map[string]os.FileInfo{}
+	for _, name := range cacheNames(t, space, dir) {
+		fi, err := space.Cache.Stat(dir + "/" + name)
+		require.NoError(t, err)
+		made[name] = fi
+	}
+	require.Equal(t, 8, len(made))
+
+	// Both silences are 1.5 s or longer: the cuts stay.
+	prefs, err := s.LoadPlayerPrefs()
+	require.NoError(t, err)
+	prefs.SkipSilenceMinSec = 1.5
+	require.NoError(t, s.SavePlayerPrefs(prefs))
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	require.Equal(t, "", d.EdgesEdit, "edges forgotten")
+
+	require.NoError(t, pipeline.Collect(s, space))
+	runEdges(t, s, space)
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, edit, d.EdgesEdit)
+	for name, fi := range made {
+		again, err := space.Cache.Stat(dir + "/" + name)
+		require.NoError(t, err)
+		assert.True(t, os.SameFile(fi, again) && fi.ModTime().Equal(again.ModTime()), "%s made again", name)
+	}
+}

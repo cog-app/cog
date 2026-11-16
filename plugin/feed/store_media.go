@@ -197,9 +197,16 @@ func (s *Store) PackagedEdges() (map[int64]ItemEdges, error) {
 	return out, nil
 }
 
-// WantEdges records that players want the skip presentation of the items. It
-// reports whether any item was not wanted before, which is when the edges
-// worker has something new to do.
+// wantedRefresh is how stale a pending item's edges_wanted_at may grow
+// before a player asking for it again moves it to the front of the queue.
+// Within it, asking again only reads.
+const wantedRefresh = 60 // s
+
+// WantEdges records that players want the skip presentation of the items,
+// and when: the edges worker makes the most recently asked first. It
+// reports whether it wrote, which is when the worker has something new to
+// do: an item not wanted before, or one still pending asked for again more
+// than wantedRefresh after it last was.
 func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 	if len(itemIDs) == 0 {
 		return false, nil
@@ -207,26 +214,30 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 	// Read first: a master request for an item already wanted is the steady
 	// state and must not take the write lock.
 	rows, err := s.db.Query(`SELECT item_id FROM downloads
-		WHERE edges_wanted = 0 AND item_id IN (`+placeholders(len(itemIDs))+`)`, int64Args(itemIDs)...)
+		WHERE (edges_wanted = 0
+				OR edges_edit = '' AND edges_error = '' AND edges_wanted_at < unixepoch() - ?)
+			AND item_id IN (`+placeholders(len(itemIDs))+`)`,
+		append([]any{wantedRefresh}, int64Args(itemIDs)...)...)
 	if err != nil {
 		return false, fmt.Errorf("want edges: %w", err)
 	}
-	unwanted, err := scanInt64IDs(rows, "want edges")
+	asked, err := scanInt64IDs(rows, "want edges")
 	if err != nil {
 		return false, err
 	}
-	if len(unwanted) == 0 {
+	if len(asked) == 0 {
 		return false, nil
 	}
-	if _, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1
-		WHERE item_id IN (`+placeholders(len(unwanted))+`)`, int64Args(unwanted)...); err != nil {
+	if _, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1, edges_wanted_at = unixepoch()
+		WHERE item_id IN (`+placeholders(len(asked))+`)`, int64Args(asked)...); err != nil {
 		return false, fmt.Errorf("want edges: %w", err)
 	}
 	return true, nil
 }
 
-// PendingEdges returns up to limit wanted items whose edges are to be made:
-// packaged, silence detected, and neither made nor failed. The Clean
+// PendingEdges returns up to limit wanted items whose edges are to be made,
+// most recently asked for first: packaged, silence detected, and neither
+// made nor failed. The Clean
 // rendition is part of the plan, so an item whose clean audio is still to
 // come waits: a clean file waiting for its track, or profanity muting still
 // to run (once its captions are made, which it needs). Edges made before
@@ -237,7 +248,7 @@ func (s *Store) PendingEdges(limit int) ([]int64, error) {
 			AND edges_edit = '' AND edges_error = ''
 			AND NOT (clean_audio_path != '' AND clean_track_path = '' AND clean_track_error = '')
 			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1))
-		ORDER BY item_id LIMIT ?`, limit)
+		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending edges: %w", err)
 	}

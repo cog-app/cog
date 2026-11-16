@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS downloads (
     edges_wanted INTEGER NOT NULL DEFAULT 0,
     edges_edit TEXT NOT NULL DEFAULT '',
     edges_error TEXT NOT NULL DEFAULT '',
-    edges_index TEXT NOT NULL DEFAULT ''
+    edges_index TEXT NOT NULL DEFAULT '',
+    edges_wanted_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (

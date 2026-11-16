@@ -4,6 +4,8 @@
 -- edges were made for ('' = none yet), edges_error says why they could not be.
 -- edges_index records where each edge's init and media are in its file (JSON,
 -- feed.EdgesIndex), so playlists list edges without opening them.
+-- edges_wanted_at is when a player last asked for a pending item (unix
+-- seconds): the worker makes the most recently asked first.
 -- hls_edits keeps the cuts of every edit list a player was served, so a
 -- progress report can map its position back onto the item. duration is the
 -- media duration the cuts were planned against, where the item ends.
@@ -12,6 +14,7 @@ ALTER TABLE downloads ADD COLUMN edges_wanted INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE downloads ADD COLUMN edges_edit TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN edges_error TEXT NOT NULL DEFAULT '';
 ALTER TABLE downloads ADD COLUMN edges_index TEXT NOT NULL DEFAULT '';
+ALTER TABLE downloads ADD COLUMN edges_wanted_at INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS hls_edits (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     id TEXT NOT NULL,
