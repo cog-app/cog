@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -247,7 +248,7 @@ func TestReportProgressEditList(t *testing.T) {
 	u := env.CreateUser(t, "alice", "pass")
 	store := feedStore(t, env, u.Username)
 	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
-	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}))
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}, 10))
 	client := feedClient(t, env, u.AppPassword(t, "phone"))
 	ctx := context.Background()
 
@@ -261,31 +262,42 @@ func TestReportProgressEditList(t *testing.T) {
 	assert.True(t, math.Abs(got.Msg.Item.Playback.ProgressSec-8) < 1e-9)
 }
 
-func TestReportProgressEditListClampsToDuration(t *testing.T) {
-	env := cogtest.New(t, feed.New())
-	u := env.CreateUser(t, "alice", "pass")
-	store := feedStore(t, env, u.Username)
-	subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/feed", Title: "P"})
-	require.NoError(t, err)
-	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "d", Type: "audio", Title: "d",
-		MediaURL: "https://cdn.example.com/d.mp3", DurationSec: 10})
-	require.NoError(t, err)
-	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}))
-	client := feedClient(t, env, u.AppPassword(t, "phone"))
-	ctx := context.Background()
-	report := func(sec float64, at time.Time) float64 {
-		t.Helper()
-		pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
-			ItemId: id, ProgressSec: sec, EditList: "abc123abc123", At: timestamppb.New(at),
-		}))
-		require.NoError(t, err)
-		return pb.Msg.ProgressSec
+// The cuts are in media time, so the item's end is the media duration the
+// edit list was recorded with; the feed's own figure (short, long or
+// missing) plays no part.
+func TestReportProgressEditListUsesMediaDuration(t *testing.T) {
+	for _, feedDuration := range []int64{0, 6, 5000} {
+		t.Run(strconv.FormatInt(feedDuration, 10), func(t *testing.T) {
+			env := cogtest.New(t, feed.New())
+			u := env.CreateUser(t, "alice", "pass")
+			store := feedStore(t, env, u.Username)
+			subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/feed", Title: "P"})
+			require.NoError(t, err)
+			id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "d", Type: "audio", Title: "d",
+				MediaURL: "https://cdn.example.com/d.mp3", DurationSec: feedDuration})
+			require.NoError(t, err)
+			// Media is 3600 s; the presentation is 3597 s long.
+			require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}, 3600))
+			client := feedClient(t, env, u.AppPassword(t, "phone"))
+			ctx := context.Background()
+			now := time.Now()
+			n := 0
+			report := func(sec float64) float64 {
+				t.Helper()
+				n++
+				// Each later than the last, or the older report loses.
+				pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+					ItemId: id, ProgressSec: sec, EditList: "abc123abc123", At: timestamppb.New(now.Add(time.Duration(n) * time.Second)),
+				}))
+				require.NoError(t, err)
+				return pb.Msg.ProgressSec
+			}
+			assert.Equal(t, 8.0, report(5))
+			assert.Equal(t, 1503.0, report(1500))
+			assert.Equal(t, 3600.0, report(3597-1e-7))
+			assert.Equal(t, 3600.0, report(9999))
+		})
 	}
-	now := time.Now()
-	// The presentation is 7s long; past it maps to the item's end.
-	assert.Equal(t, 10.0, report(50, now))
-	// At its end (within 1e-6) finishes the item, though the map says 10.
-	assert.Equal(t, 10.0, report(7-1e-7, now.Add(time.Second)))
 }
 
 func TestReportProgressUnknownEditList(t *testing.T) {
@@ -307,7 +319,7 @@ func TestReportProgressNoEditList(t *testing.T) {
 	u := env.CreateUser(t, "alice", "pass")
 	store := feedStore(t, env, u.Username)
 	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
-	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}}))
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}}, 10))
 	client := feedClient(t, env, u.AppPassword(t, "phone"))
 	pb, err := client.ReportProgress(context.Background(), connect.NewRequest(&feedpb.ReportProgressRequest{
 		ItemId: id, ProgressSec: 5,

@@ -277,9 +277,10 @@ func (s *Store) ResetEdges(itemIDs ...int64) error {
 // ErrEditNotFound is returned by EditCuts for an edit list no player was served.
 var ErrEditNotFound = errors.New("feed: unknown edit list")
 
-// RecordEdit remembers the cuts an edit list applied. The id names the cuts,
-// so one already recorded is left as it is.
-func (s *Store) RecordEdit(itemID int64, edit string, applied []hls.Cut) error {
+// RecordEdit remembers the cuts an edit list applied and the media duration
+// they were planned against. The id names the cuts, so one already recorded
+// is left as it is.
+func (s *Store) RecordEdit(itemID int64, edit string, applied []hls.Cut, duration float64) error {
 	// Read first: a master request for an edit list already served is the
 	// steady state and must not take the write lock.
 	var n int
@@ -294,29 +295,31 @@ func (s *Store) RecordEdit(itemID int64, edit string, applied []hls.Cut) error {
 	if err != nil {
 		return fmt.Errorf("encode edit cuts: %w", err)
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO hls_edits(item_id, id, cuts, created_at)
-		VALUES(?, ?, ?, unixepoch())`, itemID, edit, string(buf)); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO hls_edits(item_id, id, cuts, duration, created_at)
+		VALUES(?, ?, ?, ?, unixepoch())`, itemID, edit, string(buf), duration); err != nil {
 		return fmt.Errorf("record edit: %w", err)
 	}
 	return nil
 }
 
-// EditCuts returns the cuts of a recorded edit list, or ErrEditNotFound.
-func (s *Store) EditCuts(itemID int64, edit string) ([]hls.Cut, error) {
+// EditCuts returns the cuts of a recorded edit list and the media duration
+// they were planned against (0 when unknown), or ErrEditNotFound.
+func (s *Store) EditCuts(itemID int64, edit string) ([]hls.Cut, float64, error) {
 	var buf string
-	err := s.db.QueryRow(`SELECT cuts FROM hls_edits WHERE item_id = ? AND id = ?`,
-		itemID, edit).Scan(&buf)
+	var duration float64
+	err := s.db.QueryRow(`SELECT cuts, duration FROM hls_edits WHERE item_id = ? AND id = ?`,
+		itemID, edit).Scan(&buf, &duration)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrEditNotFound
+		return nil, 0, ErrEditNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("edit cuts: %w", err)
+		return nil, 0, fmt.Errorf("edit cuts: %w", err)
 	}
 	var cuts []hls.Cut
 	if err := json.Unmarshal([]byte(buf), &cuts); err != nil {
-		return nil, fmt.Errorf("decode edit cuts: %w", err)
+		return nil, 0, fmt.Errorf("decode edit cuts: %w", err)
 	}
-	return cuts, nil
+	return cuts, duration, nil
 }
 
 func placeholders(n int) string {

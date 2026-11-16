@@ -245,7 +245,7 @@ func TestHLSSkipAudioCoarse(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(pl, "#EXTINF:"), pl)
 	assert.InDelta(t, extinfSum(t, plain)/2, extinfSum(t, pl), 0.05, pl)
 	assert.Equal(t, 0, strings.Count(pl, "#EXT-X-DISCONTINUITY"), pl)
-	cuts, err := feedStore(t, env, "alice").EditCuts(id, edit)
+	cuts, _, err := feedStore(t, env, "alice").EditCuts(id, edit)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(cuts))
 	assert.InDelta(t, 12, cuts[0].End, 0.05)
@@ -394,7 +394,7 @@ func TestHLSSkipRecordsEdit(t *testing.T) {
 	runEdges(t, env, "alice")
 	edit := masterEdit(env.Get(t, skip).Status(http.StatusOK).ReadBody())
 	require.NotEqual(t, "", edit)
-	cuts, err := feedStore(t, env, "alice").EditCuts(id, edit)
+	cuts, _, err := feedStore(t, env, "alice").EditCuts(id, edit)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(cuts))
 	for i, want := range []hls.Cut{{Start: 2.6, End: 4.1}, {Start: 7.1, End: 9.5}} {

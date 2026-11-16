@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS hls_edits (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     id TEXT NOT NULL,
     cuts TEXT NOT NULL,
+    duration REAL NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     PRIMARY KEY (item_id, id)
 );

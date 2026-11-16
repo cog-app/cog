@@ -353,15 +353,16 @@ func TestWantEdgesReportsChange(t *testing.T) {
 func TestRecordEdit(t *testing.T) {
 	store, id := readyItem(t)
 	first := []hls.Cut{{Start: 1, End: 2}, {Start: 5, End: 6.5}}
-	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", first))
-	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", []hls.Cut{{Start: 9, End: 10}}))
-	got, err := store.EditCuts(id, "abcdefabcdef")
+	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", first, 600.5))
+	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", []hls.Cut{{Start: 9, End: 10}}, 1))
+	got, dur, err := store.EditCuts(id, "abcdefabcdef")
 	require.NoError(t, err)
 	assert.Equal(t, first, got)
+	assert.Equal(t, 600.5, dur)
 
-	_, err = store.EditCuts(id, "000000000000")
+	_, _, err = store.EditCuts(id, "000000000000")
 	assert.True(t, errors.Is(err, feed.ErrEditNotFound))
-	_, err = store.EditCuts(id+1, "abcdefabcdef")
+	_, _, err = store.EditCuts(id+1, "abcdefabcdef")
 	assert.True(t, errors.Is(err, feed.ErrEditNotFound))
 }
 

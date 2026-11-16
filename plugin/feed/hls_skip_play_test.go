@@ -78,7 +78,7 @@ func TestHLSSkipPlaysInFFmpeg(t *testing.T) {
 				body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
 				edit := masterEdit(body)
 				require.NotEqual(t, "", edit, "edges not made: %s\n%s", download(t, env, "alice", id).EdgesError, body)
-				cuts, err := store.EditCuts(id, edit)
+				cuts, _, err := store.EditCuts(id, edit)
 				require.NoError(t, err)
 
 				// The source's frames outside the cuts. A frame at a cut's

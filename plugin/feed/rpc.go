@@ -453,12 +453,12 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 
 // itemProgress maps progress in a skip presentation's time to item time.
 //
-// The item end is the item's feed-reported duration when it has one (the
-// cheapest source; no ffprobe or packaged-track read), so a mapped time past
-// it clamps to it, and a report at the presentation's end is the item's end.
-// With no duration the mapped time is stored as is.
+// The item end is the media duration recorded with the edit list (the
+// Original track's end the plan was built on), so a mapped time past it
+// clamps to it, and a report at the presentation's end is the item's end.
+// With no recorded duration the mapped time is stored as is.
 func itemProgress(store *Store, item Item, edit string, presentation float64) (float64, error) {
-	cuts, err := store.EditCuts(item.ID, edit)
+	cuts, dur, err := store.EditCuts(item.ID, edit)
 	if errors.Is(err, ErrEditNotFound) {
 		return 0, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -466,10 +466,9 @@ func itemProgress(store *Store, item Item, edit string, presentation float64) (f
 		return 0, err
 	}
 	t := hls.ItemTime(cuts, presentation)
-	if item.DurationSec <= 0 {
+	if dur <= 0 {
 		return t, nil
 	}
-	dur := float64(item.DurationSec)
 	if presentation >= hls.PresentationDuration(cuts, dur)-1e-6 || t > dur {
 		return dur, nil
 	}

@@ -17,6 +17,9 @@ type EdgePlan struct {
 	Edit                   string
 	Cuts                   []hls.Cut
 	Original, Clean, Video []hls.Piece
+	// Duration is the media duration the cuts were planned against: the
+	// Original track's end.
+	Duration float64
 	// Unsupported is a presentation with a rendition whose edges cannot be
 	// made (see EdgesSupported): it is not skipped and has no pieces.
 	Unsupported bool
@@ -102,7 +105,7 @@ func SkipPlan(store *Store, d Download, original hls.Track, clean, video *hls.Tr
 		last := original.Fragments[n-1]
 		duration = last.Start + last.Duration
 	}
-	p := EdgePlan{Cuts: hls.EffectiveCuts(silences, prefs.SkipSilenceMinSec, duration)}
+	p := EdgePlan{Cuts: hls.EffectiveCuts(silences, prefs.SkipSilenceMinSec, duration), Duration: duration}
 	layouts := map[string]hls.Track{EdgeOriginal: original}
 	supported := EdgesSupported(original)
 	if clean != nil {

@@ -123,7 +123,7 @@ func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 		}
 		if !missing {
 			sel := o.full()
-			return sel, h.store.RecordEdit(item, sel.edit, sel.cuts)
+			return sel, h.store.RecordEdit(item, sel.edit, sel.cuts, o.plan.Duration)
 		}
 	}
 	healed := false
@@ -143,7 +143,7 @@ func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 		h.p.TriggerFetch(h.username, 0)
 	}
 	if o.coarse != nil {
-		return *o.coarse, h.store.RecordEdit(item, o.coarse.edit, o.coarse.cuts)
+		return *o.coarse, h.store.RecordEdit(item, o.coarse.edit, o.coarse.cuts, o.plan.Duration)
 	}
 	return skipSelection{status: "pending"}, nil
 }
