@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -294,6 +295,12 @@ func (b ncapiBackend) SyncFilter(db *sql.DB, proto syncprefs.Protocol) (syncpref
 // the client reached.
 func (b ncapiBackend) ItemPage(r *http.Request, id int64) string {
 	return b.p.absoluteURL(r, itemHref(id, ""))
+}
+
+// ItemMedia returns the absolute address of an item's media route
+// (Pages.ItemMedia), as ItemPage does its page.
+func (b ncapiBackend) ItemMedia(r *http.Request, id int64) string {
+	return b.p.absoluteURL(r, "/apps/feed/items/"+strconv.FormatInt(id, 10)+"/media")
 }
 
 // TriggerFetch nudges the orchestrator to process a user (or single subscription) before its next tick.
