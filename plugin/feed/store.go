@@ -799,10 +799,15 @@ func (s *Store) MarkVideoDownloadReady(itemID int64, audioPath, videoPath string
 	return s.markReady(itemID, audioPath, videoPath, bytes)
 }
 
+// markReady records a finished download. Any clean audio was made from the
+// previous one, so it is forgotten and, if there was one, made again.
 func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64) error {
 	_, err := s.db.Exec(`
 		UPDATE downloads SET state = 'ready', local_path = ?, video_path = ?, bytes = ?,
-			completed_at = unixepoch(), package_state = '', package_error = ''
+			completed_at = unixepoch(), package_state = '', package_error = '',
+			clean_track_path = '', clean_track_error = '',
+			needs_profanity = CASE WHEN clean_audio_path != '' THEN 1 ELSE needs_profanity END,
+			clean_audio_path = ''
 		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
 	if err != nil {
 		return fmt.Errorf("mark download ready: %w", err)

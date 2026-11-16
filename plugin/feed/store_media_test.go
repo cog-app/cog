@@ -149,3 +149,29 @@ func TestCleanTrackStore(t *testing.T) {
 	assert.Equal(t, "bad", d.CleanTrackError)
 	assert.Equal(t, 0, len(pendingClean()))
 }
+
+// A new download replaces the old audio, so the clean file made from it is
+// stale: it is forgotten and the item is cleaned again.
+func TestMarkDownloadReadyResetsClean(t *testing.T) {
+	s, id := readyItem(t)
+	require.NoError(t, s.SetCleanAudioPath(id, "media/1.clean.m4a"))
+	require.NoError(t, s.SaveCleanTrack(id, "media/1.hls-audio.clean.m4a"))
+	require.NoError(t, s.ClearNeedsProfanity(id))
+
+	require.NoError(t, s.MarkDownloadReady(id, "media/1.mp3", 2))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.CleanAudioPath)
+	assert.Equal(t, "", d.CleanTrackPath)
+	assert.Equal(t, "", d.CleanTrackError)
+	assert.True(t, d.NeedsProfanity)
+}
+
+// An item that was never cleaned is not queued for cleaning by a download.
+func TestMarkDownloadReadyLeavesUncleanedAlone(t *testing.T) {
+	s, id := readyItem(t)
+	require.NoError(t, s.MarkDownloadReady(id, "media/1.mp3", 2))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.False(t, d.NeedsProfanity)
+}
