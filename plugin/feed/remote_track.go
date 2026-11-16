@@ -22,6 +22,8 @@ var errRefused = errors.New("feed: remote refused")
 // bytes=0-(remoteHead-1) once, learns the size from Content-Range, and
 // answers reads past the head with further Range requests.
 type remoteFile struct {
+	// ctx is held because io.ReaderAt has no ctx parameter; a remoteFile
+	// lives for one RemoteTrack call.
 	ctx    context.Context
 	client *http.Client
 	url    string
@@ -59,7 +61,7 @@ func (f *remoteFile) fetch(first, last int64) ([]byte, int64, error) {
 		// A 200 would stream the whole body, so it is refused too.
 		return nil, 0, fmt.Errorf("feed: remote range %d-%d: unexpected %s", first, last, resp.Status)
 	}
-	total, err := contentRangeSize(resp.Header.Get("Content-Range"))
+	total, err := checkContentRange(resp.Header.Get("Content-Range"), first, last)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -70,17 +72,46 @@ func (f *remoteFile) fetch(first, last int64) ([]byte, int64, error) {
 	return body, total, nil
 }
 
-// contentRangeSize parses the total from "bytes 0-99/1234".
-func contentRangeSize(h string) (int64, error) {
-	_, total, ok := strings.Cut(h, "/")
+// checkContentRange parses "bytes first-last/total" and checks it answers a
+// request for bytes reqFirst-reqLast: it must start where asked, end no later
+// than asked, and name a positive total. It returns the total.
+func checkContentRange(h string, reqFirst, reqLast int64) (int64, error) {
+	bad := func(why string) (int64, error) {
+		return 0, fmt.Errorf("feed: remote Content-Range %q: %s", h, why)
+	}
+	rest, ok := strings.CutPrefix(h, "bytes ")
 	if !ok {
-		return 0, fmt.Errorf("feed: remote Content-Range %q has no size", h)
+		return bad("missing bytes prefix")
 	}
-	n, err := strconv.ParseInt(total, 10, 64)
+	span, totalStr, ok := strings.Cut(rest, "/")
+	if !ok {
+		return bad("no total")
+	}
+	firstStr, lastStr, ok := strings.Cut(span, "-")
+	if !ok {
+		return bad("no range")
+	}
+	first, err := strconv.ParseInt(firstStr, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("feed: remote Content-Range %q: %w", h, err)
+		return bad(err.Error())
 	}
-	return n, nil
+	last, err := strconv.ParseInt(lastStr, 10, 64)
+	if err != nil {
+		return bad(err.Error())
+	}
+	total, err := strconv.ParseInt(totalStr, 10, 64)
+	if err != nil {
+		return bad(err.Error())
+	}
+	switch {
+	case first != reqFirst:
+		return bad(fmt.Sprintf("starts at %d, asked for %d", first, reqFirst))
+	case last < first || last > reqLast:
+		return bad(fmt.Sprintf("ends at %d, asked for at most %d", last, reqLast))
+	case total <= 0 || last >= total:
+		return bad("bad total")
+	}
+	return total, nil
 }
 
 // Size is the resource's length in bytes.

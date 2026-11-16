@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,4 +128,64 @@ func TestRemoteHeadRefusesPrivate(t *testing.T) {
 	_, err = RemoteTrack(t.Context(), HTTP, srv.URL)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, safehttp.ErrBlockedIP), "%v", err)
+}
+
+func TestCheckContentRange(t *testing.T) {
+	total, err := checkContentRange("bytes 0-99/1234", 0, 99)
+	require.NoError(t, err)
+	assert.Equal(t, total, int64(1234))
+	// A short answer at the end of the file is fine.
+	total, err = checkContentRange("bytes 1000-1233/1234", 1000, 2000)
+	require.NoError(t, err)
+	assert.Equal(t, total, int64(1234))
+
+	for _, h := range []string{
+		"bytes 5-99/1234",   // wrong start
+		"bytes 0-99/-5",     // negative total
+		"bytes 0-99/0",      // zero total
+		"0-99/1234",         // missing prefix
+		"bytes 0-99/*",      // unknown total
+		"bytes 0-199/1234",  // runs past the request
+		"bytes 0-1234/1234", // last beyond total
+		"garbage",
+		"",
+	} {
+		_, err := checkContentRange(h, 0, 99)
+		assert.True(t, err != nil, "accepted %q", h)
+	}
+}
+
+func TestRemoteFileReadAt(t *testing.T) {
+	data := make([]byte, 1000)
+	for i := range data {
+		data[i] = byte(i * 7)
+	}
+	srv, _ := rangeServer(t, data)
+	f := &remoteFile{ctx: t.Context(), client: HTTP, url: srv.URL, size: int64(len(data)), head: data[:100]}
+
+	read := func(off int64, n int) ([]byte, int, error) {
+		p := make([]byte, n)
+		got, err := f.ReadAt(p, off)
+		return p[:got], got, err
+	}
+
+	p, _, err := read(10, 50) // inside the head
+	require.NoError(t, err)
+	assert.True(t, bytes.Equal(p, data[10:60]))
+
+	p, _, err = read(80, 50) // straddles the head boundary
+	require.NoError(t, err)
+	assert.True(t, bytes.Equal(p, data[80:130]))
+
+	p, _, err = read(950, 100) // short read at EOF
+	assert.Equal(t, err, io.EOF)
+	assert.True(t, bytes.Equal(p, data[950:]))
+
+	p, _, err = read(1000, 10) // at EOF
+	assert.Equal(t, err, io.EOF)
+	assert.Equal(t, len(p), 0)
+
+	p, _, err = read(2000, 10) // past EOF
+	assert.Equal(t, err, io.EOF)
+	assert.Equal(t, len(p), 0)
 }
