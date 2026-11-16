@@ -1,8 +1,9 @@
 # Feed media over HLS
 
-Status: phases 1 to 3 done (2026-11-16): downloaded items play over HLS from
-signed links, in the web player through hls.js, with a captions rendition and
-a clean (profanity-muted) audio rendition. Phases 4 to 6 are open.
+Status: phases 1 to 4 done (2026-11-16): downloaded items play over HLS from
+signed links, in the web player through hls.js, with a captions rendition, a
+clean (profanity-muted) audio rendition, and skip (silence cut out of the
+playlists, with edge transcodes). Phases 5 and 6 are open.
 Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
 download`, MR !54); merged downloads made before are repackaged as tracks.
 
@@ -99,11 +100,13 @@ any run of segments by byte range out of one file.
     cue they already hold. The cue bounds of a segment are caption time: the
     segment's start minus the audio track's first fragment start
     (`hls.SegmentCaptionBounds`).
-  - `X-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000`, not the first fragment's
-    `Start` x 90000. hls.js 1.7.4 rebases the timeline so the first sample
-    plays at 0; `TestBrowser/HLSCaptionsOffset` (tracks starting at 1.5 s)
-    put the cue 1.477 s late with the Start-based value and exactly at 3.000
-    with 0. Real packaged and YouTube tracks start at 0, where both agree.
+  - `X-TIMESTAMP-MAP=MPEGTS:<n>,LOCAL:00:00:00.000`, where n is
+    `round(first fragment Start of the Original track x 90000)`, in both the
+    unskipped and the skip paths. **Phase 4 reversed phase 2's `MPEGTS:0`.**
+    Phase 2's offset fixture had a `tfdt` of 0 while its `sidx` said 1.48, so
+    the fixture was inconsistent and `MPEGTS:0` looked right; with consistent
+    fixtures (`tfdt` equal to the `sidx` start) `MPEGTS:0` put the cues 1.5 s
+    early in hls.js 1.7.4. Real tracks start at 0, where every value agrees.
   - YouTube auto-captions are cleaned when read, not when stored (profanity
     reads the stored file): cues under 50 ms (YouTube's 10 ms "hold" cues),
     inline `<...>` tags, blank lines, and leading lines that repeat the end of
@@ -191,28 +194,150 @@ Decisions:
 
 ### Skip (silence)
 
-- A skipped run of whole segments is left out of the playlist, and the jump
-  is marked with `EXT-X-DISCONTINUITY`.
-- **A cut inside a segment:** the partial segment at each edge is transcoded
-  to a short segment that starts or ends exactly at the cut. Audio cuts are
-  exact to a frame (about 21 ms). Video edges are re-encoded from the
-  preceding keyframe. Edge segments are made once per range set and cached,
-  keyed by the item and a hash of its ranges. The segments between edges
-  still come from the original file, or straight from YouTube.
-- Ranges shorter than a minimum (around 1 s, a pref) are dropped, and nearby
-  ones merged, so a talk with many pauses isn't hundreds of discontinuities.
-- Video and audio take the same cuts, so they stay in sync.
+`skip=silence` on the master leaves the item's silence out of every playlist.
+Whole segments inside a cut are dropped; the segments a cut lands inside are
+replaced by short **edges** that start or end exactly at the cut. Everything
+between edges still comes from the original files.
+
+**Effective cuts.** The silence ranges with `Action=skip` go through
+`hls.EffectiveCuts`, which both the playlists and the web player's
+`api/ranges` use, so the web player skips exactly what a skip master skips:
+
+- Ranges shorter than the **minimum length** are dropped. The pref
+  `skip_silence_min_sec` defaults to 1.0 and is bounded to 0.5 to 10 (0 over
+  gRPC means unchanged, so clients that send the whole `PlayerPrefs` without
+  the field keep working). Ranges closer than that are merged.
+- Each kept cut shrinks by **0.1 s** at both ends, so a skip never clips a
+  word's start or tail. An end within 0.1 s of 0 or of the media duration is
+  snapped to it and not shrunk. The duration is the Original track's end;
+  `Ranges` falls back to unclamped cuts, with a warning, when the track
+  can't be read.
+
+**Per-rendition plans.** Renditions have different segment grids (Original
+about 10 s, Clean about 6 s, Video its own), so each is planned on its own
+(`PlanCuts(track, cuts)`), keyed `a` (Original), `c` (Clean) and `v` (Video).
+The cuts are the same, so every rendition ends up the same length.
+
+- A kept segment keeps its bytes and its `tfdt`; an edge is a new file, made
+  per rendition.
+- A piece shorter than 0.1 s is joined to its neighbour in the same kept span,
+  so an edge never has a frame-less 10 ms video piece. A short whole segment
+  is kept as it is; an overhang at the end of the media is dropped.
+- **Discontinuities only at cuts.** `EXT-X-DISCONTINUITY` goes before the first
+  entry of each kept span that follows a cut, never before the first entry,
+  and never because the file changed (a file change only writes a new
+  `EXT-X-MAP`). hls.js numbers continuities per playlist and lines up
+  alternate audio and subtitles with the main playlist by that number; file
+  changes fall in different places in each rendition, so a file-change rule
+  gives each playlist a different count and audio or subtitles stall. Cut
+  positions are identical in every rendition.
+- **Timestamps stay in item time**: kept segments keep their `tfdt`, and edges
+  are written with `+frag_discont` and an output offset of the piece start,
+  so `tfdt` carries item time. Presentation time is what the playlist adds
+  up to.
+
+**Edges are made on demand, never in a request.**
+
+- The skip master (and, from phase 6a, an M3U that asks for skip) calls
+  `WantEdges`, which sets `downloads.edges_wanted` and wakes the fetcher
+  (`TriggerFetch`). `pipeline.Edges` runs after `RunCleanOnce` in the
+  orchestrator tick (the Clean track is part of the plan), two items or 60 s
+  per run. The result is `downloads.edges_edit` (the plan's id) and
+  `downloads.edges_index` (each edge's byte layout), so playlists open no edge
+  files. Edges live in the cache under `edges/<item>/<edit>/<a|c|v>-<n>.mp4`
+  and are served as `edge-<edit>-<a|c|v>-<n>.mp4`.
+- **Audio edges** are AAC-LC with the priming packet dropped, at the source's
+  sample rate and channel count.
+- **Video edges** are libx264 with `-bf 0` and `sps-id=1`, with the source's
+  timescale and in-band parameter sets. Decode times are shifted by the
+  source's B-frame delay (so the edge's `tfdt` is the piece start), and the
+  source's SPS/PPS are added to each edge's `avcC`. This is for ffmpeg and
+  mpv, whose HLS demuxer keeps the first `moov` it sees and skips later ones:
+  an edge must decode under the source's init and the source under an edge's.
+  Hence the two parameter sets, and why hls.js (which reinitialises per
+  `EXT-X-MAP`) was never the risk.
+- Every edge is checked by its index, its first `tfdt` and its parameter sets
+  before it counts; a failed run records `edges_error` against the edit.
+- **Unsupported:** a rendition that is not AAC-LC, or video that is not H.264
+  baseline, main or high (HE-AAC, High 10, other codecs), is served
+  unskipped, with `SESSION-DATA` `us.duckfam.cog.skip` = `unsupported`, and
+  makes no edges.
+
+**Modes of a skip master**, chosen per request and by the unsigned `edit`
+selector on the children:
+
+- **No cuts** (no silence found, or silence not done): served exactly like an
+  unskipped master, with no `edit`, no `SESSION-DATA`, no `WantEdges`.
+- **Full:** edges are ready, or the plan has no edge pieces at all (every cut
+  is on a segment boundary, which is full at once). Every rendition is cut
+  exactly.
+- **Pending:** edges are being made. **Video waits**: a video master is served
+  unskipped until the edges exist (a coarse video cut would desync from
+  audio's exact cut). **Audio-only gets a coarse cut**: whole segments
+  only, from the default rendition (Clean when it exists, else Original), with
+  its subtitles; Original is not listed until the worker is done.
+- **Unsupported:** above.
+
+**The `edit` id.** A 12-hex-digit hash of the applied cuts (rounded to
+milliseconds) and every listed rendition's layout (`a`, `c`, `v`: the byte
+lengths change on a re-clean or re-download, so the id does too). It is an
+unsigned child selector (`edit=<12 hex>`, allowed only with `skip=silence`):
+the signature covers the user, the item and `skip`, and the cuts themselves are
+re-derived server side, so `edit` cannot choose anything; it pins which plan a
+child request reads. A player holding a coarse master keeps working after the
+worker finishes (the coarse id is still accepted); an unknown id is 404, and
+an edge file is served only when its id is the stored full plan's. The master
+carries `SESSION-DATA` `us.duckfam.cog.edits` = the edit id, which Cog's
+clients use to name the plan they play.
+
+**Invalidation.** `SetSilenceRanges`, `markReady`, `SavePackage`,
+`SaveCleanTrack`, `SetCleanAudioPath` and a change of the min-length pref reset
+`edges_edit` and `edges_error`, so the item is wanted again. The master
+self-heals: if the stored edit differs from the computed one, or its edge
+files have been evicted, it resets and asks again. Stale edge directories are
+removed per item when a new run succeeds, and `Collect` removes those of
+deleted or reset items.
+
+**Captions under skip.** One VTT per piece of the default audio rendition's
+plan, at the piece's duration, with the same discontinuities as the audio.
+`X-TIMESTAMP-MAP` is `MPEGTS:<round(Original first fragment Start x 90000)>`
+as in the unskipped path; cues are **clipped to the piece** (an unclipped cue
+across a cut would show twice, once per continuity) and **not shifted**: they
+stay in caption time, which hls.js and spec-following players both map to
+item time. `TestBrowser/HLSSkipCaptions` proves it in hls.js: a cue after the
+cut lands at its item time minus the cut. Withholding and masking follow the
+unskipped rule (computed once, before the skip branch).
+
+**Clean tracks keep the Original's start.** `packClean` offsets the clean
+track to the Original's first fragment start, so Clean and Video stay in sync
+and share one caption map (phase 3's "Clean always starts at 0" is resolved).
+
+**Margins and why.**
+
+- *Edges on demand*: encodes cost CPU, and a request must not run ffmpeg.
+- *Video waits for its edges*: a half-exact video cut with an exact audio
+  cut desyncs; audio-only has no picture to desync from.
+- *The 0.1 s shrink*: silence detection is not frame-exact; cutting inside a
+  word is worse than playing 0.2 s of silence per cut.
+- *Applied cuts as the edit id's input*: a changed pref or detection changes
+  the id, so a stale edit is unknown, never silently wrong.
+- *Web ranges use the same effective cuts*: one definition of "skipped".
+- *Unsigned `edit`*: it only selects among plans the server computes.
 
 ### Timeline
 
 With skips, a player's clock is no longer the item's. Every skipped
-presentation has an edit-list id (a hash of its ranges), and Cog maps
-between presentation time and item time:
+presentation has an edit id (see Skip), and Cog maps between presentation
+time and item time:
 
 - Cog's own clients report item time (`ReportProgress`), mapping it
-  themselves from ranges `GetRanges` returns.
-- A progress report in presentation time names the edit-list id, and the
-  server maps it back.
+  themselves from the ranges `GetRanges` returns.
+- A progress report in presentation time sets `ReportProgressRequest.edit_list`
+  to the edit id; the server maps it back to item time with that plan's cuts
+  and the **media duration stored in `hls_edits`** (not the feed's duration,
+  which is often wrong). The mapped time clamps to that duration, and a report
+  within a hair of the presentation's end maps to the item's end. An unknown
+  id is `InvalidArgument` ("unknown edit list").
 - External players report nothing today. **Open:** an mpv script, or
   gpodder episode actions, either of which would need the mapping.
 
@@ -220,7 +345,8 @@ between presentation time and item time:
 
 Query parameters on the master playlist, carried into every URL it writes:
 
-- `skip=silence`: apply skip ranges. Off by default.
+- `skip=silence`: apply skip ranges. Off by default. Signed with the rest.
+- `edit=<12 hex>`: on child URLs only, pins the plan (see Skip). Not signed.
 - There is no `mute` option: the clean track is the default whenever it
   exists (see Mute). A switch would need a second, unmasked captions
   rendition, which is not worth it until a client wants Original by default.
@@ -264,7 +390,7 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 2. The captions rendition. Done.
 3. Mute: the clean rendition, as a whole re-encoded audio track. Done.
 4. Skip: segments left out, discontinuities, edge transcodes, minimum length
-   and merging, the edit-list id and time mapping.
+   and merging, the edit id and time mapping. Done.
 5. Undownloaded YouTube segments straight from googlevideo, after the
    off-Wi-Fi test, with a proxy fallback.
 6. M3U of a playlist or view for external players. Android on Media3 HLS
@@ -279,15 +405,12 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 - Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,
   also offer `--sub-file` from the M3U.
 - Whether iOS Safari's native HLS and Media3 (spec-following, media
-  timeline) show captions early by the track's start offset on a track that
-  does not start at 0, given `MPEGTS:0`. Checked on the phone in phase 6b.
+  timeline) show captions at the right time on a track that does not start at
+  0, given `MPEGTS` = the track's start. Checked on the phone in phase 6b.
 - A captions language is not recorded: neither source (YouTube, whisper)
   records one reliably, so the rendition has no `LANGUAGE`.
 - How to get progress back from external players.
 - No trigger re-cleans an item when the word list changes.
-- The clean track is packaged without `-avoid_negative_ts` disabled, so it
-  always starts at 0. A source track that starts late would put Clean out of
-  sync with the video by that offset. Latent: real tracks start at 0.
 - `clean.m4a` keeps its name and is served with `Cache-Control: max-age=86400`,
   so after a re-clean a browser may use cached old bytes against new ranges
   for up to a day. Version the media URI when the word-list re-clean trigger
@@ -298,11 +421,29 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 - Whether mpv plays an audio-only cleaned master whose variant URI is also the
   default group rendition. Checked by hand in phase 6a.
 - YouTube's audio tracks come in fragments of about 10 s, so their segments
-  run longer than 6 s. Fine for VOD; phase 4's cuts are coarser there unless
-  the edge transcode splits a fragment.
+  run longer than 6 s, and an Original audio edge can be up to that long.
+  Encoding one on demand should be cheap, but measure.
 - Packaging works through the backlog 100 downloads per tick, and an MP3
   podcast is encoded to AAC, tens of seconds per hour of audio. A large
   library's first packaging run holds up the other workers for a while.
+- Whether Media3 decodes video edges whose `avcC` carries two SPS (the
+  source's id 0 and the edge's id 1). Checked on the phone in phase 6b.
+- The video edges' B-frame delay is measured from the source's first fragment
+  only (`sidx` earliest presentation time minus the first `tfdt`), which is
+  wrong for sources shifted by an `elst`; read the `trun` composition offset
+  instead.
+- Audio drifts about 12 ms per edge (each edge's last AAC frame decodes
+  whole), and edge offsets are rounded to 1 ms. No end-to-end audio timing
+  check exists.
+- `hls_edits` rows are never pruned (they cascade only when the item is
+  deleted).
+- Media playlists, `subs.m3u8` and each `subs-<n>.vtt` replan on every
+  request (about 600 replans per captioned hour). Cache the plan if it shows.
+- `AddParamSets` assumes the default base is the `moof`; it does not check
+  `tfhd` base-data-offset or `saio`.
+- Whether mpv shows presentation time or item time across discontinuities
+  (decides whether an mpv script needs the mapping). Checked by hand in phase
+  6a, along with whether its clock jumps cleanly over the gaps.
 - Hardware encoding (VAAPI; the compose file needs `/dev/dri` and the render
   group, as Jellyfin's has) once video edges are re-encoded. The bubblewrap
   sandbox must pass `/dev/dri` through as well.

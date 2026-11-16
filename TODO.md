@@ -184,8 +184,21 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         `TestPlayerFragmentCleanPending`, `TestBrowser/HLSClean`).
         Still open: re-clean items when the word list changes; manual check
         (phase 6a) of mpv on an audio-only cleaned master.
-  - [ ] Phase 4: skip, with dropped segments, edge transcodes and the time
-        mapping.
+  - [x] Phase 4: skip, with dropped segments, per-rendition edge transcodes
+        made on demand, discontinuities only at cuts, and the time mapping
+        (`ReportProgressRequest.edit_list`); the web ranges use the same
+        effective cuts (`TestEffectiveCuts*`, `TestPlanCuts*`,
+        `TestCutEntries*`, `TestEditID*`, `TestHLSOptions*`, `TestEdges*`,
+        `TestHLSSkip*`, `TestHLSSkipPlaysInFFmpeg`,
+        `TestBrowser/HLSSkipCaptions`, `TestReportProgressEditList*`).
+        Captions' `X-TIMESTAMP-MAP` now uses the track's start (reverses
+        phase 2's `MPEGTS:0`). Still open: Media3 with two SPS in a video
+        edge's `avcC` (phase 6b, on the phone); whether mpv shows
+        presentation or item time across discontinuities (phase 6a, by hand);
+        B-frame delay read from the first fragment only (wrong for
+        elst-shifted sources); audio drift of about 12 ms per edge;
+        `hls_edits` never pruned; VTT and media playlists replan per request;
+        `AddParamSets` assumes default-base-is-moof.
   - [ ] Phase 5: undownloaded YouTube from googlevideo, after the off-Wi-Fi
         test, with a proxy fallback.
   - [ ] Phase 6: M3U of a playlist or view for external players; Android on

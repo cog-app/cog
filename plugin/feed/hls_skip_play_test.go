@@ -188,7 +188,7 @@ func ffclient(t *testing.T, name string, args ...string) []byte {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	require.NoError(t, err, "%s: %s", name, stderr.String())
-	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stderr.String()), "\n") {
 		// ffmpeg folds repeats of a line into "Last message repeated n times".
 		if line == "" || strings.HasSuffix(line, duplicateMOOV) || strings.HasPrefix(strings.TrimSpace(line), "Last message repeated") {
 			continue

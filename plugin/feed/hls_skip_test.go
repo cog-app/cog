@@ -61,9 +61,9 @@ func TestSkipPlanSupport(t *testing.T) {
 		"aac-lc":         {original: lc},
 		"he-aac":         {original: he, unsupported: true},
 		"he-aac clean":   {original: lc, clean: &he, unsupported: true},
-		"baseline video": {original: lc, video: ptr(twoSegments(hls.Video, "avc1.42C01E"))},
-		"high 10 video":  {original: lc, video: ptr(twoSegments(hls.Video, "avc1.6E0028")), unsupported: true},
-		"vp9 video":      {original: lc, video: ptr(twoSegments(hls.Video, "")), unsupported: true},
+		"baseline video": {original: lc, video: new(twoSegments(hls.Video, "avc1.42C01E"))},
+		"high 10 video":  {original: lc, video: new(twoSegments(hls.Video, "avc1.6E0028")), unsupported: true},
+		"vp9 video":      {original: lc, video: new(twoSegments(hls.Video, "")), unsupported: true},
 	} {
 		p, err := feed.SkipPlan(store, d, c.original, c.clean, c.video)
 		require.NoError(t, err)
@@ -79,7 +79,8 @@ func TestSkipPlanSupport(t *testing.T) {
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 // needFFmpeg skips a test that runs ffmpeg where it is not installed, and
 // fails it in CI.
@@ -168,7 +169,7 @@ func extinfSum(t *testing.T, pl string) float64 {
 // playlistURIs are the media URIs of a playlist: its entries and maps.
 func playlistURIs(pl string) []string {
 	var out []string
-	for _, line := range strings.Split(pl, "\n") {
+	for line := range strings.SplitSeq(pl, "\n") {
 		if line != "" && !strings.HasPrefix(line, "#") {
 			out = append(out, line)
 		}
@@ -336,7 +337,7 @@ func TestHLSSkipSubtitles(t *testing.T) {
 	discont := func(pl string) []int {
 		var at []int
 		n := 0
-		for _, line := range strings.Split(pl, "\n") {
+		for line := range strings.SplitSeq(pl, "\n") {
 			switch {
 			case line == "#EXT-X-DISCONTINUITY":
 				at = append(at, n)

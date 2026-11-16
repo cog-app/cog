@@ -197,7 +197,7 @@ func TestHLSSkipNeedsItsOwnSignature(t *testing.T) {
 	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
 	assert.True(t, strings.Contains(body, "&skip=silence"), body)
 	// Every URI carries the option.
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if strings.Contains(line, ".m3u8") {
 			assert.True(t, strings.Contains(line, "&skip=silence"), line)
 		}
