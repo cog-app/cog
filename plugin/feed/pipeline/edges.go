@@ -315,7 +315,8 @@ func edgeCuts(pieces []hls.Piece, src edgeSource) []hls.Piece {
 // played so far within half a frame of the plan. It keeps its start, where
 // it follows a cut or begins its segment, unless what follows it follows
 // without a cut: then it keeps its end, which joins that media, and starts
-// within a frame of its piece.
+// within a frame of its piece. The last piece of all, which nothing
+// follows, ends at or before its piece (the track's index end).
 func audioSpans(pieces []hls.Piece, frame float64) []hls.Piece {
 	var spans []hls.Piece
 	drift := 0.0 // the audio of the edges so far less their pieces, s
@@ -324,7 +325,13 @@ func audioSpans(pieces []hls.Piece, frame float64) []hls.Piece {
 			continue
 		}
 		length := p.End - p.Start
-		n := max(math.Round((length-drift)/frame), 1)
+		n := math.Round((length - drift) / frame)
+		if i == len(pieces)-1 {
+			// Nothing follows the last: it ends at or before the track's
+			// index end, which the source may decode no further than.
+			n = math.Floor(length/frame + 1e-9)
+		}
+		n = max(n, 1)
 		drift += n*frame - length
 		span := p
 		if i+1 < len(pieces) && pieces[i+1].Start-p.End < 1e-3 {

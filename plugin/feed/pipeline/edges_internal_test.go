@@ -164,4 +164,22 @@ func TestAudioSpans(t *testing.T) {
 			assert.Equal(t, e.Start, spans[n].Start, "edge %d start", n)
 		}
 	}
+
+	// The track's last piece ends where its index does, and nothing follows:
+	// its span stops at or before that end (the source may decode no
+	// further), whatever the drift before it.
+	for _, length := range []float64{2.0, 2.01, 2.02, 2.0232} {
+		last := []hls.Piece{
+			{Start: 0, End: 1.71, Segment: 0, Edge: true},
+			{Start: 4, End: 4 + length, Segment: 1, Edge: true},
+		}
+		spans := audioSpans(last, frame)
+		require.Equal(t, 2, len(spans))
+		sp := spans[1]
+		assert.Equal(t, last[1].Start, sp.Start, "last edge of %.4f s keeps its start", length)
+		assert.True(t, sp.End <= last[1].End+1e-9, "last edge of %.4f s ends at %.4f s, past %.4f s", length, sp.End, last[1].End)
+		assert.True(t, sp.End > last[1].End-frame, "last edge of %.4f s ends at %.4f s", length, sp.End)
+		frames := (sp.End - sp.Start) / frame
+		assert.InDelta(t, math.Round(frames), frames, 1e-6, "last edge of %.4f s: whole frames", length)
+	}
 }
