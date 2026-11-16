@@ -3,9 +3,11 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -422,5 +424,55 @@ func TestRecleanReplacesTrack(t *testing.T) {
 		if strings.Contains(n, ".clean.") && n != "1.hls-audio.clean.m4a" {
 			t.Errorf("stray clean file %s", n)
 		}
+	}
+}
+
+// Players place a packaged track's fragments by their tfdt, and captions
+// map their time 0 to its sidx start (hls.TimestampMap): the two must agree,
+// including for a source that starts later than 0.
+func TestPackagedTrackDecodesAtItsIndex(t *testing.T) {
+	needFFmpeg(t)
+	offset := filepath.Join(t.TempDir(), "offset.m4a")
+	out, err := exec.Command("ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
+		"-output_ts_offset", "1.5", "-avoid_negative_ts", "disabled", "-c:a", "aac", "-b:a", "32k", "-movflags", "+faststart", offset).CombinedOutput()
+	require.NoError(t, err, string(out))
+	for _, c := range []struct{ name, fixture, typ string }{
+		{"merged", "merged.mp4", "video"},
+		{"mp3", "episode.mp3", "audio"},
+		{"offset", "", "audio"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, space := newPipeline(t)
+			id := readyDownload(t, s, c.typ)
+			stored := "media/1.src"
+			if c.fixture != "" {
+				putFixture(t, space, c.fixture, stored)
+			} else {
+				b, err := os.ReadFile(offset)
+				require.NoError(t, err)
+				_, err = space.Own.Put(stored, bytes.NewReader(b))
+				require.NoError(t, err)
+			}
+			require.NoError(t, s.MarkDownloadReady(id, stored, 1))
+			require.NoError(t, pipeline.NewPackager(s, space).RunOnce(context.Background()))
+			d, err := s.GetDownload(id)
+			require.NoError(t, err)
+			require.Equal(t, "done", d.PackageState, d.PackageError)
+			for _, stored := range []string{d.LocalPath, d.VideoPath} {
+				if stored == "" {
+					continue
+				}
+				tr := storedTrack(t, space, stored)
+				p, err := space.Path(stored)
+				require.NoError(t, err)
+				f, err := os.Open(p)
+				require.NoError(t, err)
+				st, err := f.Stat()
+				require.NoError(t, err)
+				tfdt, err := hls.FirstDecodeTime(f, st.Size())
+				require.NoError(t, errors.Join(err, f.Close()))
+				assert.InDelta(t, tr.Fragments[0].Start, tfdt, 1e-3, stored)
+			}
+		})
 	}
 }

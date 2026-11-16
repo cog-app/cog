@@ -166,6 +166,18 @@ func vttTime(s string) (float64, bool) {
 	return secs, true
 }
 
+// TimestampMap is the X-TIMESTAMP-MAP MPEGTS of a presentation's captions:
+// caption time 0 is the first sample of its audio track, so it is that
+// sample's media time at 90 kHz. Players place it by the fragments' tfdt,
+// which is the sidx start for packaged tracks (pipeline.Packager): hls.js
+// shows a cue at cue + MPEGTS/90000 − its initPTS, the first tfdt.
+func TimestampMap(audio Track) int64 {
+	if len(audio.Fragments) == 0 {
+		return 0
+	}
+	return int64(math.Round(audio.Fragments[0].Start * 90000))
+}
+
 // VTTSegment is one WebVTT segment: the cues overlapping [start, end),
 // with their own times, under an X-TIMESTAMP-MAP that puts caption time 0
 // at MPEG-TS time mpegts (90 kHz).
@@ -211,10 +223,11 @@ func SegmentCaptionBounds(audio Track, n int) (start, end float64, ok bool) {
 }
 
 // VTTPiece is VTTSegment for a piece of a presentation with cuts: the cues
-// overlapping [start, end), in caption time, clipped to it, under MPEGTS 0.
-// A cue that crosses a cut is in two pieces; clipped, each shows only its
-// own part.
-func VTTPiece(cues []Cue, start, end float64) string {
+// overlapping [start, end), in caption time, clipped to it, under the
+// presentation's mpegts (TimestampMap). Kept media and edges keep their
+// media time, so one map serves every piece. A cue that crosses a cut is in
+// two pieces; clipped, each shows only its own part.
+func VTTPiece(cues []Cue, start, end float64, mpegts int64) string {
 	clipped := make([]Cue, 0, len(cues))
 	for _, c := range cues {
 		if c.End <= start || c.Start >= end {
@@ -223,7 +236,7 @@ func VTTPiece(cues []Cue, start, end float64) string {
 		c.Start, c.End = math.Max(c.Start, start), math.Min(c.End, end)
 		clipped = append(clipped, c)
 	}
-	return VTTSegment(clipped, start, end, 0)
+	return VTTSegment(clipped, start, end, mpegts)
 }
 
 // PieceSubtitleEntries lists one VTT segment per piece of a plan, with the

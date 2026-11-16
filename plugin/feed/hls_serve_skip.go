@@ -203,9 +203,9 @@ func (h hlsRequest) skipFile(file string) {
 	}
 	query := h.opts.query(h.sig)
 	// The captions follow the default audio rendition's pieces.
-	subsPieces := sel.original
+	subsPieces, subsTrack := sel.original, tracks.original
 	if tracks.clean != nil {
-		subsPieces = sel.clean
+		subsPieces, subsTrack = sel.clean, *tracks.clean
 	}
 	switch file {
 	case "audio.m3u8":
@@ -241,12 +241,13 @@ func (h hlsRequest) skipFile(file string) {
 				hlsError(w, r, err)
 				return
 			}
-			// Cues stay in caption time, clipped to the piece: kept media
-			// keeps its item-time timestamps, and hls.js places a cue after a
-			// cut by its discontinuity's own offset (TestBrowser/HLSSkipCaptions).
-			t0 := tracks.original.Fragments[0].Start
+			// Cues stay in caption time, clipped to the piece, under the
+			// map of the unskipped presentation: kept media and edges keep
+			// their media time, and hls.js places a cue after a cut by its
+			// discontinuity's own offset (TestBrowser/HLSSkipCaptions).
+			t0 := subsTrack.Fragments[0].Start
 			p := subsPieces[n]
-			writeVTT(w, r, hls.VTTPiece(cues, p.Start-t0, p.End-t0))
+			writeVTT(w, r, hls.VTTPiece(cues, p.Start-t0, p.End-t0, hls.TimestampMap(subsTrack)))
 			return
 		}
 		http.NotFound(w, r)

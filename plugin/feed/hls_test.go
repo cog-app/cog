@@ -451,3 +451,14 @@ func TestHLSCaptionsWithheldWithoutProfanity(t *testing.T) {
 	env.Get(t, sibling(m, "subs.m3u8")).Status(http.StatusNotFound)
 	env.Get(t, sibling(m, "subs-0.vtt")).Status(http.StatusNotFound)
 }
+
+// Tracks that start 1.48 s in map caption time 0 to their first sample:
+// MPEGTS is that sample's media time at 90 kHz.
+func TestHLSSubsTimestampMapOffset(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItemFrom(t, env, "alice", "audio-offset.m4a", "video-offset.mp4", testVTT)
+	seg := env.Get(t, sibling(masterURL(t, env, "alice", id), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(seg, "X-TIMESTAMP-MAP=MPEGTS:132910,LOCAL:00:00:00.000\n"), seg)
+	assert.True(t, strings.Contains(seg, "00:00:03.000 --> 00:00:05.000\nHello there\n"), seg)
+}

@@ -87,6 +87,17 @@ func TestVTTSegmentCarriesMPEGTS(t *testing.T) {
 	assert.True(t, strings.Contains(hls.VTTSegment(nil, 0, 6, 135000), "X-TIMESTAMP-MAP=MPEGTS:135000,LOCAL:00:00:00.000"))
 }
 
+// Caption time 0 is the audio's first sample: its media time at 90 kHz.
+func TestTimestampMap(t *testing.T) {
+	at := func(start float64) hls.Track {
+		return hls.Track{Kind: hls.Audio, Fragments: []hls.Fragment{{Start: start, Duration: 2}}}
+	}
+	assert.Equal(t, int64(135000), hls.TimestampMap(at(1.5)))
+	assert.Equal(t, int64(0), hls.TimestampMap(at(0)))
+	assert.Equal(t, int64(132910), hls.TimestampMap(at(1.4767800453514739)))
+	assert.Equal(t, int64(0), hls.TimestampMap(hls.Track{}))
+}
+
 func TestSubtitleEntries(t *testing.T) {
 	es := hls.SubtitleEntries(audioTrack(), func(n int) string { return fmt.Sprintf("subs-%d.vtt?sig=x", n) })
 	assert.Equal(t, 2, len(es)) // the 4 × 2 s audio track makes segments of 6 s and 2 s
@@ -174,8 +185,8 @@ func TestVTTSegmentEscapesText(t *testing.T) {
 // one that crosses a cut is not shown twice.
 func TestVTTPieceClips(t *testing.T) {
 	cues := []hls.Cue{{Start: 1, End: 3, Text: "A"}, {Start: 4, End: 6, Text: "B"}, {Start: 7, End: 8, Text: "C"}}
-	got := hls.VTTPiece(cues, 2.5, 5)
-	assert.Equal(t, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n"+
+	got := hls.VTTPiece(cues, 2.5, 5, 135000)
+	assert.Equal(t, "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:135000,LOCAL:00:00:00.000\n\n"+
 		"00:00:02.500 --> 00:00:03.000\nA\n\n00:00:04.000 --> 00:00:05.000\nB\n\n", got)
 }
 

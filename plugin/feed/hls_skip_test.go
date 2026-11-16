@@ -609,3 +609,22 @@ func TestHLSSkipMissingFiles(t *testing.T) {
 	env.Get(t, sibling(masterURL(t, env, "alice", id), "video.m3u8")).Status(http.StatusNotFound)
 	env.Get(t, skip).Status(http.StatusNotFound)
 }
+
+// Under skip the captions keep the unskipped presentation's map: kept
+// media and edges keep their media time.
+func TestHLSSkipSubsTimestampMapOffset(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := captionedItemFrom(t, env, "alice", "audio-offset.m4a", "", testVTT)
+	require.NoError(t, feedStore(t, env, "alice").SetSilenceRanges(id, []feed.Range{{Start: 7, End: 14, Action: "skip"}}))
+	skip := skipMaster(t, env, "alice", id)
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	require.NotEqual(t, "", masterEdit(body), body)
+	subs := env.Get(t, child(skip, masterURI(t, body, "subs.m3u8"))).Status(http.StatusOK).ReadBody()
+	vtts := playlistURIs(subs)
+	require.True(t, len(vtts) > 0, subs)
+	for _, u := range vtts {
+		seg := env.Get(t, child(skip, u)).Status(http.StatusOK).ReadBody()
+		assert.True(t, strings.Contains(seg, "X-TIMESTAMP-MAP=MPEGTS:132910,LOCAL:00:00:00.000\n"), seg)
+	}
+}

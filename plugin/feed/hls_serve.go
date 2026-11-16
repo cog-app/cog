@@ -268,9 +268,10 @@ func (h hlsRequest) file(file string) {
 			hlsError(w, r, err)
 			return
 		}
-		// MPEGTS 0: hls.js rebases the timeline so the first audio sample plays
-		// at 0, and this puts caption time 0 there (TestBrowser/HLSCaptionsOffset).
-		writeVTT(w, r, hls.VTTSegment(cues, start, end, 0))
+		// Caption time 0 is the audio's first sample, at its media time: the
+		// spec's mapping, which hls.js follows against the first tfdt
+		// (TestBrowser/HLSCaptionsOffset).
+		writeVTT(w, r, hls.VTTSegment(cues, start, end, hls.TimestampMap(audio)))
 	}
 }
 

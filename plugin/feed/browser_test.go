@@ -246,7 +246,7 @@ func TestBrowser(t *testing.T) {
 	})
 
 	// Under skip, captions keep their caption time, clipped to each piece,
-	// and the X-TIMESTAMP-MAP stays MPEGTS 0. Kept media keeps its item-time
+	// and the unskipped presentation's X-TIMESTAMP-MAP. Kept media keeps its item-time
 	// timestamps, so hls.js shows a cue after a cut where the cut moved it:
 	// cue B at item time 9 s shows at 7 s once {6,8} is cut (R8). The
 	// product player does not play skip yet, so the test plays the skip
