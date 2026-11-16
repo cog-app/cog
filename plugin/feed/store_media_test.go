@@ -1,12 +1,14 @@
 package feed_test
 
 import (
+	"errors"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // readyItem is a store with one downloaded audio item.
@@ -174,4 +176,167 @@ func TestMarkDownloadReadyLeavesUncleanedAlone(t *testing.T) {
 	d, err := s.GetDownload(id)
 	require.NoError(t, err)
 	assert.False(t, d.NeedsProfanity)
+}
+
+// edgesPending reports whether the edges worker has the item to do.
+func edgesPending(t *testing.T, store *feed.Store, id int64) bool {
+	t.Helper()
+	ids, err := store.PendingEdges(10)
+	require.NoError(t, err)
+	return len(ids) == 1 && ids[0] == id
+}
+
+// edgesMade is a packaged item, silence done, whose edges were wanted and made.
+func edgesMade(t *testing.T) (*feed.Store, int64) {
+	t.Helper()
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	changed, err := store.WantEdges(id)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, edgesPending(t, store, id))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	require.False(t, edgesPending(t, store, id))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	require.True(t, d.EdgesWanted)
+	require.Equal(t, "abcdefabcdef", d.EdgesEdit)
+	return store, id
+}
+
+func TestEdgesPending(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	assert.False(t, edgesPending(t, store, id), "silence not done")
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	assert.True(t, edgesPending(t, store, id))
+	require.NoError(t, store.SetEdges(id, "abc"))
+	assert.False(t, edgesPending(t, store, id))
+	require.NoError(t, store.SetSilenceRanges(id, []feed.Range{{Start: 1, End: 3, Action: "skip"}}))
+	assert.True(t, edgesPending(t, store, id), "new silence clears the edges")
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+}
+
+func TestEdgesNotPendingUnwantedOrUnpackaged(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	assert.False(t, edgesPending(t, store, id), "not packaged")
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	assert.True(t, edgesPending(t, store, id))
+	// A clean file with no track yet is part of the plan: wait for it.
+	require.NoError(t, store.SetCleanAudioPath(id, "media/1.clean.m4a"))
+	assert.False(t, edgesPending(t, store, id), "clean track pending")
+	require.NoError(t, store.SaveCleanTrack(id, "media/1.clean.hls.m4a"))
+	assert.True(t, edgesPending(t, store, id))
+}
+
+func TestEdgesResetOnRepackage(t *testing.T) {
+	store, id := edgesMade(t)
+	require.NoError(t, store.SavePackage(id, "media/2.hls-audio.m4a", "", 300))
+	assert.True(t, edgesPending(t, store, id))
+}
+
+func TestEdgesResetOnCleanTrack(t *testing.T) {
+	for name, reset := range map[string]func(*feed.Store, int64) error{
+		"SaveCleanTrack":    func(s *feed.Store, id int64) error { return s.SaveCleanTrack(id, "media/1.clean.hls.m4a") },
+		"SetCleanAudioPath": func(s *feed.Store, id int64) error { return s.SetCleanAudioPath(id, "") },
+		"ResetCleanAudio":   func(s *feed.Store, id int64) error { return s.ResetCleanAudio(id) },
+		"MarkDownloadReady": func(s *feed.Store, id int64) error { return s.MarkDownloadReady(id, "media/1.mp3", 100) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, id := edgesMade(t)
+			require.NoError(t, reset(store, id))
+			d, err := store.GetDownload(id)
+			require.NoError(t, err)
+			assert.Equal(t, "", d.EdgesEdit)
+			assert.Equal(t, "", d.EdgesError)
+		})
+	}
+}
+
+func TestEdgesResetOnPrefChange(t *testing.T) {
+	store, id := edgesMade(t)
+	prefs, err := store.LoadPlayerPrefs()
+	require.NoError(t, err)
+	require.NoError(t, store.SavePlayerPrefs(prefs))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdefabcdef", d.EdgesEdit, "the same value keeps the edges")
+
+	prefs.SkipSilenceMinSec = prefs.SkipSilenceMinSec + 1
+	require.NoError(t, store.SavePlayerPrefs(prefs))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+	assert.True(t, edgesPending(t, store, id))
+}
+
+func TestEdgesErrorNotRetried(t *testing.T) {
+	store, id := edgesMade(t)
+	require.NoError(t, store.ResetEdges(id))
+	require.NoError(t, store.MarkEdgesError(id, "abcdefabcdef", "ffmpeg: boom"))
+	assert.False(t, edgesPending(t, store, id))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdefabcdef", d.EdgesEdit, "records which edit failed")
+	assert.Equal(t, "ffmpeg: boom", d.EdgesError)
+
+	require.NoError(t, store.ResetEdges(id))
+	assert.True(t, edgesPending(t, store, id))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+	assert.Equal(t, "", d.EdgesError)
+}
+
+func TestResetEdgesAll(t *testing.T) {
+	store, id := edgesMade(t)
+	require.NoError(t, store.ResetEdges())
+	assert.True(t, edgesPending(t, store, id))
+}
+
+func TestWantEdgesReportsChange(t *testing.T) {
+	store, id := readyItem(t)
+	changed, err := store.WantEdges(id)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	changed, err = store.WantEdges(id)
+	require.NoError(t, err)
+	assert.False(t, changed)
+	changed, err = store.WantEdges()
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+func TestRecordEdit(t *testing.T) {
+	store, id := readyItem(t)
+	first := []hls.Cut{{Start: 1, End: 2}, {Start: 5, End: 6.5}}
+	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", first))
+	require.NoError(t, store.RecordEdit(id, "abcdefabcdef", []hls.Cut{{Start: 9, End: 10}}))
+	got, err := store.EditCuts(id, "abcdefabcdef")
+	require.NoError(t, err)
+	assert.Equal(t, first, got)
+
+	_, err = store.EditCuts(id, "000000000000")
+	assert.True(t, errors.Is(err, feed.ErrEditNotFound))
+	_, err = store.EditCuts(id+1, "abcdefabcdef")
+	assert.True(t, errors.Is(err, feed.ErrEditNotFound))
+}
+
+func TestPackagedItemIDs(t *testing.T) {
+	store, id := readyItem(t)
+	ids, err := store.PackagedItemIDs()
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(ids))
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	ids, err = store.PackagedItemIDs()
+	require.NoError(t, err)
+	assert.Equal(t, []int64{id}, ids)
 }

@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS downloads (
     package_state TEXT NOT NULL DEFAULT '',
     package_error TEXT NOT NULL DEFAULT '',
     clean_track_path TEXT NOT NULL DEFAULT '',
-    clean_track_error TEXT NOT NULL DEFAULT ''
+    clean_track_error TEXT NOT NULL DEFAULT '',
+    edges_wanted INTEGER NOT NULL DEFAULT 0,
+    edges_edit TEXT NOT NULL DEFAULT '',
+    edges_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (
@@ -55,6 +58,14 @@ CREATE TABLE IF NOT EXISTS gpodder_episode_actions (
 CREATE TABLE IF NOT EXISTS gpodder_removed_subscriptions (
     url TEXT PRIMARY KEY,
     removed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS hls_edits (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    cuts TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS item_tags (

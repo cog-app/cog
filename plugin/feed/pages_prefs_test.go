@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -117,6 +118,43 @@ func TestSavePlayerPrefsFormSkipSilenceMin(t *testing.T) {
 			t.Errorf("skip_silence_min_sec=%s stored %g, want %g", value, got.SkipSilenceMinSec, want)
 		}
 	}
+}
+
+// Changing the shortest silence changes the cuts, so the edges are remade;
+// saving the same value, or another pref, keeps them.
+func TestSavePlayerPrefsFormResetsEdges(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "dave", "pass")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	sessionCookie := cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID)
+	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep.mp3")
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	post := func(k, v string) {
+		t.Helper()
+		env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+			"csrf_token": {csrfToken},
+			k:            {v},
+		}, sessionCookie).Status(http.StatusNoContent)
+	}
+	edit := func() string {
+		t.Helper()
+		d, err := store.GetDownload(id)
+		require.NoError(t, err)
+		return d.EdgesEdit
+	}
+
+	post("skip_silence_min_sec", "1") // the default
+	post("speed", "1.5")
+	assert.Equal(t, "abcdefabcdef", edit())
+	post("skip_silence_min_sec", "3")
+	assert.Equal(t, "", edit())
 }
 
 func TestSidebarHidesEmptyWhenEnabled(t *testing.T) {

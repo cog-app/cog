@@ -566,6 +566,9 @@ type Download struct {
 	PackageError    string
 	CleanTrackPath  string // the clean audio as an HLS track; "" until packaged
 	CleanTrackError string
+	EdgesWanted     bool   // a player asked for the skip presentation
+	EdgesEdit       string // the edit list the edges were made for; "" = none yet
+	EdgesError      string // why they could not be made
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -806,6 +809,7 @@ func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64
 		UPDATE downloads SET state = 'ready', local_path = ?, video_path = ?, bytes = ?,
 			completed_at = unixepoch(), package_state = '', package_error = '',
 			clean_track_path = '', clean_track_error = '',
+			edges_edit = '', edges_error = '',
 			needs_profanity = CASE WHEN clean_audio_path != '' THEN 1 ELSE needs_profanity END,
 			clean_audio_path = ''
 		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
@@ -827,10 +831,12 @@ func (s *Store) MarkDownloadError(itemID int64, errMsg string) error {
 }
 
 // SetCleanAudioPath updates the clean_audio_path for a download row. A new
-// clean file has no track yet, so the old track and its error are cleared.
+// clean file has no track yet, so the old track and its error are cleared, and
+// with them the edges, which were planned against the old track.
 func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
 	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ?,
-			clean_track_path = '', clean_track_error = ''
+			clean_track_path = '', clean_track_error = '',
+			edges_edit = '', edges_error = ''
 		WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set clean audio path: %w", err)
@@ -883,21 +889,22 @@ func (s *Store) FindDownload(itemID int64) (Download, error) {
 // GetDownload returns the download record for an item.
 func (s *Store) GetDownload(itemID int64) (Download, error) {
 	var d Download
-	var needsProf, needsTrans int
+	var needsProf, needsTrans, wanted int
 	err := s.db.QueryRow(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
 		       silence_ranges, silence_state, video_path, package_state, package_error,
-		       clean_track_path, clean_track_error
+		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
 		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
-		&d.CleanTrackPath, &d.CleanTrackError,
+		&d.CleanTrackPath, &d.CleanTrackError, &wanted, &d.EdgesEdit, &d.EdgesError,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
 	}
+	d.EdgesWanted = wanted != 0
 	d.NeedsProfanity = needsProf != 0
 	d.NeedsTranscribe = needsTrans != 0
 	return d, nil
@@ -933,13 +940,15 @@ func (s *Store) PendingSilence(limit int) ([]int64, error) {
 }
 
 // SetSilenceRanges caches silence ranges for an item and marks detection done.
+// The cuts come from them, so any edges made are forgotten.
 func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
 	buf, err := json.Marshal(ranges)
 	if err != nil {
 		return fmt.Errorf("encode silence ranges: %w", err)
 	}
 	_, err = s.db.Exec(
-		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done' WHERE item_id = ?`,
+		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done',
+			edges_edit = '', edges_error = '' WHERE item_id = ?`,
 		string(buf), itemID)
 	if err != nil {
 		return fmt.Errorf("save silence ranges for item %d: %w", itemID, err)
@@ -2056,7 +2065,13 @@ func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
 }
 
 // SavePlayerPrefs persists the per-user player preferences.
+// When the shortest silence skipped changes, so do the cuts: every item's
+// edges are forgotten (and remade for the items players want).
 func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
+	oldMin, err := settingSkipSilenceMinSec.Get(s.db)
+	if err != nil {
+		return fmt.Errorf("load skip_silence_min_sec: %w", err)
+	}
 	if err := settingPlaybackSpeed.Set(s.db, p.Speed); err != nil {
 		return fmt.Errorf("save playback_speed: %w", err)
 	}
@@ -2080,6 +2095,9 @@ func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
 	}
 	if err := settingSkipSilenceMinSec.Set(s.db, p.SkipSilenceMinSec); err != nil {
 		return fmt.Errorf("save skip_silence_min_sec: %w", err)
+	}
+	if p.SkipSilenceMinSec != oldMin {
+		return s.ResetEdges()
 	}
 	return nil
 }

@@ -361,7 +361,38 @@ func TestSetPlayerPrefsSkipSilenceMin(t *testing.T) {
 
 // Changing the shortest silence changes the plan, so the edges are remade.
 func TestSetPlayerPrefsResetsEdges(t *testing.T) {
-	t.Skip("Task 6")
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	store := feedStore(t, env, u.Username)
+	ctx := context.Background()
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep.mp3")
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	edit := func() string {
+		t.Helper()
+		d, err := store.GetDownload(id)
+		require.NoError(t, err)
+		return d.EdgesEdit
+	}
+	set := func(minSilence float64) {
+		t.Helper()
+		res, err := client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+		require.NoError(t, err)
+		res.Msg.SkipSilenceMinSec = minSilence
+		_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(res.Msg))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef"))
+	set(1) // the default: unchanged
+	assert.Equal(t, "abcdefabcdef", edit())
+	set(0) // a client without the field: unchanged
+	assert.Equal(t, "abcdefabcdef", edit())
+	set(2)
+	assert.Equal(t, "", edit())
 }
 
 func TestExportOPMLOverGRPC(t *testing.T) {
