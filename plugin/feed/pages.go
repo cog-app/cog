@@ -1647,6 +1647,7 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.
+// A missing clean file is an error, never a reason to serve the unclean one.
 func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1679,6 +1680,12 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		f, err := space.Own.Open(Name(stored))
 		if errors.Is(err, fs.ErrNotExist) {
+			if stored == dl.CleanAudioPath {
+				// Never fall back to the unclean audio of a cleaned item.
+				httperr.Log(r, fmt.Errorf("item %d: clean file %s is missing: %w", id, stored, err))
+				http.Error(w, "clean audio is not available", http.StatusServiceUnavailable)
+				return
+			}
 			continue
 		}
 		if err != nil {
