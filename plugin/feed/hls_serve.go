@@ -112,7 +112,9 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			original.Default = false
-			pres.Audio = []hls.Rendition{{Name: "Clean", URI: "clean.m3u8" + query, Default: true, Track: &clean}, original}
+			// Original is listed first, so a player that honours DEFAULT=YES
+			// is told apart from one that takes the first rendition.
+			pres.Audio = []hls.Rendition{original, {Name: "Clean", URI: "clean.m3u8" + query, Default: true, Track: &clean}}
 		}
 		if captions {
 			if _, err := readCaptions(space, d.CaptionsPath); err != nil {
