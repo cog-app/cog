@@ -78,6 +78,15 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := "?sig=" + sig
+	// Captions are masked whenever the clean rendition plays. Without a
+	// profanity plugin there is nothing to mask with, so they are withheld.
+	captions := d.CaptionsPath != ""
+	if captions && d.CleanTrackPath != "" && p.Profanity() == nil {
+		captions = false
+		if file == "master.m3u8" {
+			slog.Warn("feed hls: captions not masked; profanity plugin unavailable", "item", itemID)
+		}
+	}
 	switch file {
 	case "master.m3u8":
 		audio, _, err := space.Track(d.LocalPath)
@@ -105,7 +114,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			original.Default = false
 			pres.Audio = []hls.Rendition{{Name: "Clean", URI: "clean.m3u8" + query, Default: true, Track: &clean}, original}
 		}
-		if d.CaptionsPath != "" {
+		if captions {
 			if _, err := readCaptions(space, d.CaptionsPath); err != nil {
 				slog.Warn("feed hls: captions", "item", itemID, "err", err)
 			} else {
@@ -114,7 +123,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		}
 		writePlaylist(w, r, hls.Master(pres))
 	case "subs.m3u8":
-		if d.CaptionsPath == "" {
+		if !captions {
 			http.NotFound(w, r)
 			return
 		}
@@ -152,7 +161,7 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		serveTrackFile(w, r, space, d.CleanTrackPath, "audio/mp4")
 	default:
 		n, ok := subsSegment(file)
-		if !ok || d.CaptionsPath == "" {
+		if !ok || !captions {
 			http.NotFound(w, r)
 			return
 		}
@@ -173,12 +182,10 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		}
 		if d.CleanTrackPath != "" {
 			// The clean rendition is the one that plays, so its captions say
-			// nothing the audio does not. Without a profanity plugin there is
-			// no word list to mask with and they are served as they are.
-			if prof := p.Profanity(); prof != nil {
-				for i := range cues {
-					cues[i].Text = prof.FilterText(username, cues[i].Text)
-				}
+			// nothing the audio does not; captions is false without the plugin.
+			prof := p.Profanity()
+			for i := range cues {
+				cues[i].Text = prof.FilterText(username, cues[i].Text)
 			}
 		}
 		// MPEGTS 0: hls.js rebases the timeline so the first audio sample plays

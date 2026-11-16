@@ -405,3 +405,22 @@ func TestHLSCaptionsMaskedWhenClean(t *testing.T) {
 	seg = env.Get(t, sibling(masterURL(t, env, "alice", plain), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
 	assert.True(t, strings.Contains(seg, "darn"), seg)
 }
+
+// With a clean track and no profanity plugin there is no word list to mask
+// with, so the captions are withheld rather than served unmasked.
+func TestHLSCaptionsWithheldWithoutProfanity(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := cleanItem(t, env, "alice", false)
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	name := "captions/" + strconv.FormatInt(id, 10) + ".vtt"
+	_, err = space.Own.Put(name, strings.NewReader("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nwell darn it\n"))
+	require.NoError(t, err)
+	require.NoError(t, feedStore(t, env, "alice").SetCaptionsPath(id, name))
+	m := masterURL(t, env, "alice", id)
+	body := env.Get(t, m).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, "SUBTITLES"), body)
+	env.Get(t, sibling(m, "subs.m3u8")).Status(http.StatusNotFound)
+	env.Get(t, sibling(m, "subs-0.vtt")).Status(http.StatusNotFound)
+}
