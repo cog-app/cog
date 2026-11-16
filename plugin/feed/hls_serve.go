@@ -94,9 +94,16 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			}
 			video = &v
 		}
-		pres := hls.Presentation{
-			Audio: []hls.Rendition{{Name: "Original", URI: "audio.m3u8" + query, Default: true, Track: &audio}},
-			Video: video, VideoURI: "video.m3u8" + query,
+		original := hls.Rendition{Name: "Original", URI: "audio.m3u8" + query, Default: true, Track: &audio}
+		pres := hls.Presentation{Audio: []hls.Rendition{original}, Video: video, VideoURI: "video.m3u8" + query}
+		if d.CleanTrackPath != "" {
+			clean, _, err := space.Track(d.CleanTrackPath)
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			original.Default = false
+			pres.Audio = []hls.Rendition{{Name: "Clean", URI: "clean.m3u8" + query, Default: true, Track: &clean}, original}
 		}
 		if d.CaptionsPath != "" {
 			if _, err := readCaptions(space, d.CaptionsPath); err != nil {
@@ -119,10 +126,13 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 		writePlaylist(w, r, hls.Playlist(hls.SubtitleEntries(audio, func(n int) string {
 			return "subs-" + strconv.Itoa(n) + ".vtt" + query
 		})))
-	case "audio.m3u8", "video.m3u8":
+	case "audio.m3u8", "video.m3u8", "clean.m3u8":
 		stored, media := d.LocalPath, "audio.m4a"
-		if file == "video.m3u8" {
+		switch file {
+		case "video.m3u8":
 			stored, media = d.VideoPath, "video.mp4"
+		case "clean.m3u8":
+			stored, media = d.CleanTrackPath, "clean.m4a"
 		}
 		if stored == "" {
 			http.NotFound(w, r)
@@ -134,33 +144,12 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writePlaylist(w, r, hls.MediaPlaylist(t, media+query))
-	case "audio.m4a", "video.mp4":
-		stored, mime := d.LocalPath, "audio/mp4"
-		if file == "video.mp4" {
-			stored, mime = d.VideoPath, "video/mp4"
-		}
-		if stored == "" {
-			http.NotFound(w, r)
-			return
-		}
-		f, err := space.Own.Open(Name(stored))
-		if err != nil {
-			httperr.Internal(w, r, err)
-			return
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				slog.Warn("feed hls: close track", "path", stored, "err", err)
-			}
-		}()
-		st, err := f.Stat()
-		if err != nil {
-			httperr.Internal(w, r, err)
-			return
-		}
-		w.Header().Set("Content-Type", mime)
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		http.ServeContent(w, r, "", st.ModTime(), f)
+	case "audio.m4a":
+		serveTrackFile(w, r, space, d.LocalPath, "audio/mp4")
+	case "video.mp4":
+		serveTrackFile(w, r, space, d.VideoPath, "video/mp4")
+	case "clean.m4a":
+		serveTrackFile(w, r, space, d.CleanTrackPath, "audio/mp4")
 	default:
 		n, ok := subsSegment(file)
 		if !ok || d.CaptionsPath == "" {
@@ -182,10 +171,47 @@ func (p *Plugin) ServeHLS(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
+		if d.CleanTrackPath != "" {
+			// The clean rendition is the one that plays, so its captions say
+			// nothing the audio does not. Without a profanity plugin there is
+			// no word list to mask with and they are served as they are.
+			if prof := p.Profanity(); prof != nil {
+				for i := range cues {
+					cues[i].Text = prof.FilterText(username, cues[i].Text)
+				}
+			}
+		}
 		// MPEGTS 0: hls.js rebases the timeline so the first audio sample plays
 		// at 0, and this puts caption time 0 there (TestBrowser/HLSCaptionsOffset).
 		writeVTT(w, r, hls.VTTSegment(cues, start, end, 0))
 	}
+}
+
+// serveTrackFile serves a stored track file with byte ranges; 404 when the
+// item has none.
+func serveTrackFile(w http.ResponseWriter, r *http.Request, space Space, stored, mime string) {
+	if stored == "" {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := space.Own.Open(Name(stored))
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("feed hls: close track", "path", stored, "err", err)
+		}
+	}()
+	st, err := f.Stat()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeContent(w, r, "", st.ModTime(), f)
 }
 
 // subsSegment is the segment number of a file named subs-<n>.vtt.

@@ -17,6 +17,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/profanity"
 )
 
 var feeds atomic.Int64
@@ -316,4 +317,91 @@ func TestHLSCaptionsFileMissing(t *testing.T) {
 	body := env.Get(t, masterURL(t, env, "alice", id)).Status(http.StatusOK).ReadBody()
 	assert.False(t, strings.Contains(body, "TYPE=SUBTITLES"), body)
 	assert.True(t, strings.Contains(body, "\nvideo.m3u8?sig="), body)
+}
+
+// cleanItem is packagedItem plus a clean rendition: the audio fixture stored
+// as the item's packaged clean track.
+func cleanItem(t *testing.T, env *cogtest.Env, username string, withVideo bool) int64 {
+	t.Helper()
+	id := packagedItem(t, env, username, withVideo)
+	space, err := feedPlugin(t, env).Space(username)
+	require.NoError(t, err)
+	b, err := os.ReadFile("testdata/media/audio.m4a")
+	require.NoError(t, err)
+	name := "media/" + strconv.FormatInt(id, 10) + ".hls-audio.clean.m4a"
+	_, err = space.Own.Put(name, bytes.NewReader(b))
+	require.NoError(t, err)
+	require.NoError(t, feedStore(t, env, username).SaveCleanTrack(id, name))
+	return id
+}
+
+func TestHLSCleanRendition(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := cleanItem(t, env, "alice", true)
+	body := env.Get(t, masterURL(t, env, "alice", id)).Status(http.StatusOK).ReadBody()
+	for _, want := range []string{`NAME="Clean",DEFAULT=YES`, `URI="clean.m3u8?sig=`, `NAME="Original",DEFAULT=NO`, `URI="audio.m3u8?sig=`} {
+		assert.True(t, strings.Contains(body, want), "%q not in\n%s", want, body)
+	}
+}
+
+func TestHLSCleanMediaAndRange(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := cleanItem(t, env, "alice", false)
+	master := masterURL(t, env, "alice", id)
+	pl := env.Get(t, sibling(master, "clean.m3u8")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(pl, "clean.m4a?sig="), pl)
+	assert.True(t, strings.Contains(pl, `#EXT-X-MAP:URI="clean.m4a?sig=`), pl)
+	r := env.Get(t, sibling(master, "clean.m4a"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
+	assert.Equal(t, "audio/mp4", r.Header.Get("Content-Type"))
+	assert.Equal(t, 100, len(r.ReadBody()))
+}
+
+func TestHLSNoCleanTrack(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := packagedItem(t, env, "alice", true)
+	master := masterURL(t, env, "alice", id)
+	env.Get(t, sibling(master, "clean.m3u8")).Status(http.StatusNotFound)
+	env.Get(t, sibling(master, "clean.m4a")).Status(http.StatusNotFound)
+	body := env.Get(t, master).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(body, `NAME="Clean"`), body)
+}
+
+func TestHLSCaptionsMaskedWhenClean(t *testing.T) {
+	env := cogtest.New(t, feed.New(), profanity.New())
+	// Start is where the feed plugin finds the profanity plugin.
+	require.NoError(t, env.Providers.Plugins.Start(t.Context()))
+	u := env.CreateUser(t, "alice", "pw")
+	sess, err := env.Providers.Sessions.Create(u.ID)
+	require.NoError(t, err)
+	env.PostForm(t, "/apps/profanity/settings", url.Values{"wordlist": {"darn"}},
+		cogtest.Header("Cookie", auth.SessionCookieName+"="+sess.ID),
+		cogtest.Header("X-CSRF-Token", auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)),
+		cogtest.StopRedirect).Status(http.StatusSeeOther)
+	raw, ok := env.Providers.Plugins.Plugin(profanity.PluginID)
+	require.True(t, ok)
+	masked := raw.(*profanity.Plugin).FilterText("alice", "well darn it")
+	require.NotEqual(t, "well darn it", masked)
+
+	const vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nwell darn it\n"
+	space, err := feedPlugin(t, env).Space("alice")
+	require.NoError(t, err)
+	caption := func(id int64) {
+		name := "captions/" + strconv.FormatInt(id, 10) + ".vtt"
+		_, err := space.Own.Put(name, strings.NewReader(vtt))
+		require.NoError(t, err)
+		require.NoError(t, feedStore(t, env, "alice").SetCaptionsPath(id, name))
+	}
+	clean := cleanItem(t, env, "alice", false)
+	caption(clean)
+	seg := env.Get(t, sibling(masterURL(t, env, "alice", clean), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
+	assert.False(t, strings.Contains(seg, "darn"), seg)
+	assert.True(t, strings.Contains(seg, masked), "%q not in\n%s", masked, seg)
+
+	plain := packagedItem(t, env, "alice", false)
+	caption(plain)
+	seg = env.Get(t, sibling(masterURL(t, env, "alice", plain), "subs-0.vtt")).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(seg, "darn"), seg)
 }
