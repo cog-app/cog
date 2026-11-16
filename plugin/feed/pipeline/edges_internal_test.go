@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -21,11 +22,15 @@ func pair(args []string, flag, value string) bool {
 }
 
 func TestEdgeArgsAudio(t *testing.T) {
-	src := edgeSource{Kind: hls.Audio, Codecs: "mp4a.40.2", SampleRate: 44100, Channels: 2}
-	args, err := edgeArgs("/in.m4a", "/out.mp4", hls.Piece{Start: 2.6, End: 6, Edge: true}, src)
+	src := edgeSource{Kind: hls.Audio, Codecs: "mp4a.40.2", SampleRate: 44100, Channels: 2, Frame: 1024.0 / 44100}
+	// 146 frames.
+	end := 2.6 + 146*1024.0/44100
+	args, err := edgeArgs("/in.m4a", "/out.mp4", hls.Piece{Start: 2.6, End: end, Edge: true}, src)
 	require.NoError(t, err)
 	for _, p := range [][2]string{
-		{"-ss", "2.600000"}, {"-to", "6.000000"}, {"-output_ts_offset", "2.600000"},
+		// It ends on the sample; the input runs a frame further.
+		{"-ss", "2.600000"}, {"-to", "6.013333"}, {"-af", "atrim=end_sample=149504"},
+		{"-output_ts_offset", "2.600000"},
 		{"-bsf:a", `noise=drop=lt(pts\,0)`},
 		{"-c:a", "aac"}, {"-ar", "44100"}, {"-ac", "2"}, {"-map", "0:a:0"},
 		{"-avoid_negative_ts", "make_non_negative"}, {"-f", "mp4"},
@@ -45,11 +50,11 @@ func TestEdgeArgsAudio(t *testing.T) {
 // A track that starts after 0 is seeked from its own start; the output
 // keeps item time.
 func TestEdgeArgsOffsetTrack(t *testing.T) {
-	src := edgeSource{Kind: hls.Audio, T0: 1.5, SampleRate: 44100, Channels: 1}
+	src := edgeSource{Kind: hls.Audio, T0: 1.5, SampleRate: 48000, Channels: 1, Frame: 1024.0 / 48000}
 	args, err := edgeArgs("/in.m4a", "/out.mp4", hls.Piece{Start: 4.1, End: 6, Edge: true}, src)
 	require.NoError(t, err)
 	assert.True(t, pair(args, "-ss", "2.600000"), "%q", args)
-	assert.True(t, pair(args, "-to", "4.500000"), "%q", args)
+	assert.True(t, pair(args, "-to", "4.521333"), "%q", args)
 	assert.True(t, pair(args, "-output_ts_offset", "4.100000"), "%q", args)
 }
 
@@ -99,4 +104,64 @@ func TestEdgeArgsVideoDelay(t *testing.T) {
 	assert.True(t, pair(args, "-output_ts_offset", "4.016567"), "%q", args)
 	assert.True(t, pair(args, "-bsf:v", "setts=dts=DTS-round(0.083333/TB)"), "%q", args)
 	assert.True(t, pair(args, "-t", "1.899100"), "%q", args)
+}
+
+// Audio edges are whole AAC frames, so each is up to a frame longer or
+// shorter than its piece; a player that keeps time by the audio it plays
+// (mpv) would drift by the sum. Each edge takes the frame count that keeps
+// the audio played so far within half a frame of the plan, and keeps the
+// end that joins the media beside it: its start, unless what follows it
+// follows without a cut.
+func TestAudioSpans(t *testing.T) {
+	frame := 1024.0 / 44100
+	var pieces []hls.Piece
+	// Segments of 6 s; in each, a cut from 2.3+k/7 s to 3.9 s, and in every
+	// other one a second cut from 4.6 to 5.2 s.
+	for seg := range 12 {
+		s := float64(seg) * 6
+		pieces = append(pieces, hls.Piece{Start: s, End: s + 2.3 + float64(seg)/7, Segment: seg, Edge: true})
+		if seg%2 == 0 {
+			pieces = append(pieces, hls.Piece{Start: s + 3.9, End: s + 4.6, Segment: seg, Edge: true})
+			pieces = append(pieces, hls.Piece{Start: s + 5.2, End: s + 6, Segment: seg, Edge: true})
+		} else {
+			pieces = append(pieces, hls.Piece{Start: s + 3.9, End: s + 6, Segment: seg, Edge: true})
+		}
+		// A kept segment between each pair.
+		pieces = append(pieces, hls.Piece{Start: s + 6, End: s + 12, Segment: seg + 1})
+	}
+	// Renumber: the kept segments above overlap the next ones; drop them
+	// but for the last.
+	var plan []hls.Piece
+	for i, p := range pieces {
+		if !p.Edge && i != len(pieces)-1 {
+			continue
+		}
+		plan = append(plan, p)
+	}
+	spans := audioSpans(plan, frame)
+	edges := hls.Edges(plan)
+	require.Equal(t, len(edges), len(spans))
+	drift := 0.0
+	for n, e := range edges {
+		sp := spans[n]
+		frames := (sp.End - sp.Start) / frame
+		assert.InDelta(t, math.Round(frames), frames, 1e-6, "edge %d: whole frames", n)
+		drift += (sp.End - sp.Start) - (e.End - e.Start)
+		assert.True(t, math.Abs(drift) <= frame/2+1e-9, "edge %d: drift %.4f s", n, drift)
+		if sp.Start != e.Start {
+			assert.Equal(t, e.End, sp.End, "edge %d keeps one end", n)
+		}
+		assert.InDelta(t, e.Start, sp.Start, frame, "edge %d start", n)
+		assert.InDelta(t, e.End, sp.End, frame, "edge %d end", n)
+	}
+	// An edge that ends where its segment does, before media that follows
+	// without a cut, keeps its end; one before a cut keeps its start.
+	for n, e := range edges {
+		switch math.Mod(e.End, 6) {
+		case 0:
+			assert.Equal(t, e.End, spans[n].End, "edge %d end", n)
+		default:
+			assert.Equal(t, e.Start, spans[n].Start, "edge %d start", n)
+		}
+	}
 }

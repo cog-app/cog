@@ -3,6 +3,7 @@ package feed_test
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // TestHLSSkipPlaysInFFmpeg reads a skip presentation as mpv does (ffmpeg's
@@ -137,6 +139,78 @@ func TestHLSSkipPlaysInFFmpeg(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestHLSSkipManyCutsInSync plays a minute of video with 22 cuts as mpv
+// does and checks the audio stays with the video: a player that keeps time
+// by the audio it has played (mpv) drifts by however much each audio edge
+// is longer or shorter than its piece, and an hour has hundreds of edges.
+// The cuts are on video frames, so the video plays exactly the presentation
+// and the audio is what is measured.
+func TestHLSSkipManyCutsInSync(t *testing.T) {
+	needFFmpeg(t)
+	dir := t.TempDir()
+	video, audio := filepath.Join(dir, "video.mp4"), filepath.Join(dir, "audio.m4a")
+	ffclient(t, "ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=24:duration=60",
+		"-c:v", "libx264", "-profile:v", "baseline", "-g", "48", "-keyint_min", "48", "-sc_threshold", "0", "-pix_fmt", "yuv420p",
+		"-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx", "-f", "mp4", video)
+	ffclient(t, "ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=60",
+		"-c:a", "aac", "-b:a", "32k", "-movflags", "+empty_moov+default_base_moof+global_sidx", "-frag_duration", "2000000", "-f", "mp4", audio)
+
+	// Cuts of 21 to 27 frames, 1.5 s or more apart, on frames; a silence
+	// keeps CutMargin at each end of its cut.
+	var silence []feed.Range
+	for i := range 22 {
+		start := math.Round((1.3+float64(i)*2.65)*24) / 24
+		end := start + float64(21+3*(i%3))/24
+		silence = append(silence, feed.Range{Start: start - hls.CutMargin, End: end + hls.CutMargin, Action: "skip"})
+	}
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	id := packagedItemFrom(t, env, "alice", audio, video)
+	store := feedStore(t, env, "alice")
+	require.NoError(t, store.SetSilenceRanges(id, silence))
+	skip := skipMaster(t, env, "alice", id)
+	body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
+	for range 5 {
+		runEdges(t, env, "alice")
+		if body = env.Get(t, skip).Status(http.StatusOK).ReadBody(); masterEdit(body) != "" {
+			break
+		}
+	}
+	edit := masterEdit(body)
+	require.NotEqual(t, "", edit, "edges not made: %s\n%s", download(t, env, "alice", id).EdgesError, body)
+	cuts, duration, err := store.EditCuts(id, edit)
+	require.NoError(t, err)
+	require.Equal(t, 22, len(cuts))
+	presentation := duration
+	for _, c := range cuts {
+		presentation -= c.End - c.Start
+	}
+
+	probe := probeFrames(t, env.Providers.Config.BaseURL+skip, "-protocol_whitelist", "http,tcp,hls,file,crypto")
+	rate, samples, frames := 0, 0, 0
+	for _, s := range probe.Streams {
+		if s.CodecType == "audio" {
+			r, err := strconv.Atoi(s.SampleRate)
+			require.NoError(t, err, s.SampleRate)
+			rate = r
+		}
+	}
+	require.NotEqual(t, 0, rate, "no audio stream")
+	for _, f := range probe.Frames {
+		switch f.MediaType {
+		case "audio":
+			samples += f.Samples
+		case "video":
+			frames++
+		}
+	}
+	audioSecs, videoSecs := float64(samples)/float64(rate), float64(frames)/24
+	t.Logf("audio %.4f s, video %.4f s, presentation %.4f s", audioSecs, videoSecs, presentation)
+	assert.InDelta(t, presentation, videoSecs, 1.0/24, "video")
+	assert.InDelta(t, videoSecs, audioSecs, 0.05, "audio against video")
+	assert.InDelta(t, presentation, audioSecs, 0.05, "audio against the presentation")
 }
 
 type frameProbe struct {

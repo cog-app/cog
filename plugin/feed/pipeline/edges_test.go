@@ -104,19 +104,37 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 	require.Equal(t, 4, len(audio))
 	require.Equal(t, 4, len(video))
 	assert.Equal(t, 8, len(cacheNames(t, space, feed.EdgesDir(id)+"/"+p.Edit)))
+	frame := 1024.0 / 44100
 	for n, piece := range audio {
 		tr := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, n))
 		assert.Equal(t, hls.Audio, tr.Kind)
 		assert.Equal(t, "mp4a.40.2", tr.Codecs)
 		first, last := tr.Fragments[0], tr.Fragments[len(tr.Fragments)-1]
-		// The encoder's priming frame is dropped: players that keep the
-		// first init never skip it, so it would play 23 ms of nothing and
-		// overlap what comes before. The edge starts at the piece.
-		assert.InDelta(t, piece.Start, first.Start, 1e-3, "audio edge %d start", n)
+		start, end := first.Start, last.Start+last.Duration
+		// Whole AAC frames, within a frame of the piece. The encoder's
+		// priming frame is dropped: players that keep the first init never
+		// skip it, so it would play 23 ms of nothing and overlap what comes
+		// before.
+		assert.InDelta(t, piece.Start, start, frame, "audio edge %d start", n)
+		assert.InDelta(t, piece.End, end, frame, "audio edge %d end", n)
+		// It keeps the end that joins its segment's other media: the start
+		// after a cut, the end before media that follows without one. The
+		// last ends with the track, whose last frame is short.
+		switch {
+		case n == len(audio)-1:
+			assert.InDelta(t, piece.Start, start, 1e-3, "audio edge %d start", n)
+		case n%2 == 0:
+			assert.InDelta(t, piece.Start, start, 1e-3, "audio edge %d start", n)
+			frames := (end - start) / frame
+			assert.InDelta(t, math.Round(frames), frames, 1e-3, "audio edge %d: whole frames", n)
+		default:
+			assert.InDelta(t, piece.End, end, 1e-3, "audio edge %d end", n)
+			frames := (end - start) / frame
+			assert.InDelta(t, math.Round(frames), frames, 1e-3, "audio edge %d: whole frames", n)
+		}
 		// Players place fragments by tfdt, not the sidx: it is item time too.
 		tfdt := decodeTime(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, n))
 		assert.InDelta(t, first.Start, tfdt, 1e-3, "audio edge %d tfdt", n)
-		assert.InDelta(t, piece.End, last.Start+last.Duration, 0.05, "audio edge %d end", n)
 	}
 	a0 := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0))
 	assert.InDelta(t, 0, a0.Fragments[0].Start, 0.05)

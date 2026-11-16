@@ -257,8 +257,7 @@ func (w *Edges) stale(itemID int64, edit string) (bool, error) {
 // deadline.
 func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendition, deadline time.Time) error {
 	for _, r := range rs {
-		edges := hls.Edges(r.pieces)
-		if len(edges) == 0 {
+		if len(hls.Edges(r.pieces)) == 0 {
 			continue
 		}
 		in, err := w.space.Path(r.stored)
@@ -269,7 +268,7 @@ func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendit
 		if err != nil {
 			return err
 		}
-		for n, piece := range edges {
+		for n, piece := range edgeCuts(r.pieces, src) {
 			name := feed.EdgeName(itemID, edit, r.key, n)
 			if w.made(name, piece, src) {
 				continue
@@ -290,6 +289,44 @@ func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendit
 		}
 	}
 	return nil
+}
+
+// edgeCuts is what each edge piece of pieces is cut from: the piece, or
+// for audio its span of whole frames (audioSpans).
+func edgeCuts(pieces []hls.Piece, src edgeSource) []hls.Piece {
+	if src.Kind == hls.Audio {
+		return audioSpans(pieces, src.Frame)
+	}
+	return hls.Edges(pieces)
+}
+
+// audioSpans is what each audio edge piece of pieces is cut from: whole
+// AAC frames, since an edge's last frame decodes whole. A player that keeps
+// time by the audio it plays (mpv) would drift by every edge's difference
+// from its piece, so each edge takes the frame count that keeps the audio
+// played so far within half a frame of the plan. It keeps its start, where
+// it follows a cut or begins its segment, unless what follows it follows
+// without a cut: then it keeps its end, which joins that media, and starts
+// within a frame of its piece.
+func audioSpans(pieces []hls.Piece, frame float64) []hls.Piece {
+	var spans []hls.Piece
+	drift := 0.0 // the audio of the edges so far less their pieces, s
+	for i, p := range pieces {
+		if !p.Edge {
+			continue
+		}
+		length := p.End - p.Start
+		n := max(math.Round((length-drift)/frame), 1)
+		drift += n*frame - length
+		span := p
+		if i+1 < len(pieces) && pieces[i+1].Start-p.End < 1e-3 {
+			span.Start = p.End - n*frame
+		} else {
+			span.End = p.Start + n*frame
+		}
+		spans = append(spans, span)
+	}
+	return spans
 }
 
 // edgeSource is what an edge must match of the track it is cut from.
@@ -462,11 +499,13 @@ func (w *Edges) addSourceSets(name string, src edgeSource) error {
 	return nil
 }
 
-// check reports how the edge at name is not a track of the piece: one track
-// with an index, of src's kind, starting, ending and lasting as the piece
-// does to within a frame, placed where its index says (its first tfdt, by
-// which players place it), and for video with its source's parameter sets
-// in its init.
+// check reports how the edge at name is not a track of the piece (what
+// edgeCuts says it is cut from): one track with an index, of src's kind,
+// starting, ending and lasting as the piece does (video to within a frame;
+// audio to the millisecond, but for an end up to a frame short where its
+// track's last frame is), placed where its index says (its
+// first tfdt, by which players place it), and for video with its source's
+// parameter sets in its init.
 func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	tr, _, err := w.space.CachedTrack(name)
 	if err != nil {
@@ -485,9 +524,18 @@ func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	// A video frame begins at or after the piece and may run past its end.
 	// A video edge's index counts decode time, src.Delay before its frames.
 	start, end := first.Start+src.Delay, last.Start+last.Duration+src.Delay
-	tol := src.Frame + 1e-3
-	if math.Abs(start-piece.Start) > tol || math.Abs(end-piece.End) > tol || math.Abs((end-start)-(piece.End-piece.Start)) > tol {
-		return fmt.Errorf("made %.4f-%.4f s, want %.4f-%.4f s to within %.4f s", start, end, piece.Start, piece.End, tol)
+	switch src.Kind {
+	case hls.Audio:
+		// It may end short of the piece by less than a frame where the
+		// track ends sooner than its index says.
+		if math.Abs(start-piece.Start) > 1e-3 || end > piece.End+1e-3 || end < piece.End-src.Frame-1e-3 {
+			return fmt.Errorf("made %.4f-%.4f s, want %.4f-%.4f s (its end up to %.4f s short)", start, end, piece.Start, piece.End, src.Frame)
+		}
+	default:
+		tol := src.Frame + 1e-3
+		if math.Abs(start-piece.Start) > tol || math.Abs(end-piece.End) > tol || math.Abs((end-start)-(piece.End-piece.Start)) > tol {
+			return fmt.Errorf("made %.4f-%.4f s, want %.4f-%.4f s to within %.4f s", start, end, piece.Start, piece.End, tol)
+		}
 	}
 	tfdt, err := w.space.CachedDecodeTime(name)
 	if err != nil {
@@ -564,7 +612,9 @@ func (w *Edges) removeOthers(itemID int64, edit string) error {
 // time, and frag_discont writes that into the fragments' tfdt as well as the
 // sidx (without it tfdt stays 0, and players place fragments by tfdt).
 //
-// Audio drops the encoder's priming frame (the packets before the input's
+// Audio is cut to the sample from the piece, which is whole AAC frames
+// (audioSpans), so its last frame is no longer than the piece. It drops the
+// encoder's priming frame (the packets before the input's
 // start): the edge's edit list, which says to skip it, is lost under the
 // init a player keeps, so it would play 23 ms of nothing per edge and
 // overlap the piece before. Its first frame is then the piece's start,
@@ -602,8 +652,13 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 		if src.SampleRate <= 0 || src.Channels <= 0 {
 			return nil, fmt.Errorf("audio edge: sample rate %d, %d channels", src.SampleRate, src.Channels)
 		}
-		head = append(head, "-to", sec(piece.End-src.T0))
-		tail = []string{"-map", "0:a:0", "-c:a", "aac", "-b:a", "128k",
+		// The piece is whole frames (audioSpans): atrim ends it on the
+		// sample, where -to alone ends a frame or so late. The input runs
+		// a frame further, so the encoder is never short of samples.
+		head = append(head, "-to", sec(piece.End-src.T0+src.Frame))
+		samples := int64(math.Round((piece.End - piece.Start) * float64(src.SampleRate)))
+		tail = []string{"-map", "0:a:0", "-af", "atrim=end_sample=" + strconv.FormatInt(samples, 10),
+			"-c:a", "aac", "-b:a", "128k",
 			"-ar", strconv.Itoa(src.SampleRate), "-ac", strconv.Itoa(src.Channels),
 			"-bsf:a", `noise=drop=lt(pts\,0)`,
 			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
