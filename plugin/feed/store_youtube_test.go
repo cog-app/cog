@@ -169,12 +169,10 @@ func TestYouTubeStreamsSingleflight(t *testing.T) {
 	p := New()
 	var wg sync.WaitGroup
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _, err := p.youtubeTracks(context.Background(), s, "u", id, "https://yt/w", now, false)
 			assert.NoError(t, err)
-		}()
+		})
 	}
 	select {
 	case <-started:
@@ -238,11 +236,9 @@ func TestYouTubeStreamsResolveFailure(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, 3)
 	for i := range errs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _, errs[i] = p.youtubeTracks(context.Background(), s, "u", id, "https://yt/w", now, false)
-		}()
+		})
 	}
 	select {
 	case <-started:

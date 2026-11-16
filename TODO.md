@@ -206,8 +206,16 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         never pruned; VTT and media playlists replan per request;
         `AddParamSets` assumes default-base-is-moof; a generation counter
         for the worker's check-then-record race.
-  - [ ] Phase 5: undownloaded YouTube from googlevideo, after the off-Wi-Fi
-        test, with a proxy fallback.
+  - [x] Phase 5: undownloaded YouTube from googlevideo (default `direct`, a
+        302 to googlevideo; `proxy` as the admin-set fallback), one resolve
+        cached until near expiry with pinned formats, never remote for a muted
+        item, skip unavailable, falls back to download
+        (`TestHLSRemote*`, `TestResolveMediaRemote*`, `TestRemoteTrack*`,
+        `TestResolveYouTube*`, `TestYouTubeMode*`, `TestWhisperSettingsServerWide`).
+        Pending: the manual check (desktop Chrome, then the phone off Wi-Fi).
+        Still open: a packaging backfill for legacy done-but-unpackaged
+        downloads, an index cache, the redirect target from another network,
+        chunked requests.
   - [ ] Phase 6: M3U of a playlist or view for external players; Android on
         Media3 HLS with background audio-only.
 - [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,

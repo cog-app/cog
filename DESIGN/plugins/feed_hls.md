@@ -1,9 +1,11 @@
 # Feed media over HLS
 
-Status: phases 1 to 4 done (2026-11-16): downloaded items play over HLS from
+Status: phases 1 to 5 done (2026-11-16): downloaded items play over HLS from
 signed links, in the web player through hls.js, with a captions rendition, a
 clean (profanity-muted) audio rendition, and skip (silence cut out of the
-playlists, with edge transcodes). Phases 5 and 6 are open.
+playlists, with edge transcodes), and undownloaded YouTube plays from
+googlevideo. Phase 6 is open; the phase 5 manual check on desktop Chrome and
+the phone is pending.
 Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
 download`, MR !54); merged downloads made before are repackaged as tracks.
 
@@ -81,12 +83,42 @@ any run of segments by byte range out of one file.
   the m4a audio track separately, with no merge. Both are already fragmented
   (YouTube's DASH formats carry a `sidx`), so packaging may only need to read
   the index.
-- **YouTube, not downloaded:** segments can point straight at googlevideo,
-  using byte ranges read from the format's `sidx`. Then Cog serves only
-  playlists and edited pieces. **Open:** googlevideo URLs carry the IP that
-  resolved them (`ip=`) and expire after about 6 hours. A phone off the home
-  network may be refused, so this needs a test off Wi-Fi, and a proxy
-  fallback if the URLs are refused.
+- **YouTube, not downloaded:** an item with no packaged download plays from
+  googlevideo (phase 5, `feed.remoteYouTube`).
+  - One yt-dlp resolve per item gives both tracks. The result is cached in
+    `youtube_streams` until 10 minutes before the URLs' `expire`, with the
+    format ids pinned, so a re-resolve picks the same formats and the byte
+    ranges in an issued playlist stay valid. If the pinned ids are dead, the
+    row is dropped and one fresh resolve runs in the same flight (held ranges
+    may break once; the player restarts).
+  - Cog reads each track's `sidx` and `moov` with one Range request (about
+    256 KB, `RemoteTrack`) and writes the master and media playlists with the
+    same presentation code as a local item. Captions are absent (none without
+    a download).
+  - Every segment is a request to `yt-*.m4a` or `yt-*.mp4` on Cog, signed like
+    any HLS link. In `direct` mode Cog answers 302 to the googlevideo URL (a
+    fresh one if the cached one is near expiry). In `proxy` mode Cog streams
+    the range itself through safehttp (redirects followed, addresses checked
+    at dial) and, on a 403, refreshes the URL once and retries.
+  - The mode is a server-wide admin setting, `hls_youtube_mode` (`direct`
+    default, or `proxy`), in Feed System Settings, stored in feed's root
+    database. The whisper settings live there too, so every user's transcribe
+    worker sees the admin's choice. Whisper values saved per user before this
+    change are ignored; the admin saves them once again.
+  - Falls back to downloading when there is no remote presentation: the
+    resolve or index read fails, the item is not YouTube, or the item is
+    muted. `ResolveMedia` and `StreamURL` make that choice; a client that goes
+    away mid-resolve returns its error and does not queue a download. A
+    download that is done but not yet packaged also plays remote, and so do
+    legacy done-but-unpackaged downloads (see Open questions).
+  - **No mute without a download.** A muted item never goes remote
+    (`ResolveMedia` and `StreamURL` fall back to download). Links are
+    perpetual, so the remote serve path checks the same mute decision on
+    every request and answers 503 (as `ItemMedia` does), with no resolve and
+    no fetch.
+  - **No skip without a download.** A remote master asked for `skip=silence`
+    ignores it and carries `SESSION-DATA us.duckfam.cog.skip=unavailable`,
+    which phase 4 clients read.
 - **Podcasts:** usually MP3. Transcoding to AAC in fMP4 is cheap for audio
   (seconds per hour) and done once. **Open:** whether HLS packed-audio MP3
   segments (byte ranges of the origin file) play widely enough to skip the
@@ -440,8 +472,8 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 3. Mute: the clean rendition, as a whole re-encoded audio track. Done.
 4. Skip: segments left out, discontinuities, edge transcodes, minimum length
    and merging, the edit id and time mapping. Done.
-5. Undownloaded YouTube segments straight from googlevideo, after the
-   off-Wi-Fi test, with a proxy fallback.
+5. Undownloaded YouTube segments straight from googlevideo, with a proxy
+   fallback. Done; manual check pending.
 6. M3U of a playlist or view for external players. Android on Media3 HLS
    with background audio-only.
 
@@ -458,6 +490,14 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 
 ## Open questions
 
+- A packaging backfill for legacy YouTube downloads that are done but were
+  never packaged: they now play remote instead of locally.
+- An index cache: each remote start reads four 256 KB index ranges (two per
+  track); cache them per item, keyed by the pinned format ids.
+- Whether the googlevideo redirect target (the 302 the audio answered) accepts
+  other IPs; the phase 5 phone check confirms it, and `proxy` is the fallback.
+- Chunked requests: whether googlevideo throttles long segment ranges, in
+  which case `direct` and `proxy` would split a range into chunks.
 - Whether HLS packed-audio MP3 plays widely enough to skip transcoding
   podcasts.
 - Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,
