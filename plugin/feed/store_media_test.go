@@ -374,15 +374,20 @@ func TestPackagedEdges(t *testing.T) {
 	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
 	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
-	assert.Equal(t, map[int64]string{id: ""}, edges)
+	assert.Equal(t, map[int64]feed.ItemEdges{id: {}}, edges)
+	_, err = store.WantEdges(id)
+	require.NoError(t, err)
+	edges, err = store.PackagedEdges()
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]feed.ItemEdges{id: {Pending: true}}, edges, "wanted, not made")
 	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
 	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
-	assert.Equal(t, map[int64]string{id: "abcdefabcdef"}, edges)
+	assert.Equal(t, map[int64]feed.ItemEdges{id: {Edit: "abcdefabcdef"}}, edges)
 	require.NoError(t, store.MarkEdgesError(id, "abcdefabcdef", "boom"))
 	edges, err = store.PackagedEdges()
 	require.NoError(t, err)
-	assert.Equal(t, map[int64]string{id: ""}, edges, "failed edges are not kept")
+	assert.Equal(t, map[int64]feed.ItemEdges{id: {}}, edges, "failed edges are not kept")
 }
 
 func TestEdgesNotPendingUntilWanted(t *testing.T) {

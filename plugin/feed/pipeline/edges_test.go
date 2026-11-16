@@ -458,7 +458,8 @@ func TestEdgesRunTakesFewItems(t *testing.T) {
 	assert.Equal(t, 0, len(pending))
 }
 
-// A run out of time stops between edges; the next run keeps what it made.
+// A run out of time stops between edges; the next run keeps what it made,
+// though Collect runs in between (every tick runs it before the worker).
 func TestEdgesBudgetResumes(t *testing.T) {
 	s, space, ids := skipItems(t, 1)
 	id := ids[0]
@@ -476,6 +477,7 @@ func TestEdgesBudgetResumes(t *testing.T) {
 	made, err := space.Cache.Stat(first)
 	require.NoError(t, err)
 
+	require.NoError(t, pipeline.Collect(s, space))
 	runEdges(t, s, space)
 	d, err = s.GetDownload(id)
 	require.NoError(t, err)
@@ -484,4 +486,34 @@ func TestEdgesBudgetResumes(t *testing.T) {
 	again, err := space.Cache.Stat(first)
 	require.NoError(t, err)
 	assert.Equal(t, made.ModTime(), again.ModTime(), "edge 0 made again")
+	assert.True(t, os.SameFile(made, again), "edge 0 made again")
+}
+
+// A run cancelled part way keeps the edges it made, for the next run.
+func TestEdgesCancelKeepsMade(t *testing.T) {
+	s, space, ids := skipItems(t, 1)
+	id := ids[0]
+	p := plan(t, s, space, id)
+	first := feed.EdgeName(id, p.Edit, feed.EdgeOriginal, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := pipeline.NewEdges(s, space)
+	w.SetAfterEdge(cancel)
+	err := w.RunOnce(ctx)
+	assert.True(t, errors.Is(err, context.Canceled), "run: %v", err)
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+	assert.Equal(t, "", d.EdgesError)
+	made, err := space.Cache.Stat(first)
+	require.NoError(t, err, "edge 0 removed")
+
+	require.NoError(t, pipeline.Collect(s, space))
+	runEdges(t, s, space)
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, p.Edit, d.EdgesEdit)
+	again, err := space.Cache.Stat(first)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(made, again), "edge 0 made again")
 }

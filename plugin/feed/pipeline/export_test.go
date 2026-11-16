@@ -8,3 +8,6 @@ func (w *Edges) SetAfterEncode(f func()) { w.afterEncode = f }
 
 // SetBudget sets how many items one run takes, and how long it may encode.
 func (w *Edges) SetBudget(items int, d time.Duration) { w.limit, w.budget = items, d }
+
+// SetAfterEdge makes w call f after each edge it makes.
+func (w *Edges) SetAfterEdge(f func()) { w.afterEdge = f }

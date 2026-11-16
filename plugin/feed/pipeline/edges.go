@@ -33,7 +33,8 @@ import (
 //
 // It runs on the goroutine every user's workers share, so one run takes a
 // few items and stops after a time budget, between edges. What it made is
-// kept: the next run checks it and goes on from there.
+// kept, when it runs out of time or is cancelled: the next run checks it
+// and goes on from there.
 //
 // An edge must decode under its source's init section, and its source
 // under an edge's: ffmpeg's HLS demuxer (mpv) keeps the first moov it sees
@@ -47,8 +48,10 @@ type Edges struct {
 	space feed.Space
 	// afterEncode, when set, runs between encoding and recording (tests).
 	afterEncode func()
-	limit       int           // items a run takes
-	budget      time.Duration // how long a run encodes
+	// afterEdge, when set, runs after each edge is made (tests).
+	afterEdge func()
+	limit     int           // items a run takes
+	budget    time.Duration // how long a run encodes
 }
 
 // A run's default budget: an hour-long episode has hundreds of edges per
@@ -99,6 +102,9 @@ func (w *Edges) RunOnce(ctx context.Context) error {
 			slog.Info("feed edges: out of time; going on next run", "item_id", id)
 			return nil
 		}
+		if err != nil && ctx.Err() != nil {
+			return err
+		}
 		if err != nil {
 			slog.Warn("feed edges: process failed", "item_id", id, "err", err)
 		}
@@ -127,14 +133,12 @@ func (w *Edges) processOne(ctx context.Context, itemID int64, deadline time.Time
 	}
 	dir := path.Join(feed.EdgesDir(itemID), plan.Edit)
 	if err := w.make(ctx, itemID, plan.Edit, rs, deadline); err != nil {
-		if errors.Is(err, errOutOfTime) {
-			return err // keep what was made
-		}
-		err = errors.Join(err, w.space.Cache.RemoveAll(dir))
-		if ctx.Err() != nil {
+		if errors.Is(err, errOutOfTime) || ctx.Err() != nil {
+			// Keep what was made: the next run checks it (made) and goes
+			// on, and Collect keeps a pending item's edges.
 			return err
 		}
-		return w.fail(itemID, plan.Edit, err)
+		return w.fail(itemID, plan.Edit, errors.Join(err, w.space.Cache.RemoveAll(dir)))
 	}
 	if w.afterEncode != nil {
 		w.afterEncode()
@@ -276,6 +280,9 @@ func (w *Edges) make(ctx context.Context, itemID int64, edit string, rs []rendit
 			}
 			if err != nil {
 				return fmt.Errorf("edge %s (%.3f-%.3f s of %s): %w", name, piece.Start, piece.End, r.stored, err)
+			}
+			if w.afterEdge != nil {
+				w.afterEdge()
 			}
 			if time.Now().After(deadline) {
 				return errOutOfTime

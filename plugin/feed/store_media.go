@@ -163,23 +163,33 @@ func newHLSKey() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// PackagedEdges maps every packaged download's item id to the edit whose
-// edges it keeps: "" when it has none made, or they failed.
-func (s *Store) PackagedEdges() (map[int64]string, error) {
-	rows, err := s.db.Query(`SELECT item_id, CASE WHEN edges_error = '' THEN edges_edit ELSE '' END
+// ItemEdges is what Collect needs of a packaged item's edges.
+type ItemEdges struct {
+	// Edit is the edit whose edges are recorded: "" when none are, or they
+	// failed.
+	Edit string
+	// Pending is an item whose edges are wanted and still being made:
+	// neither recorded nor failed.
+	Pending bool
+}
+
+// PackagedEdges maps every packaged download's item id to its edges.
+func (s *Store) PackagedEdges() (map[int64]ItemEdges, error) {
+	rows, err := s.db.Query(`SELECT item_id, CASE WHEN edges_error = '' THEN edges_edit ELSE '' END,
+			edges_wanted = 1 AND edges_edit = '' AND edges_error = ''
 		FROM downloads WHERE package_state = 'done'`)
 	if err != nil {
 		return nil, fmt.Errorf("packaged edges: %w", err)
 	}
 	defer rows.Close()
-	out := map[int64]string{}
+	out := map[int64]ItemEdges{}
 	for rows.Next() {
 		var id int64
-		var edit string
-		if err := rows.Scan(&id, &edit); err != nil {
+		var e ItemEdges
+		if err := rows.Scan(&id, &e.Edit, &e.Pending); err != nil {
 			return nil, fmt.Errorf("packaged edges: %w", err)
 		}
-		out[id] = edit
+		out[id] = e
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("packaged edges: %w", err)
