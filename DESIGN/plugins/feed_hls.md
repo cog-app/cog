@@ -26,8 +26,8 @@ them separate too:
 
 - One HLS presentation per item: video variants, an audio-only variant, an
   audio group (original and clean) and a captions group.
-- The server applies mute and skip by writing the playlist, so any HLS
-  player gets them.
+- The server applies skip by writing the playlist, and mute by offering a
+  stored clean rendition, so any HLS player gets both.
 - Signed URLs, so an external player needs no credentials.
 - No transcoding of whole videos. Stream copy wherever possible, and
   transcode only the small pieces an edit needs.
@@ -126,14 +126,14 @@ Playlists are written per request from the segment index, the item's ranges
 and the request's options. They are text, cheap to write, and never stored.
 The media files stay static and cacheable.
 
-- **Master:** `EXT-X-MEDIA TYPE=AUDIO` (original, and clean when there are
-  a clean track exists), `TYPE=SUBTITLES` (captions), the video variants
+- **Master:** `EXT-X-MEDIA TYPE=AUDIO` (original, and clean when a clean track exists), `TYPE=SUBTITLES` (captions), the video variants
   referencing both groups, and an audio-only variant.
 - **Media:** `EXT-X-MAP` for the init section, then byte-range segments.
 
 ### Mute (profanity)
 
-The timeline is unchanged, so mute works in any player, video included.
+Mute is a stored clean rendition, not a playlist edit. The timeline is
+unchanged, so it works in any player, video included.
 
 **Departure from the first design.** This spec first said the clean rendition
 was the original's segments, except that a segment containing a mute range
@@ -251,7 +251,7 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 ## Clients
 
 - **Web:** hls.js (desktop Chrome and Firefox; Safari plays HLS natively).
-  The player's mute and skip move into the playlist.
+  Mute becomes the clean rendition and skip moves into the playlist.
 - **Android:** Media3's HLS module. In the background, disable the video
   renderer and the track selector moves to the audio-only variant.
 - **Desktop (mpv):** plays the signed URLs as they are.
@@ -285,6 +285,13 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   records one reliably, so the rendition has no `LANGUAGE`.
 - How to get progress back from external players.
 - No trigger re-cleans an item when the word list changes.
+- The clean track is packaged without `-avoid_negative_ts` disabled, so it
+  always starts at 0. A source track that starts late would put Clean out of
+  sync with the video by that offset. Latent: real tracks start at 0.
+- `clean.m4a` keeps its name and is served with `Cache-Control: max-age=86400`,
+  so after a re-clean a browser may use cached old bytes against new ranges
+  for up to a day. Version the media URI when the word-list re-clean trigger
+  is built; `audio.m4a` has the same issue after a re-download.
 - A re-clean replaces the clean track under the same name. A client holding
   an old playlist gets the new file's bytes under its old byte ranges until
   it reloads.
