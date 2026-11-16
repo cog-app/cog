@@ -855,6 +855,31 @@ func (h *Pages) rows(c viewCtx) rowOpts {
 	return rowOpts{Ctx: c.encode(), HideSub: c.Kind == "sub", Now: h.plugin.ctx.Now()}
 }
 
+// playElsewhere is what a view page offers external players.
+type playElsewhere struct {
+	M3U, M3USkip string // absolute signed M3U URLs
+	Launcher     string // /apps/feed/launchers/<path>
+}
+
+// playElsewhere signs l's M3U links for the signed-in user. The first view
+// creates the user's media-link key, as an item page does for its HLS link.
+func (h *Pages) playElsewhere(r *http.Request, store *Store, l m3uList) (playElsewhere, error) {
+	user := plugin.Username(r)
+	plain, err := h.plugin.M3UURL(store, user, l, hlsOptions{})
+	if err != nil {
+		return playElsewhere{}, fmt.Errorf("sign %s M3U link: %w", l.Kind, err)
+	}
+	skip, err := h.plugin.M3UURL(store, user, l, hlsOptions{Skip: true})
+	if err != nil {
+		return playElsewhere{}, fmt.Errorf("sign %s M3U skip link: %w", l.Kind, err)
+	}
+	return playElsewhere{
+		M3U:      h.plugin.absoluteURL(r, plain),
+		M3USkip:  h.plugin.absoluteURL(r, skip),
+		Launcher: "/apps/feed/launchers/" + l.path(),
+	}, nil
+}
+
 // PlaylistView renders items matching a saved playlist's query.
 func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -887,7 +912,12 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
-	ui.Render(w, r, feedPlaylistPage(sb, pl, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewPlaylist, strconv.FormatInt(id, 10)})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedPlaylistPage(sb, pl, items, h.rows(c), pe))
 }
 
 // resolveViewItems returns the same ordered item slice the originating view
@@ -947,7 +977,12 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewUnread, "all"})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // searchItems lists the items the all-articles page shows for the search q.
@@ -1004,7 +1039,12 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
-	ui.Render(w, r, feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewSubscription, idStr})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // FolderView shows items for all subscriptions in a folder.
@@ -1041,7 +1081,12 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
-	ui.Render(w, r, feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewFolder, idStr})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // StarredView shows all starred items.
@@ -1063,7 +1108,12 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "starred"}
 	plugin.SetTitle(w, "Starred")
-	ui.Render(w, r, feedStarredPage(sb, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewStarred, "all"})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedStarredPage(sb, items, h.rows(c), pe))
 }
 
 // TagView shows items with a specific tag.
@@ -1090,7 +1140,12 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
-	ui.Render(w, r, feedTagPage(sb, tagName, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewTag, tagName})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedTagPage(sb, tagName, items, h.rows(c), pe))
 }
 
 // RefreshSubscription sets next_check_at=1 on a subscription to trigger immediate re-poll.
