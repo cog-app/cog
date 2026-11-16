@@ -2,6 +2,8 @@ package feed
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
@@ -49,3 +51,13 @@ var HLSMasterPath = hlsMasterPath
 type M3UList = m3uList
 
 var M3USignature = m3uSignature
+
+// SetHLSKey stores key as the user's media link key, as HLSKey would have
+// made it, so a test's signed links are the same on every run.
+func SetHLSKey(s *Store, key []byte) error {
+	if _, err := s.db.Exec(`INSERT INTO feed_settings(key, value) VALUES(?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, hlsKeySetting, hex.EncodeToString(key)); err != nil {
+		return fmt.Errorf("set hls key: %w", err)
+	}
+	return nil
+}

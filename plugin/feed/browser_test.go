@@ -1,6 +1,7 @@
 package feed_test
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -148,6 +149,11 @@ func TestBrowser(t *testing.T) {
 	env.CreateUser(t, "sub", "pass")
 	env.CreateUser(t, "star", "pass")
 	env.CreateUser(t, "lists", "pass")
+	// Pages sign M3U links with the user's media key; a fixed key keeps the
+	// golden the same on every run.
+	for _, name := range []string{"empty", "index", "expand", "reader", "subs", "sub", "star", "lists"} {
+		require.NoError(t, feed.SetHLSKey(feedStore(t, env, name), bytes.Repeat([]byte{7}, 32)))
+	}
 	seedBrowserFeed(t, env, "star")
 	seedBrowserFeed(t, env, "index")
 	seedBrowserFeed(t, env, "expand")

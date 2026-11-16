@@ -31,9 +31,6 @@ var (
 	// prints an absolute URL (the admin's base URL, an invite link, a feed
 	// address) carries it.
 	volatileLoopback = regexp.MustCompile(`\b127\.0\.0\.1:\d+\b`)
-	// A signed link's HMAC (a feed's M3U link). The key is random per user,
-	// so the signature differs on every run.
-	volatileSignature = regexp.MustCompile(`\bsig=[A-Za-z0-9_-]{43}`)
 )
 
 // normalizeDOM turns a serialised page into a stable, readable golden.
@@ -62,7 +59,6 @@ var volatileMasks = []struct {
 }{
 	{volatileTempRoot, "«tmp»"},
 	{volatileLoopback, "127.0.0.1:«port»"},
-	{volatileSignature, "sig=«sig»"},
 	{volatileUUID, "«uuid»"},
 	{volatileHex, "«hex»"},
 }
