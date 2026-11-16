@@ -88,6 +88,29 @@ func readTrack(from plugin.Storage, stored string) (t hls.Track, size int64, err
 	return t, size, err
 }
 
+// TrackInit reads the init section (ftyp and moov) of a stored track file
+// whose index is t.
+func (s Space) TrackInit(stored string, t hls.Track) (init []byte, err error) {
+	err = readAt(s.Own, Name(stored), func(r io.ReaderAt, n int64) error {
+		if t.InitOffset < 0 || t.InitLength <= 0 || t.InitOffset+t.InitLength > n {
+			return fmt.Errorf("init %d+%d outside a %d-byte file", t.InitOffset, t.InitLength, n)
+		}
+		init = make([]byte, t.InitLength)
+		_, err := r.ReadAt(init, t.InitOffset)
+		return err
+	})
+	return init, err
+}
+
+// DecodeTime is hls.FirstDecodeTime of a stored track file.
+func (s Space) DecodeTime(stored string) (t float64, err error) {
+	err = readAt(s.Own, Name(stored), func(r io.ReaderAt, n int64) error {
+		t, err = hls.FirstDecodeTime(r, n)
+		return err
+	})
+	return t, err
+}
+
 // CachedDecodeTime is hls.FirstDecodeTime of a track file in the cache:
 // where players put its first fragment.
 func (s Space) CachedDecodeTime(name string) (t float64, err error) {

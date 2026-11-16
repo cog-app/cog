@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,105 +17,159 @@ import (
 )
 
 // TestHLSSkipPlaysInFFmpeg reads a skip presentation as mpv does (ffmpeg's
-// HLS demuxer) and checks its audio and video run as long as the item less
-// its cuts, every video frame once, in order and at its source's time, with
-// nothing for ffmpeg to warn about. The stock video is x264 baseline like the edges; the
-// high-profile one, with B-frames and a 90 kHz timescale, is a source the
-// edge encoder does not match.
+// HLS demuxer) and checks it plays the item less its cuts: every source
+// video frame outside the cuts once, in order and at its source's time, the
+// audio as long, and nothing for ffmpeg to warn about. The stock video is
+// x264 baseline like the edges; the high-profile one, with B-frames and a
+// 90 kHz timescale, is a source the edge encoder does not match.
+//
+// ffmpeg keeps the first init it reads, so an edge must decode under a kept
+// segment's init, and a kept segment under an edge's: each order is a case.
 func TestHLSSkipPlaysInFFmpeg(t *testing.T) {
+	needFFmpeg(t)
+	// 18 s tracks, made as make.sh makes the fixtures, have three segments:
+	// room for an edge between two kept ones.
+	long := map[string]string{}
+	dir := t.TempDir()
+	for _, profile := range []string{"baseline", "high"} {
+		video := filepath.Join(dir, profile+".mp4")
+		args := []string{"-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=24:duration=18",
+			"-c:v", "libx264", "-profile:v", profile, "-g", "48", "-keyint_min", "48", "-sc_threshold", "0", "-pix_fmt", "yuv420p"}
+		if profile == "high" {
+			args = append(args, "-video_track_timescale", "90000")
+		}
+		args = append(args, "-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx", "-f", "mp4", video)
+		ffclient(t, "ffmpeg", args...)
+		long[profile] = video
+	}
+	audio := filepath.Join(dir, "audio.m4a")
+	ffclient(t, "ffmpeg", "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=18", "-c:a", "aac", "-b:a", "32k",
+		"-movflags", "+empty_moov+default_base_moof+global_sidx", "-frag_duration", "2000000", "-f", "mp4", audio)
+
 	for _, c := range []struct {
 		name    string
+		long    bool // 18 s, three segments; else the 12 s fixtures, two
 		silence []feed.Range
-		cuts    int
-		want    float64 // s
+		want    float64 // s of audio
 	}{
 		// {2.6,4.1} and {7.1,9.5}: every piece is an edge.
-		{"edges", skipFixture, 2, 8.1},
-		// {7.1,9.5}: the first segment is kept, so its init is the one
-		// ffmpeg keeps, and the edges after it decode under it.
-		{"kept first", skipFixture[1:], 1, 9.6},
+		{"edges", false, skipFixture, 8.1},
+		// {7.1,9.5}: [0,6) is kept, then edges.
+		{"kept then edges", false, skipFixture[1:], 9.6},
+		// {2.6,4.1}: edges, then [6,12) is kept.
+		{"edges then kept", false, skipFixture[:1], 10.5},
+		// {7.1,9.5}: [0,6) kept, edges, [12,18) kept.
+		{"kept edges kept", true, skipFixture[1:], 15.6},
 	} {
-		for _, fixture := range []string{"video.mp4", "video-high.mp4"} {
-			t.Run(c.name+"/"+fixture, func(t *testing.T) {
-				needFFmpeg(t)
+		for _, profile := range []string{"baseline", "high"} {
+			t.Run(c.name+"/"+profile, func(t *testing.T) {
+				audioSrc, videoSrc := "audio.m4a", map[string]string{"baseline": "video.mp4", "high": "video-high.mp4"}[profile]
+				if c.long {
+					audioSrc, videoSrc = audio, long[profile]
+				}
 				env := cogtest.New(t, feed.New())
 				env.CreateUser(t, "alice", "pw")
-				id := packagedItemFrom(t, env, "alice", "audio.m4a", fixture)
-				require.NoError(t, feedStore(t, env, "alice").SetSilenceRanges(id, c.silence))
+				id := packagedItemFrom(t, env, "alice", audioSrc, videoSrc)
+				store := feedStore(t, env, "alice")
+				require.NoError(t, store.SetSilenceRanges(id, c.silence))
 				skip := skipMaster(t, env, "alice", id)
 				env.Get(t, skip).Status(http.StatusOK)
 				runEdges(t, env, "alice")
 				body := env.Get(t, skip).Status(http.StatusOK).ReadBody()
-				require.NotEqual(t, "", masterEdit(body), "edges not made: %s\n%s", download(t, env, "alice", id).EdgesError, body)
+				edit := masterEdit(body)
+				require.NotEqual(t, "", edit, "edges not made: %s\n%s", download(t, env, "alice", id).EdgesError, body)
+				cuts, err := store.EditCuts(id, edit)
+				require.NoError(t, err)
+
+				// The source's frames outside the cuts. A frame at a cut's
+				// start is cut; one at its end is kept.
+				if !filepath.IsAbs(videoSrc) {
+					videoSrc = "testdata/media/" + videoSrc
+				}
+				var want []float64
+				for _, f := range probeFrames(t, videoSrc).Frames {
+					pts := f.pts(t)
+					cut := false
+					for _, c := range cuts {
+						cut = cut || (pts >= c.Start-1e-6 && pts < c.End-1e-6)
+					}
+					if !cut {
+						want = append(want, pts)
+					}
+				}
 
 				// Over the env's own listener, so ffmpeg fetches the
 				// playlists, inits and byte ranges itself, as mpv would. Both
 				// streams are decoded: a stream ffmpeg discards reads short
 				// at 32 KiB into a segment and is reported corrupt.
-				out := ffclient(t, "ffprobe", "-v", "warning", "-protocol_whitelist", "http,tcp,hls,file,crypto",
-					"-show_entries", "frame=media_type,pts_time,nb_samples:stream=codec_type,sample_rate", "-of", "json",
-					env.Providers.Config.BaseURL+skip)
-				var probe struct {
-					Frames []struct {
-						MediaType string `json:"media_type"`
-						PTS       string `json:"pts_time"`
-						Samples   int    `json:"nb_samples"`
-					} `json:"frames"`
-					Streams []struct {
-						CodecType  string `json:"codec_type"`
-						SampleRate string `json:"sample_rate"`
-					} `json:"streams"`
-				}
-				require.NoError(t, json.Unmarshal(out, &probe))
+				probe := probeFrames(t, env.Providers.Config.BaseURL+skip, "-protocol_whitelist", "http,tcp,hls,file,crypto")
+				var audioStreams []int
 				rate := 0
 				for _, s := range probe.Streams {
 					if s.CodecType == "audio" {
+						audioStreams = append(audioStreams, s.Index)
 						r, err := strconv.Atoi(s.SampleRate)
 						require.NoError(t, err, s.SampleRate)
 						rate = r
 					}
 				}
-				require.True(t, rate > 0, "no audio stream: %s", out)
-				// The source's first frame: the B-frame delay puts the
-				// high-profile one at 2/24 s.
-				first := ffclient(t, "ffprobe", "-v", "warning", "-select_streams", "v:0", "-read_intervals", "%+#1",
-					"-show_entries", "frame=pts_time", "-of", "csv=p=0", "testdata/media/"+fixture)
-				firstPTS, err := strconv.ParseFloat(strings.Trim(string(first), ",\n"), 64)
-				require.NoError(t, err, string(first))
-
-				var samples, frames, gaps int
-				last := -1.0
+				require.Equal(t, 1, len(audioStreams), "audio streams")
+				var samples int
+				var got []float64
 				for _, f := range probe.Frames {
-					switch f.MediaType {
-					case "audio":
+					switch {
+					case f.MediaType == "audio" && f.StreamIndex == audioStreams[0]:
 						samples += f.Samples
-					case "video":
-						pts, err := strconv.ParseFloat(f.PTS, 64)
-						require.NoError(t, err, f.PTS)
-						if frames == 0 {
-							assert.InDelta(t, firstPTS, pts, 1e-3, "first frame")
-						} else {
-							assert.True(t, pts > last, "frame %d at %.4f s after %.4f s", frames, pts, last)
-						}
-						// A frame further than 1.5 frames from the last is a cut
-						// or a frame lost at a joint.
-						if frames > 0 && pts-last > 1.5/24 {
-							gaps++
-							t.Logf("frame %d at %.4f s after %.4f s", frames, pts, last)
-						}
-						last = pts
-						frames++
+					case f.MediaType == "video":
+						got = append(got, f.pts(t))
 					}
 				}
 				audioSecs := float64(samples) / float64(rate)
-				videoSecs := float64(frames) / 24
-				assert.Equal(t, c.cuts, gaps, "gaps between frames")
-				t.Logf("audio %d samples at %d Hz = %.4f s; video %d frames = %.4f s", samples, rate, audioSecs, frames, videoSecs)
+				t.Logf("audio %d samples at %d Hz = %.4f s; video %d frames, want %d", samples, rate, audioSecs, len(got), len(want))
 				assert.InDelta(t, c.want, audioSecs, 0.1)
-				assert.InDelta(t, c.want, videoSecs, 0.1)
+				assert.Equal(t, len(want), len(got), "video frames")
+				for i := range min(len(want), len(got)) {
+					if d := got[i] - want[i]; d < -1e-3 || d > 1e-3 {
+						t.Errorf("frame %d at %.4f s, want %.4f s (the source's)", i, got[i], want[i])
+						break
+					}
+				}
 			})
 		}
 	}
+}
+
+type frameProbe struct {
+	Frames  []probedFrame `json:"frames"`
+	Streams []struct {
+		Index      int    `json:"index"`
+		CodecType  string `json:"codec_type"`
+		SampleRate string `json:"sample_rate"`
+	} `json:"streams"`
+}
+
+type probedFrame struct {
+	MediaType   string `json:"media_type"`
+	StreamIndex int    `json:"stream_index"`
+	PTS         string `json:"pts_time"`
+	Samples     int    `json:"nb_samples"`
+}
+
+func (f probedFrame) pts(t *testing.T) float64 {
+	t.Helper()
+	v, err := strconv.ParseFloat(f.PTS, 64)
+	require.NoError(t, err, f.PTS)
+	return v
+}
+
+// probeFrames decodes every stream of in with ffprobe.
+func probeFrames(t *testing.T, in string, opts ...string) frameProbe {
+	t.Helper()
+	args := append([]string{"-v", "warning"}, opts...)
+	args = append(args, "-show_entries", "frame=media_type,stream_index,pts_time,nb_samples:stream=index,codec_type,sample_rate", "-of", "json", in)
+	var p frameProbe
+	require.NoError(t, json.Unmarshal(ffclient(t, "ffprobe", args...), &p))
+	return p
 }
 
 // duplicateMOOV is how ffmpeg's mov demuxer says it skipped the init of an

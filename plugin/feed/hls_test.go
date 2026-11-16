@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -44,7 +45,7 @@ func packagedItem(t *testing.T, env *cogtest.Env, username string, withVideo boo
 }
 
 // packagedItemFrom is packagedItem with the fixtures named: videoFixture is
-// empty for an audio-only item.
+// empty for an audio-only item. An absolute name is a file a test made.
 func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, videoFixture string) int64 {
 	t.Helper()
 	p := feedPlugin(t, env)
@@ -57,7 +58,10 @@ func packagedItemFrom(t *testing.T, env *cogtest.Env, username, audioFixture, vi
 	require.NoError(t, err)
 	require.NoError(t, store.EnqueueDownload(id))
 	put := func(fixture, name string) int64 {
-		b, err := os.ReadFile("testdata/media/" + fixture)
+		if !filepath.IsAbs(fixture) {
+			fixture = "testdata/media/" + fixture
+		}
+		b, err := os.ReadFile(fixture)
 		require.NoError(t, err)
 		n, err := space.Own.Put(name, bytes.NewReader(b))
 		require.NoError(t, err)

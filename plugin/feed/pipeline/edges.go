@@ -1,15 +1,18 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"math"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,10 +35,13 @@ import (
 // few items and stops after a time budget, between edges. What it made is
 // kept: the next run checks it and goes on from there.
 //
-// An edge must decode under its source's init section as well as its own:
-// ffmpeg's HLS demuxer (mpv) keeps the first moov it sees. So it keeps the
-// source's timescale, AAC sample rate and channels, and repeats the SPS and
-// PPS in band, and its timestamps are the source's (item time).
+// An edge must decode under its source's init section, and its source
+// under an edge's: ffmpeg's HLS demuxer (mpv) keeps the first moov it sees
+// and feeds every segment to one decoder. So an edge keeps the source's
+// timescale, AAC sample rate and channels, and timestamps (item time); a
+// video edge repeats its SPS and PPS in band under an id of its own
+// (edgeParamSetID), and its init carries the source's sets as well
+// (hls.AddParamSets).
 type Edges struct {
 	store *feed.Store
 	space feed.Space
@@ -51,6 +57,18 @@ const (
 	edgesPerRun    = 2
 	edgesRunBudget = 60 * time.Second
 )
+
+// videoSeekEarly is how far before a video piece an edge seeks: less than
+// any frame's duration.
+const videoSeekEarly = 1e-4
+
+// edgeParamSetID is the SPS and PPS id of a video edge's in-band parameter
+// sets. ffmpeg's HLS demuxer (mpv) feeds every segment to one decoder: an
+// edge's sets under the source's id (0, as encoders write it) would replace
+// the source's, and the kept segments after it would decode under them.
+// Under another id both are known, and the edge's init carries the
+// source's too (hls.AddParamSets), for when it is the init ffmpeg keeps.
+const edgeParamSetID = 1
 
 // errOutOfTime stops a run between edges; the item stays pending.
 var errOutOfTime = errors.New("edges: out of time")
@@ -276,6 +294,13 @@ type edgeSource struct {
 	SampleRate, Channels int     // audio
 	Timescale            int     // video
 	Frame                float64 // one frame's duration, s
+	// ParamSets are a video track's SPS and PPS, which its edges' inits
+	// carry too.
+	ParamSets hls.ParamSets
+	// Delay is how far a video track's decode times run behind its
+	// presentation times: its first frame's time (T0) less its first tfdt,
+	// the B-frame delay of its encoder.
+	Delay float64
 }
 
 // source probes a rendition's track for what its edges must match.
@@ -299,6 +324,20 @@ func (w *Edges) source(ctx context.Context, in string, r rendition) (edgeSource,
 	}
 	src.Codecs = r.track.Codecs
 	src.T0 = r.track.Fragments[0].Start
+	if src.Kind == hls.Video {
+		init, err := w.space.TrackInit(r.stored, r.track)
+		if err != nil {
+			return edgeSource{}, fmt.Errorf("init of %s: %w", r.stored, err)
+		}
+		if src.ParamSets, err = hls.InitParamSets(init); err != nil {
+			return edgeSource{}, fmt.Errorf("parameter sets of %s: %w", r.stored, err)
+		}
+		tfdt, err := w.space.DecodeTime(r.stored)
+		if err != nil {
+			return edgeSource{}, fmt.Errorf("decode time of %s: %w", r.stored, err)
+		}
+		src.Delay = max(math.Round((src.T0-tfdt)*float64(src.Timescale))/float64(src.Timescale), 0)
+	}
 	return src, nil
 }
 
@@ -389,13 +428,38 @@ func (w *Edges) encode(ctx context.Context, in, name string, piece hls.Piece, sr
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(b)))
 	}
+	if src.Kind == hls.Video {
+		return w.addSourceSets(name, src)
+	}
+	return nil
+}
+
+// addSourceSets adds the source's parameter sets to the init of the video
+// edge at name (hls.AddParamSets).
+func (w *Edges) addSourceSets(name string, src edgeSource) error {
+	f, err := w.space.Cache.Open(name)
+	if err != nil {
+		return fmt.Errorf("open edge: %w", err)
+	}
+	b, err := io.ReadAll(f)
+	if err = errors.Join(err, f.Close()); err != nil {
+		return fmt.Errorf("read edge: %w", err)
+	}
+	b, err = hls.AddParamSets(b, src.ParamSets)
+	if err != nil {
+		return fmt.Errorf("edge init: %w", err)
+	}
+	if _, err := w.space.Cache.Put(name, bytes.NewReader(b)); err != nil {
+		return fmt.Errorf("write edge: %w", err)
+	}
 	return nil
 }
 
 // check reports how the edge at name is not a track of the piece: one track
 // with an index, of src's kind, starting, ending and lasting as the piece
-// does to within a frame, and placed where its index says (its first tfdt,
-// by which players place it).
+// does to within a frame, placed where its index says (its first tfdt, by
+// which players place it), and for video with its source's parameter sets
+// in its init.
 func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	tr, _, err := w.space.CachedTrack(name)
 	if err != nil {
@@ -412,7 +476,8 @@ func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 		return errors.New("made a video track that does not start with a keyframe")
 	}
 	// A video frame begins at or after the piece and may run past its end.
-	start, end := first.Start, last.Start+last.Duration
+	// A video edge's index counts decode time, src.Delay before its frames.
+	start, end := first.Start+src.Delay, last.Start+last.Duration+src.Delay
 	tol := src.Frame + 1e-3
 	if math.Abs(start-piece.Start) > tol || math.Abs(end-piece.End) > tol || math.Abs((end-start)-(piece.End-piece.Start)) > tol {
 		return fmt.Errorf("made %.4f-%.4f s, want %.4f-%.4f s to within %.4f s", start, end, piece.Start, piece.End, tol)
@@ -421,8 +486,46 @@ func (w *Edges) check(name string, piece hls.Piece, src edgeSource) error {
 	if err != nil {
 		return err
 	}
-	if math.Abs(tfdt-start) > 1e-3 {
+	if math.Abs(tfdt+src.Delay-start) > 1e-3 {
 		return fmt.Errorf("first fragment decodes at %.4f s; its index says %.4f s", tfdt, start)
+	}
+	if src.Kind == hls.Video {
+		return w.checkSourceSets(name, tr, src)
+	}
+	return nil
+}
+
+// checkSourceSets reports whether the init of the video edge at name lacks
+// one of its source's parameter sets.
+func (w *Edges) checkSourceSets(name string, tr hls.Track, src edgeSource) error {
+	f, err := w.space.Cache.Open(name)
+	if err != nil {
+		return fmt.Errorf("open edge: %w", err)
+	}
+	init := make([]byte, tr.InitLength)
+	_, err = f.Seek(tr.InitOffset, io.SeekStart)
+	if err == nil {
+		_, err = io.ReadFull(f, init)
+	}
+	if err = errors.Join(err, f.Close()); err != nil {
+		return fmt.Errorf("read edge init: %w", err)
+	}
+	sets, err := hls.InitParamSets(init)
+	if err != nil {
+		return fmt.Errorf("edge init: %w", err)
+	}
+	have := func(list [][]byte, s []byte) bool {
+		return slices.ContainsFunc(list, func(x []byte) bool { return bytes.Equal(x, s) })
+	}
+	for _, s := range src.ParamSets.SPS {
+		if !have(sets.SPS, s) {
+			return errors.New("edge init lacks its source's SPS")
+		}
+	}
+	for _, s := range src.ParamSets.PPS {
+		if !have(sets.PPS, s) {
+			return errors.New("edge init lacks its source's PPS")
+		}
 	}
 	return nil
 }
@@ -451,25 +554,37 @@ func (w *Edges) removeOthers(itemID int64, edit string) error {
 // It seeks before the input, so audio is cut to the sample and video is
 // decoded from the keyframe before the piece. Seeking counts from the
 // track's own start (src.T0); -output_ts_offset puts the edge back in item
-// time. Two flags keep it there: frag_discont writes it into the fragments'
-// tfdt as well as the sidx (without it tfdt stays 0, and players place
-// fragments by tfdt), and -avoid_negative_ts make_non_negative stops the
-// muxer moving the edge to 0. Audio
-// drops the encoder's priming frame (the packets before the input's start):
-// the edge's edit list, which says to skip it, is lost under the init a
-// player keeps, so it would play 23 ms of nothing per edge and overlap the
-// piece before. Its first frame is then the piece's start, decoded with
-// whatever came before it. Video keeps the source's frame times
-// (passthrough, at the demuxer's time base, in the source's timescale) and
-// has no B-frames: the mp4 muxer starts a track's decode times at its first
-// presentation time, so an encoder's B-frame delay would show every frame
-// that much later than the source does (two frames for x264's default), and
-// lose a frame at the joint after a kept segment. Its length is an output -t a millisecond short of the piece (an input -to
-// keeps a frame up to 20 ms past it), so a frame that starts where the
-// piece ends is left to what follows.
+// time, and frag_discont writes that into the fragments' tfdt as well as the
+// sidx (without it tfdt stays 0, and players place fragments by tfdt).
+//
+// Audio drops the encoder's priming frame (the packets before the input's
+// start): the edge's edit list, which says to skip it, is lost under the
+// init a player keeps, so it would play 23 ms of nothing per edge and
+// overlap the piece before. Its first frame is then the piece's start,
+// decoded with whatever came before it. -avoid_negative_ts
+// make_non_negative stops the muxer moving it to 0.
+//
+// Video keeps the source's frame times (passthrough, at the demuxer's time
+// base, in the source's timescale), seeking videoSeekEarly before the piece
+// so a frame that starts exactly where the piece does is not lost to
+// rounding. Its length is an output -t ending a millisecond short of the
+// piece (an input -to keeps a frame up to 20 ms past it), so a frame that
+// starts where the piece ends is left to what follows. Its decode times run
+// src.Delay behind its frames, as the source's do (B-frames), so they never
+// go back at a joint with the source, which ffmpeg answers by dropping
+// frames: it has no B-frames itself (an encoder's delay would be its own,
+// and the mp4 muxer would show every frame that much late), setts moves its
+// decode times back by the delay, and its -output_ts_offset is where it
+// seeked to less the delay, which the muxer adds back to its frames. Muxer
+// shifts are off (-avoid_negative_ts disabled): the edge at the track's
+// start decodes from the source's first decode time. Its parameter sets are
+// edgeParamSetID's, which its source's slices never name.
 func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error) {
-	sec := func(x float64) string { return strconv.FormatFloat(x, 'f', 3, 64) }
+	sec := func(x float64) string { return strconv.FormatFloat(x, 'f', 6, 64) }
 	ss := max(piece.Start-src.T0, 0)
+	if src.Kind == hls.Video {
+		ss = max(ss-videoSeekEarly, 0)
+	}
 	head := []string{"-nostdin", "-y", "-v", "error", "-ss", sec(ss)}
 	var tail []string
 	switch src.Kind {
@@ -491,12 +606,15 @@ func edgeArgs(in, out string, piece hls.Piece, src edgeSource) ([]string, error)
 		if src.Timescale <= 0 {
 			return nil, fmt.Errorf("video edge: timescale %d", src.Timescale)
 		}
-		tail = []string{"-t", sec(piece.End - piece.Start - 1e-3), "-map", "0:V:0", "-an", "-fps_mode", "passthrough", "-enc_time_base", "demux",
+		tail = []string{"-t", sec(piece.End - 1e-3 - (src.T0 + ss)), "-map", "0:V:0", "-an", "-fps_mode", "passthrough", "-enc_time_base", "demux",
 			"-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", profile, "-level", level,
-			"-bf", "0", "-pix_fmt", "yuv420p", "-x264-params", "repeat-headers=1",
+			"-bf", "0", "-pix_fmt", "yuv420p", "-x264-params", "repeat-headers=1:sps-id=" + strconv.Itoa(edgeParamSetID),
 			"-video_track_timescale", strconv.Itoa(src.Timescale),
-			"-output_ts_offset", sec(piece.Start), "-avoid_negative_ts", "make_non_negative",
+			"-output_ts_offset", sec(src.T0 + ss - src.Delay), "-avoid_negative_ts", "disabled",
 			"-movflags", "+frag_keyframe+empty_moov+default_base_moof+global_sidx+frag_discont", "-f", "mp4", out}
+		if src.Delay > 0 {
+			tail = append([]string{"-bsf:v", "setts=dts=DTS-round(" + sec(src.Delay) + "/TB)"}, tail...)
+		}
 	default:
 		return nil, fmt.Errorf("edge of a %q track", src.Kind)
 	}

@@ -3,8 +3,11 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"math"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,6 +132,35 @@ func TestEdgesMakesExactPieces(t *testing.T) {
 		// The source's frames are at k/24 s: the edge keeps their times.
 		assert.InDelta(t, math.Ceil(piece.Start*24-1e-6)/24, tfdt, 1e-6, "video edge %d tfdt", n)
 		assert.InDelta(t, piece.End, last.Start+last.Duration, 1.0/24, "video edge %d end", n)
+	}
+	// Each video edge's init carries its source's parameter sets beside its
+	// own (id 1), and the edge decodes cleanly on its own.
+	d, err = s.GetDownload(id)
+	require.NoError(t, err)
+	srcTrack := storedTrack(t, space, d.VideoPath)
+	srcInit, err := space.TrackInit(d.VideoPath, srcTrack)
+	require.NoError(t, err)
+	srcSets, err := hls.InitParamSets(srcInit)
+	require.NoError(t, err)
+	for n := range video {
+		name := feed.EdgeName(id, p.Edit, feed.EdgeVideo, n)
+		f, err := space.Cache.Open(name)
+		require.NoError(t, err)
+		b, err := io.ReadAll(f)
+		require.NoError(t, errors.Join(err, f.Close()))
+		tr, err := hls.ReadTrack(bytes.NewReader(b), int64(len(b)))
+		require.NoError(t, err)
+		sets, err := hls.InitParamSets(b[tr.InitOffset : tr.InitOffset+tr.InitLength])
+		require.NoError(t, err)
+		require.Equal(t, 2, len(sets.SPS), name)
+		require.Equal(t, 2, len(sets.PPS), name)
+		assert.True(t, bytes.Equal(srcSets.SPS[0], sets.SPS[1]), "%s: source SPS", name)
+		assert.True(t, bytes.Equal(srcSets.PPS[0], sets.PPS[1]), "%s: source PPS", name)
+		local, err := space.Cache.LocalPath(name)
+		require.NoError(t, err)
+		out, err := exec.Command("ffmpeg", "-nostdin", "-v", "warning", "-i", local, "-f", "null", "-").CombinedOutput()
+		require.NoError(t, err, string(out))
+		assert.Equal(t, "", string(out), name)
 	}
 	v1 := cachedTrack(t, space, feed.EdgeName(id, p.Edit, feed.EdgeVideo, 1))
 	assert.InDelta(t, 4.1, v1.Fragments[0].Start, 0.05)
