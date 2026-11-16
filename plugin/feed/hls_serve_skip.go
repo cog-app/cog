@@ -143,7 +143,7 @@ func (h hlsRequest) masterSkip(t itemTracks) (skipSelection, error) {
 	if stale := h.d.EdgesEdit != "" && h.d.EdgesEdit != o.plan.Edit; stale || o.ready {
 		// o.ready here is a made plan whose edges are gone.
 		slog.Info("feed hls: edges made again", "item", item, "had", h.d.EdgesEdit, "plan", o.plan.Edit)
-		if err := h.store.ResetEdges(item); err != nil {
+		if err := h.store.ForgetEdges(item, h.d.EdgesEdit); err != nil {
 			return skipSelection{}, err
 		}
 		healed = true

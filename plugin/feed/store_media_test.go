@@ -312,6 +312,24 @@ func TestEdgesRetriedAfterFailure(t *testing.T) {
 	assert.True(t, edgesPending(t, store, id), "failed 7 h ago")
 }
 
+// The master forgets the edges it saw only if they are still the ones
+// recorded: the worker may have recorded others since it looked.
+func TestForgetEdgesIfUnchanged(t *testing.T) {
+	store, id := edgesMade(t)
+	require.NoError(t, store.ForgetEdges(id, "000000000000"))
+	d, err := store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "abcdefabcdef", d.EdgesEdit, "recorded since")
+	assert.NotEqual(t, "", d.EdgesIndex)
+
+	require.NoError(t, store.ForgetEdges(id, "abcdefabcdef"))
+	d, err = store.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.EdgesEdit)
+	assert.Equal(t, "", d.EdgesIndex)
+	assert.True(t, edgesPending(t, store, id))
+}
+
 func TestEdgesResetOnRepackage(t *testing.T) {
 	store, id := edgesMade(t)
 	require.NoError(t, store.SavePackage(id, "media/2.hls-audio.m4a", "", 300))

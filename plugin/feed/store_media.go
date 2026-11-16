@@ -302,6 +302,17 @@ func (s *Store) RetryEdges(itemID int64) error {
 	return nil
 }
 
+// ForgetEdges forgets the item's edges if they are still those recorded
+// for edit, so the worker makes them again. The master calls it on what it
+// read, which the worker may have replaced since.
+func (s *Store) ForgetEdges(itemID int64, edit string) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET edges_edit = '', edges_error = '', edges_index = ''
+		WHERE item_id = ? AND edges_edit = ? AND edges_edit != ''`, itemID, edit); err != nil {
+		return fmt.Errorf("forget edges: %w", err)
+	}
+	return nil
+}
+
 // ResetEdges forgets the edges (and their error) of the items, or of every
 // item when none is given. Wanted items are made again.
 func (s *Store) ResetEdges(itemIDs ...int64) error {
