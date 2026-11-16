@@ -226,13 +226,17 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 }
 
 // PendingEdges returns up to limit wanted items whose edges are to be made:
-// packaged, silence detected, no clean file still waiting for its track (the
-// Clean rendition is part of the plan), and neither made nor failed.
+// packaged, silence detected, and neither made nor failed. The Clean
+// rendition is part of the plan, so an item whose clean audio is still to
+// come waits: a clean file waiting for its track, or profanity muting still
+// to run (once its captions are made, which it needs). Edges made before
+// the clean track lands would be reset under a player and made twice.
 func (s *Store) PendingEdges(limit int) ([]int64, error) {
 	rows, err := s.db.Query(`SELECT item_id FROM downloads
 		WHERE edges_wanted = 1 AND package_state = 'done' AND silence_state = 'done'
 			AND edges_edit = '' AND edges_error = ''
 			AND NOT (clean_audio_path != '' AND clean_track_path = '' AND clean_track_error = '')
+			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1))
 		ORDER BY item_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending edges: %w", err)

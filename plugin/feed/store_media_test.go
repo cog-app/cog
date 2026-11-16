@@ -271,6 +271,33 @@ func TestEdgesNotPendingUnwantedOrUnpackaged(t *testing.T) {
 	assert.True(t, edgesPending(t, store, id))
 }
 
+// A clean file still to come is part of the plan too: edges made before it
+// lands would be reset by its track mid-playback and made twice.
+func TestEdgesWaitForProfanity(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	require.True(t, edgesPending(t, store, id))
+
+	// Profanity waits for the captions, which are being made.
+	require.NoError(t, store.EnqueueProfanity(id))
+	require.NoError(t, store.EnqueueTranscribe(id))
+	assert.False(t, edgesPending(t, store, id), "captions to come")
+	require.NoError(t, store.SetCaptionsPath(id, "captions/1.vtt"))
+	require.NoError(t, store.ClearNeedsTranscribe(id))
+	assert.False(t, edgesPending(t, store, id), "profanity to run")
+	// Nothing to mute: no clean file.
+	require.NoError(t, store.ClearNeedsProfanity(id))
+	assert.True(t, edgesPending(t, store, id))
+
+	// Profanity with no captions and none coming never runs: no wait.
+	require.NoError(t, store.SetCaptionsPath(id, ""))
+	require.NoError(t, store.EnqueueProfanity(id))
+	assert.True(t, edgesPending(t, store, id), "profanity cannot run")
+}
+
 func TestEdgesResetOnRepackage(t *testing.T) {
 	store, id := edgesMade(t)
 	require.NoError(t, store.SavePackage(id, "media/2.hls-audio.m4a", "", 300))
