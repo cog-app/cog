@@ -216,8 +216,14 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         Still open: a packaging backfill for legacy done-but-unpackaged
         downloads, an index cache, the redirect target from another network,
         chunked requests.
-  - [ ] Phase 6: M3U of a playlist or view for external players; Android on
-        Media3 HLS with background audio-only.
+  - [x] Phase 6a: M3U of a playlist or view for external players: signed
+        `/apps/feed/m3u/{user}/{kind}/{id}.m3u`, a desktop launcher, and
+        links on the view pages (`TestM3U*`, `TestViewPagesOfferM3U`).
+        Pending: the by-hand mpv check (both entries play in order, silence
+        skipped, window title, subtitles, a cleaned podcast plays once,
+        `gio launch` of the launcher). Still open: progress back from
+        external players.
+  - [ ] Phase 6b: Android on Media3 HLS with background audio-only.
 - [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
       a request that was not HTMX went through `shellMiddleware`, which
       buffered the whole file and wrapped it in the HTML shell, and a missing

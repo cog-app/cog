@@ -1,11 +1,12 @@
 # Feed media over HLS
 
-Status: phases 1 to 5 done (2026-11-16): downloaded items play over HLS from
-signed links, in the web player through hls.js, with a captions rendition, a
-clean (profanity-muted) audio rendition, and skip (silence cut out of the
-playlists, with edge transcodes), and undownloaded YouTube plays from
-googlevideo. Phase 6 is open; the phase 5 manual check on desktop Chrome and
-the phone is pending.
+Status: phases 1 to 5 and 6a done (2026-11-16): downloaded items play over HLS
+from signed links, in the web player through hls.js, with a captions
+rendition, a clean (profanity-muted) audio rendition, and skip (silence cut
+out of the playlists, with edge transcodes), undownloaded YouTube plays from
+googlevideo, and a playlist or view is an M3U for external players such as
+mpv. Phase 6b (Android on Media3) is open; the phase 5 manual check on desktop
+Chrome and the phone, and the by-hand mpv check of 6a, are pending.
 Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
 download`, MR !54); merged downloads made before are repackaged as tracks.
 
@@ -456,8 +457,13 @@ them: "Revoke media links" on the Sync settings page replaces it, and every
 link handed out stops working.
 
 A Cog playlist (or any view) is also an M3U of signed master URLs:
-`/apps/feed/playlists/{id}.m3u?sig=…&skip=silence`. A desktop launcher is just
-`mpv <that URL>`.
+`/apps/feed/m3u/{user}/{kind}/{id}.m3u?sig=…[&skip=silence]`. The M3U has its
+own signature, an HMAC-SHA256 with the same per-user key over
+`cog-feed-m3u NUL user NUL kind NUL id` and, when there are options, `NUL`
+and the canonical options. The prefix keeps the two signatures apart, so an
+M3U signature opens no master and a master signature opens no M3U; "Revoke
+media links" ends both. Only `skip=silence` is signed; `edit` is not an M3U
+option and is refused with 400. A desktop launcher is just `mpv <that URL>`.
 
 ## Clients
 
@@ -478,8 +484,9 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
    and merging, the edit id and time mapping. Done.
 5. Undownloaded YouTube segments straight from googlevideo, with a proxy
    fallback. Done; manual check pending.
-6. M3U of a playlist or view for external players. Android on Media3 HLS
-   with background audio-only.
+6a. M3U of a playlist or view for external players. Done; the by-hand mpv
+   check is pending.
+6b. Android on Media3 HLS with background audio-only. Open.
 
 ## Decided
 
@@ -491,6 +498,42 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   video at 206. So the URLs are not refused off the resolving network. The
   redirect's target from another network is confirmed by the phase 5 manual
   phone check.
+
+### Phase 6a: M3U for external players
+
+- Only `skip=silence` is an option; `edit` is rejected (400), and no entry
+  carries one.
+- The route reads the user's existing HLS key once and builds every entry's
+  master path with `hlsMasterPath`; it neither creates a key nor calls
+  `HLSMasterURL` per item (no N+1). With no key, no signature can be valid.
+  The view, its downloads and the subscriptions are read once each.
+  With skip, the packaged items' edges are marked wanted (the only write).
+- Entries follow the page's order (up to the page limit). The `.m3u` URLs and
+  every entry are absolute: the configured base URL, else the scheme and host
+  the request reached, because a player has no page to resolve against.
+- A packaged item gets its signed master. `remoteEligible` (shared with phase
+  5's `remoteMaster`) decides an undownloaded YouTube video; its entry is a
+  master URL that resolves when the player fetches it, and a failure (502)
+  makes mpv move on. Any other undownloaded item plays its media URL, with no
+  skip. A text item has no entry.
+- R-mute: a muted item that is not packaged is left out. Phase 3 never serves
+  unclean audio for it, and these links do not expire.
+- A feed's media URL must be http or https with a host and no control
+  characters, else the entry is left out: mpv runs `edl://`, `lavfi` and
+  `file` entries, and a newline would add a line. Titles fold line breaks.
+- Ids are canonical decimals (no `+7`, no `007`), so one list has one
+  signature; a tag name with a NUL is rejected (the signed message's
+  separator).
+- The desktop launcher is `/apps/feed/launchers/{kind}/{file}`, behind the
+  session, and plays `mpv --force-window <M3U with skip=silence>`. Exec follows
+  the Desktop Entry spec's two levels: the URL is a double-quoted argument
+  (quote level), and within it `"`, backtick, `$` and `\` take a backslash
+  (quote level), and the string level doubles every backslash, so the file
+  holds `\\"` for a quote and four backslashes for one; `%` is doubled. Name and Comment fold control characters to spaces and double a
+  backslash. `desktop-file-validate` accepts a launcher for the tag
+  `a\b$c"d%` plus a space with no output.
+- Browser tests use a fixed HLS key (`SetHLSKey`) instead of masking `sig=` in
+  the snapshots; a signature that differs per run is a nondeterministic page.
 
 ## Open questions
 
@@ -508,8 +551,13 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   which case `direct` and `proxy` would split a range into chunks.
 - Whether HLS packed-audio MP3 plays widely enough to skip transcoding
   podcasts.
-- Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions; if not,
-  also offer `--sub-file` from the M3U.
+- Whether mpv (ffmpeg's HLS demuxer) shows WebVTT subtitle renditions: pending
+  the by-hand mpv check. If not, the M3U can't carry a per-entry `--sub-file`,
+  so the launcher or an mpv script would have to fetch `subs` itself; that is
+  not built.
+- Whether mpv plays a cleaned podcast's audio once: the master's single
+  variant points at `clean.m3u8`, which is also the `DEFAULT=YES` rendition of
+  the `audio` group. Pending the by-hand mpv check.
 - Whether iOS Safari's native HLS and Media3 (spec-following, media
   timeline) show captions at the right time on a track that does not start at
   0, given `MPEGTS` = the track's start. Checked on the phone in phase 6b.
@@ -530,7 +578,7 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
   reading its WebVTT; confirm on the phone in phase 6b.
 - A captions language is not recorded: neither source (YouTube, whisper)
   records one reliably, so the rendition has no `LANGUAGE`.
-- How to get progress back from external players.
+- How to get progress back from external players (still open after 6a).
 - No trigger re-cleans an item when the word list changes.
 - `clean.m4a` keeps its name and is served with `Cache-Control: max-age=86400`,
   so after a re-clean a browser may use cached old bytes against new ranges
