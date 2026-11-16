@@ -177,6 +177,22 @@ func TestBrowser(t *testing.T) {
 	ccOffsetItem := captionedItemFrom(t, env, "hlscc", "audio-offset.m4a", "video-offset.mp4", "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 	ccItem := captionedItem(t, env, "hlscc", true, "WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nHello there\n")
 
+	env.CreateUser(t, "cleanfail", "pass")
+	// No profanity plugin here, so cleaning cannot happen: a final reason.
+	cleanFailed := uncleanEpisode(t, env, "cleanfail")
+
+	// The player of an item whose cleaning failed says why and stops
+	// asking: the answer will not change while the page is open.
+	t.Run("CleaningFailed", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "cleanfail", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/feed/items/%d", cleanFailed))
+		b.WaitVisible(t, `#feed-player[data-wait-state="failed"]`)
+		assert.Equal(t, "Cleaning failed: the profanity plugin is not installed", b.Text(t, ".player-note"))
+		time.Sleep(6 * time.Second) // longer than the player waits between asks
+		assert.Equal[any](t, "1", b.Eval(t, `document.querySelector("#feed-player").dataset.waitPolls`))
+	})
+
 	// A packaged video plays over HLS: through hls.js where the browser has
 	// Media Source Extensions (a blob: source), natively where it plays HLS
 	// itself. The state is the assertion, not a snapshot: Chromium builds

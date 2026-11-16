@@ -1589,7 +1589,8 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 // (remoteMaster). When that cannot be, it queues the download, answering
 // {"downloading": true} with why until the download is ready. An item to
 // be muted (Download.muted) plays only its clean audio, and until it has
-// some answers {"downloading": true} with why (waitClean); any item not
+// some answers {"downloading": true} with why (waitClean), and
+// "failed": true when cleaning failed; any item not
 // from YouTube plays its audio from the media route.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -1619,7 +1620,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
 		return
 	}
 	// A video plays from its download: YouTube serves picture and sound
@@ -1642,7 +1643,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 					httperr.Internal(w, r, err)
 					return
 				}
-				plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+				plugin.WriteJSON(w, http.StatusOK, waiting(why))
 			default:
 				plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
 			}
@@ -1662,7 +1663,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
 		return
 	}
 	media := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"
@@ -1677,7 +1678,7 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
 		return
 	}
 	if it.SourceKind != "youtube" {

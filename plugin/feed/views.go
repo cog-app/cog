@@ -330,7 +330,7 @@ func (s *Store) ResolveView(v View) (ViewSpec, query.Expr, error) {
 		if err != nil {
 			return ViewSpec{}, nil, err
 		}
-		return ViewSpec{All: true, Order: pl.Order, Seed: pl.ShuffleSeed}, playlistQuery(pl), nil
+		return ViewSpec{All: true, Order: pl.Order, Seed: pl.ShuffleSeed, Playable: true}, playlistQuery(pl), nil
 	default:
 		return ViewSpec{}, nil, fmt.Errorf("unknown view %q", v.Kind)
 	}

@@ -140,6 +140,7 @@ func TestStreamURLUncleanedWaits(t *testing.T) {
 		assert.Equal[any](t, "Cleaning the audio", got["message"], path)
 		assert.Equal[any](t, nil, got["url"], path)
 		assert.Equal[any](t, nil, got["hls"], path)
+		assert.Equal[any](t, nil, got["failed"], path)
 	}
 }
 
@@ -280,4 +281,80 @@ func TestUncleanedPlaysWhenCleaned(t *testing.T) {
 	assert.True(t, res.Msg.Cleaned)
 	body := env.Get(t, res.Msg.Url, u.Auth).Status(http.StatusOK).ReadBody()
 	assert.Equal(t, "clean bytes", body)
+}
+
+// A cleaning failure reaches the web player and the media route as
+// "Cleaning failed", which the player takes as final: it stops asking.
+func TestStreamURLCleaningFailed(t *testing.T) {
+	env := cleaningEnv(t)
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, "alice")
+	id := uncleanEpisode(t, env, "alice")
+	media := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"
+
+	for _, c := range []struct {
+		mark func() error
+		want string
+	}{
+		{func() error { return store.MarkTranscribeError(id, "whisper-cli: exit status 1\nusage: …") }, "Cleaning failed: whisper-cli: exit status 1"},
+		{func() error { return store.MarkProfanityError(id, "tts: not configured") }, "Cleaning failed: tts: not configured"},
+	} {
+		require.NoError(t, c.mark())
+		got := streamURL(t, env, u, id)
+		assert.Equal[any](t, true, got["downloading"])
+		assert.Equal[any](t, c.want, got["message"])
+		assert.Equal[any](t, true, got["failed"])
+		body := env.Get(t, media, u.Auth).Status(http.StatusServiceUnavailable).ReadBody()
+		assert.Equal(t, c.want+"\n", body)
+	}
+}
+
+// A playlist, which players queue from, lists an item only once it can
+// play; the lists a screen browses still show it.
+func TestPlaylistLeavesOutUncleaned(t *testing.T) {
+	env := cleaningEnv(t)
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, "alice")
+	waiting := uncleanEpisode(t, env, "alice")
+	plain := podcastEpisode(t, store, "Plain")
+	plID, err := store.CreatePlaylist(feed.Playlist{Name: "Pod", Query: "type:audio", Order: feed.OrderOldest})
+	require.NoError(t, err)
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	pl := &feedpb.View{Kind: &feedpb.View_PlaylistId{PlaylistId: plID}}
+
+	got, total := listAll(t, client, &feedpb.ListItemsRequest{View: pl, UnfinishedOnly: true})
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, []int64{plain}, got)
+	got, _ = listAll(t, client, &feedpb.ListItemsRequest{})
+	assert.Equal(t, 2, len(got))
+
+	require.NoError(t, store.SetCleanAudioPath(waiting, "media/1.clean.mp3"))
+	require.NoError(t, store.ClearNeedsProfanity(waiting))
+	got, total = listAll(t, client, &feedpb.ListItemsRequest{View: pl, UnfinishedOnly: true})
+	assert.Equal(t, int64(2), total)
+	assert.Equal(t, 2, len(got))
+}
+
+// The web player's next and previous step over an item that cannot play
+// yet, in any list.
+func TestAdjacentPlayerSkipsUncleaned(t *testing.T) {
+	env := cleaningEnv(t)
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, "alice")
+	sub, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://pod.example.com/adj", Title: "Pod"})
+	require.NoError(t, err)
+	var ids []int64
+	for i, g := range []string{"a", "w", "c"} {
+		id, _, err := store.UpsertItem(feed.Item{SubscriptionID: sub, GUID: g, Type: "audio", Title: strings.ToUpper(g),
+			MediaURL: "https://pod.example.com/" + g + ".mp3", PublishedAt: int64(100 * (i + 1))})
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	require.NoError(t, store.EnqueueProfanity(ids[1]))
+
+	// Newest first: C, W, A.
+	body := env.Get(t, "/apps/feed/items/"+strconv.FormatInt(ids[2], 10)+"/adjacent?dir=next&ctx=all", u.Auth).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, `data-item-id="`+strconv.FormatInt(ids[0], 10)+`"`), body)
+	body = env.Get(t, "/apps/feed/items/"+strconv.FormatInt(ids[0], 10)+"/adjacent?dir=prev&ctx=all", u.Auth).Status(http.StatusOK).ReadBody()
+	assert.True(t, strings.Contains(body, `data-item-id="`+strconv.FormatInt(ids[2], 10)+`"`), body)
 }

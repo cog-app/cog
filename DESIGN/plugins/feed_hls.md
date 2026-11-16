@@ -120,7 +120,8 @@ any run of segments by byte range out of one file.
     (`ResolveMedia` and `StreamURL` fall back to download). Links are
     perpetual, so the remote serve path checks the same mute decision on
     every request and answers 503 (as `ItemMedia` does), with no resolve and
-    no fetch.
+    no fetch. Until its clean audio exists it waits, downloaded or not (see
+    Mute: Wait for clean).
   - **No skip without a download.** A remote master asked for `skip=silence`
     ignores it and carries `SESSION-DATA us.duckfam.cog.skip=unavailable`,
     which phase 4 clients read.
@@ -215,8 +216,66 @@ Decisions:
   worker clears the flag and `clean_audio_path`. This also ends the
   retry-every-tick when `Keep` failed on a file never written.
 - **A cleaned video whose clean track is not ready** (pending or failed to
-  package) plays clean audio only, as before; it never plays HLS with
-  unclean audio.
+  package) plays clean audio only, from the media route; it never plays HLS
+  with unclean audio. While a muted item has no clean track
+  (`Download.hlsUnclean`), every file of its presentation answers 503 and
+  M3Us leave it out. A clean track that failed to package
+  (`clean_track_error`) leaves the item there for good: its clean audio
+  still plays from the media route.
+- **Wait for clean.** An item to be muted (`needs_profanity`) with no clean
+  audio yet (`Download.uncleanOnly`) never plays its original anywhere,
+  downloaded, packaged or not:
+  - `ResolveMedia` answers Unavailable with why, and `StreamURL`
+    `{"downloading": true, "message": why}`, plus `"failed": true` when the
+    reason is a failure.
+  - `ItemMedia` answers 503 with why, and logs it.
+  - Every HLS file answers 503 (`hlsUnclean`, above). This includes links
+    handed out before a mute filter matched, since they do not expire.
+  - M3Us leave the item out.
+  - The web player gets no media `src` and no `data-hls`. It shows why
+    (`data-waiting`) and asks `stream-url` every 5 s until the item plays.
+    It stops asking on a failure.
+  - Asking queues the download when there is none yet (or the last try
+    failed), and says "Downloading the audio" or "Downloading the video".
+  - Once downloaded, the reason is "Cleaning the audio", or
+    "Cleaning failed: <reason>" (`Plugin.cleaningWhy`). The reason is the
+    first line (at most 200 bytes) of `profanity_error`, else of
+    `transcribe_error`. Otherwise it is "the profanity plugin is not
+    installed", or "no captions to find the words by" when transcription
+    ended without captions (whisper off). A failure retries every tick, but
+    the item does not play until a retry succeeds; that is accepted.
+  - Cleaning always ends playable. With nothing to mute (`ErrNoRanges`) the
+    worker clears `needs_profanity` and `clean_audio_path`, so the item is
+    not muted and plays its download. Otherwise it keeps the clean file and
+    clears the flag, and the item plays the clean audio.
+  - Playlists leave the item out until it can play (see Playable lists).
+- **NC News enclosure.** The NextCloud News API gives a muted item
+  (`needs_profanity`, or a clean file) Cog's media route,
+  `/apps/feed/items/{id}/media`, absolute like the item's page link, as its
+  `enclosureLink`. A News client fetches it with the credentials it already
+  uses for Cog. Other items keep their original enclosure.
+- **Playable lists.** Content is not in a playlist, server side, until it
+  can play:
+  - A playlist view (`ViewSpec.Playable`, set by `ResolveView`) leaves out
+    `uncleanOnly` items in its SQL (`uncleanOnlySQL`, a `NOT EXISTS` on
+    `downloads`). The playlist covers `ListItems`, which the phone's
+    `PlayPlaylist` queues from, and its count, its M3U and the web player's
+    next/previous in a playlist.
+  - The web player's next/previous (`AdjacentPlayer`) skip such items in
+    every list. The list query carries them as `Waiting`, so this costs no
+    query per item.
+  - The lists a screen browses (All, Unread, Starred, History, folder,
+    subscription, tag, search) and the reader's previous/next still show
+    the item, with its reason, so a failure is visible. When the phone plays
+    from one of those lists (`PlayItems`), such an item answers Unavailable
+    with why, as above.
+  - Only `uncleanOnly` counts as not playable. A failed download stays
+    listed: asking for it is what retries it, a podcast plays its enclosure,
+    and a YouTube video can play remote, none of which a list can know.
+  - There is no staleness. Lists are queried when asked, and the server
+    keeps no cache of them. `Changes` and `Watch` are not implemented on the
+    server, and the phone lists a playlist with `ListItems` each time it
+    plays one, so an item appears as soon as it can play.
 - **Audio-only item with a clean track:** the master has the audio group and
   one `EXT-X-STREAM-INF` with `AUDIO="audio"`, whose URI is the default
   (clean) rendition's playlist. A cleaned video keeps its audio-only variant,
@@ -518,8 +577,9 @@ option and is refused with 400. A desktop launcher is just `mpv <that URL>`.
   master URL that resolves when the player fetches it, and a failure (502)
   makes mpv move on. Any other undownloaded item plays its media URL, with no
   skip. A text item has no entry.
-- R-mute: a muted item that is not packaged is left out. Phase 3 never serves
-  unclean audio for it, and these links do not expire.
+- R-mute: a muted item with no clean track (`Download.hlsUnclean`) is left
+  out, packaged or not. Its presentation has only the original audio, and
+  these links do not expire (see Mute: Wait for clean).
 - A feed's media URL must be http or https with a host and no control
   characters, else the entry is left out: mpv runs `edl://`, `lavfi` and
   `file` entries, and a newline would add a line. Titles fold every control character to a space.

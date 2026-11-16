@@ -276,16 +276,30 @@ func (p *Plugin) waitWhy(dl Download) string {
 func (p *Plugin) cleaningWhy(dl Download) string {
 	switch {
 	case dl.ProfanityError != "":
-		return "Cleaning failed: " + firstLine(dl.ProfanityError)
+		return cleaningFailed + firstLine(dl.ProfanityError)
 	case dl.TranscribeError != "":
-		return "Cleaning failed: " + firstLine(dl.TranscribeError)
+		return cleaningFailed + firstLine(dl.TranscribeError)
 	case p.Profanity() == nil:
-		return "Cleaning failed: the profanity plugin is not installed"
+		return cleaningFailed + "the profanity plugin is not installed"
 	case dl.CaptionsPath == "" && !dl.NeedsTranscribe:
 		// Transcription ended without captions, as it does with whisper off.
-		return "Cleaning failed: no captions to find the words by"
+		return cleaningFailed + "no captions to find the words by"
 	}
 	return "Cleaning the audio"
+}
+
+// cleaningFailed begins the reason an item waits when cleaning failed or
+// cannot happen; asking again soon will not change it.
+const cleaningFailed = "Cleaning failed: "
+
+// waiting is the web player's answer for an item that cannot play yet:
+// downloading, with why, and failed when asking again soon will not help.
+func waiting(why string) map[string]any {
+	out := map[string]any{"downloading": true, "message": why}
+	if strings.HasPrefix(why, cleaningFailed) {
+		out["failed"] = true
+	}
+	return out
 }
 
 // firstLine is the first line of a stored error, at most 200 bytes of it:

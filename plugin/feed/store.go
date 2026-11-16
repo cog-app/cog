@@ -589,6 +589,11 @@ func (d Download) uncleanOnly() bool {
 	return d.NeedsProfanity && d.CleanAudioPath == ""
 }
 
+// uncleanOnlySQL is uncleanOnly of item i's download, as an SQL condition,
+// for lists that leave out what cannot play (ViewSpec.Playable).
+const uncleanOnlySQL = `EXISTS (SELECT 1 FROM downloads d WHERE d.item_id = i.id
+	AND d.needs_profanity = 1 AND d.clean_audio_path = '')`
+
 // hlsUnclean is whether the item's HLS presentation has only its original
 // audio while the item is to be muted: until its clean audio is packaged as
 // a track, the presentation is not to be played.
@@ -1429,6 +1434,9 @@ func (s *Store) LoadSidebarCounts() (SidebarCounts, error) {
 type ItemWithSubscription struct {
 	Item
 	SubscriptionTitle string
+	// Waiting is whether it cannot play until it is clean
+	// (Download.uncleanOnly); set by the lists of views (listItems).
+	Waiting bool
 }
 
 // ViewSpec selects which items to return in ListItemsForView.
@@ -1449,6 +1457,10 @@ type ViewSpec struct {
 	Unfinished bool
 	Order      PlayOrder // "" is newest first
 	Seed       int64     // the shuffle, when Order is OrderShuffled
+	// Playable leaves out items that cannot play yet: those to be muted
+	// with no clean audio (Download.uncleanOnly). A playlist, which players
+	// queue from, is Playable; the lists a screen browses are not.
+	Playable bool
 	// After continues a list from the item it last returned (keyset
 	// pagination): only items after it in this order are listed.
 	After *Cursor
@@ -1502,6 +1514,9 @@ func (spec ViewSpec) from() (joins string, where []string, args []any, err error
 	}
 	if spec.Unfinished {
 		where = append(where, unfinishedSQL)
+	}
+	if spec.Playable {
+		where = append(where, "NOT "+uncleanOnlySQL)
 	}
 
 	if spec.Query != nil {
@@ -1564,7 +1579,7 @@ func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []C
 		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
 		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
 		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title, ` + key + `
+		       COALESCE(s.title, s.url) AS subscription_title, ` + uncleanOnlySQL + `, ` + key + `
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id` + joins
 	args = append(slices.Clone(keyArgs), args...)
@@ -1598,7 +1613,7 @@ func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []C
 			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
 			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
 			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle, &k,
+			&iws.ContentHash, &iws.SubscriptionTitle, &iws.Waiting, &k,
 		); err != nil {
 			return nil, nil, fmt.Errorf("list items for view scan: %w", err)
 		}

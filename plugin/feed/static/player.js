@@ -218,19 +218,30 @@
 			// queues and then packages for HLS; until it is ready the answer
 			// says why, shown in the player, and the player asks again. So
 			// does an item to be muted until its audio is clean.
+			// When cleaning failed it stops asking: the answer will not
+			// change while the page is open.
 			if (cfg.waiting) showNote(cfg.waiting + "…");
 			var variant = cfg.variant ? "?variant=" + cfg.variant : "";
+			var polls = 0;
 			var loadSource = function () {
+				root.dataset.waitPolls = String(++polls);
 				fetch("/apps/feed/api/stream-url/" + cfg.itemID + variant, {
 					headers: { "X-CSRF-Token": cfg.csrf },
 				})
 					.then(function (r) { return r.json(); })
 					.then(function (d) {
+						if (d.downloading && d.failed) {
+							root.dataset.waitState = "failed";
+							showNote(d.message);
+							return;
+						}
 						if (d.downloading) {
+							root.dataset.waitState = "waiting";
 							showNote((d.message || "Downloading the video") + "…");
 							if (document.body.contains(root)) setTimeout(loadSource, 5000);
 							return;
 						}
+						delete root.dataset.waitState;
 						if (d.hls) {
 							showNote("");
 							playHLS(d.hls);

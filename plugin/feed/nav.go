@@ -147,7 +147,8 @@ func playerType(ip ItemPlayback, nav itemNav) string {
 }
 
 // neighbors returns the items immediately before and after id in items. When
-// mediaOnly is true, text items are skipped when choosing neighbors. Returns
+// mediaOnly is true, text items and items that cannot play yet (Waiting)
+// are skipped when choosing neighbors. Returns
 // nil for a direction with no neighbor (boundary or id absent).
 func neighbors(items []ItemWithSubscription, id int64, mediaOnly bool) (prev, next *ItemWithSubscription) {
 	idx := -1
@@ -161,7 +162,7 @@ func neighbors(items []ItemWithSubscription, id int64, mediaOnly bool) (prev, ne
 		return nil, nil
 	}
 	playable := func(it ItemWithSubscription) bool {
-		return !mediaOnly || it.Type == "audio" || it.Type == "video"
+		return !mediaOnly || (it.Type == "audio" || it.Type == "video") && !it.Waiting
 	}
 	for i := idx - 1; i >= 0; i-- {
 		if playable(items[i]) {
