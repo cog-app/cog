@@ -420,7 +420,7 @@ func TestM3UPodcastVideoNotDownloaded(t *testing.T) {
 // launcherExec is the Exec line of a launcher body.
 func launcherExec(t *testing.T, body string) string {
 	t.Helper()
-	for _, l := range strings.Split(body, "\n") {
+	for l := range strings.SplitSeq(body, "\n") {
 		if strings.HasPrefix(l, "Exec=") {
 			return l
 		}
@@ -528,7 +528,7 @@ func TestM3ULauncherHostileTag(t *testing.T) {
 				assert.True(t, strings.Contains(body, "\nComment=Play a\\\\b from Cog"), body)
 			}
 			var keys []string
-			for _, l := range strings.Split(strings.TrimSuffix(body, "\n"), "\n") {
+			for l := range strings.SplitSeq(strings.TrimSuffix(body, "\n"), "\n") {
 				keys = append(keys, strings.SplitN(l, "=", 2)[0])
 			}
 			assert.Equal(t, []string{"[Desktop Entry]", "Type", "Name", "Comment", "Exec", "Terminal", "Categories"}, keys)

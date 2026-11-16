@@ -1527,7 +1527,7 @@ func feedPlayElsewhere(p playElsewhere) templ.Component {
 			templ_7745c5c3_Var52 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<details class=\"play-elsewhere\"><summary>Play in mpv</summary><div class=\"secret-box\"><code class=\"break-anywhere\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<details><summary>Play in mpv</summary><div class=\"secret-box\"><code class=\"break-anywhere\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
