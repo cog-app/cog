@@ -44,3 +44,8 @@ func ResolveMediaAs(ctx context.Context, p *Plugin, username string, req *feedpb
 
 // HLSMasterPath is hlsMasterPath, for the external tests.
 var HLSMasterPath = hlsMasterPath
+
+// M3UList, M3USignature and ViewTag are the M3U signing surface, for the external tests.
+type M3UList = m3uList
+
+var M3USignature = m3uSignature

@@ -2,6 +2,7 @@ package feed
 
 import (
 	"bytes"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -39,6 +40,13 @@ func TestParseM3UPath(t *testing.T) {
 		{"history", "all.m3u", m3uList{}, false},
 		{"all", "all.m3u", m3uList{}, false},
 		{"tag", ".m3u", m3uList{}, false},
+		{"playlist", "+7.m3u", m3uList{}, false},
+		{"playlist", "007.m3u", m3uList{}, false},
+		{"playlist", "-0.m3u", m3uList{}, false},
+		{"playlist", "0.m3u", m3uList{}, false},
+		{"folder", "9223372036854775808.m3u", m3uList{}, false},
+		{"sub", "99999999999999999999.m3u", m3uList{}, false},
+		{"tag", "a\x00skip=silence.m3u", m3uList{}, false},
 	} {
 		got, err := parseM3UPath(c.kind, c.file)
 		assert.Equal(t, c.ok, err == nil, "%s/%s: %v", c.kind, c.file, err)
@@ -78,7 +86,17 @@ func TestM3USignatureScopes(t *testing.T) {
 	assert.False(t, validM3USignature(key, "alice", m3uList{ViewFolder, "7"}, hlsOptions{}, sig))
 	assert.False(t, validM3USignature(key, "alice", pl, hlsOptions{Skip: true}, sig))
 	assert.False(t, validM3USignature(bytes.Repeat([]byte{2}, 32), "alice", pl, hlsOptions{}, sig))
-	assert.NotEqual(t, hlsSignature(key, "alice", 7, hlsOptions{}), sig)
+	// domain separation: the same user and numeric id signed for HLS and for
+	// M3U never validate on the other's side
+	for _, o := range []hlsOptions{{}, {Skip: true}} {
+		for _, k := range []ViewKind{ViewPlaylist, ViewFolder, ViewSubscription} {
+			l := m3uList{k, "7"}
+			ms, hs := m3uSignature(key, "alice", l, o), hlsSignature(key, "alice", 7, o)
+			assert.NotEqual(t, hs, ms)
+			assert.False(t, validHLSSignature(key, "alice", 7, o, ms))
+			assert.False(t, validM3USignature(key, "alice", l, o, hs))
+		}
+	}
 	// edit is unsigned: it never changes an M3U signature
 	assert.Equal(t, m3uSignature(key, "alice", pl, hlsOptions{Skip: true}),
 		m3uSignature(key, "alice", pl, hlsOptions{Skip: true, Edit: "0123456789ab"}))
@@ -91,4 +109,6 @@ func TestAbsoluteURL(t *testing.T) {
 	assert.Equal(t, "https://cog.example/apps/feed/x", p.absoluteURL(r, "/apps/feed/x"))
 	p = &Plugin{ctx: baseURLContext{}}
 	assert.Equal(t, "http://h:8580/apps/feed/x", p.absoluteURL(r, "/apps/feed/x"))
+	r.TLS = &tls.ConnectionState{}
+	assert.Equal(t, "https://h:8580/apps/feed/x", p.absoluteURL(r, "/apps/feed/x"))
 }

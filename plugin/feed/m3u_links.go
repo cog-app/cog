@@ -24,7 +24,8 @@ func (l m3uList) View() (View, error) {
 	switch l.Kind {
 	case ViewPlaylist, ViewFolder, ViewSubscription:
 		id, err := strconv.ParseInt(l.ID, 10, 64)
-		if err != nil || id <= 0 {
+		// ParseInt takes +7 and 007; the id signed must be the canonical one.
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != l.ID {
 			return View{}, fmt.Errorf("bad %s id %s", l.Kind, strconv.Quote(l.ID))
 		}
 		return View{Kind: l.Kind, ID: id}, nil

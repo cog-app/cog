@@ -646,3 +646,25 @@ func TestHLSMasterPathMatchesURL(t *testing.T) {
 		assert.Equal(t, want, feed.HLSMasterPath(key, "alice", 5, o))
 	}
 }
+
+func TestHLSMasterPathGolden(t *testing.T) {
+	key := bytes.Repeat([]byte{3}, 32)
+	assert.Equal(t, "/apps/feed/hls/a%20b/5/master.m3u8?sig=AZeL571wYeOn2drQFyakCfPb30slaW5s0f0_okvRIyE", feed.HLSMasterPath(key, "a b", 5, feed.HLSOptions{}))
+	assert.Equal(t, "/apps/feed/hls/a%20b/5/master.m3u8?edit=0123456789ab&sig=IgfismRJSzj4JlF98-h5d3qyoDUYi7cEJ1i1ND_p3Xc&skip=silence", feed.HLSMasterPath(key, "a b", 5, feed.HLSOptions{Skip: true, Edit: "0123456789ab"}))
+}
+
+func TestM3UURL(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	p := feedPlugin(t, env)
+	l := feed.M3UList{Kind: feed.ViewTag, ID: "a b/c"}
+	plain, err := p.M3UURL(store, "alice", l, feed.HLSOptions{})
+	require.NoError(t, err)
+	key, err := store.ExistingHLSKey()
+	require.NoError(t, err)
+	assert.Equal(t, "/apps/feed/m3u/alice/tag/a%20b%2Fc.m3u?sig="+feed.M3USignature(key, "alice", l, feed.HLSOptions{}), plain)
+	skip, err := p.M3UURL(store, "alice", l, feed.HLSOptions{Skip: true, Edit: "0123456789ab"})
+	require.NoError(t, err)
+	assert.Equal(t, "/apps/feed/m3u/alice/tag/a%20b%2Fc.m3u?sig="+feed.M3USignature(key, "alice", l, feed.HLSOptions{Skip: true})+"&skip=silence", skip)
+}
