@@ -133,8 +133,8 @@ func (d *Downloader) fetch(ctx context.Context, kind, src, file string, format [
 // --fixup never keeps yt-dlp from remuxing an m4a into a plain MP4, which
 // would lose the index.
 var (
-	youtubeVideo = []string{"--fixup", "never", "--format", "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"}
-	youtubeAudio = []string{"--fixup", "never", "--format", "ba[ext=m4a]/ba"}
+	youtubeVideo = []string{"--fixup", "never", "--format", feed.YouTubeVideoFormat}
+	youtubeAudio = []string{"--fixup", "never", "--format", feed.YouTubeAudioFormat}
 )
 
 func (d *Downloader) fail(itemID int64, err error) error {
