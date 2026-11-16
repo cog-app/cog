@@ -86,7 +86,7 @@ func TestAwaitAvailableWaitsForTheLatest(t *testing.T) {
 	v := YouTubeTrack{FormatID: "137", AvailableAt: now.Add(3 * time.Second)}
 	a := YouTubeTrack{FormatID: "140", AvailableAt: now.Add(5 * time.Second)}
 	require.NoError(t, AwaitAvailable(t.Context(), now, v, a))
-	assert.Equal(t, []time.Duration{5 * time.Second}, *got)
+	assert.Equal(t, []time.Duration{5*time.Second + youtubeAvailableSkew}, *got)
 }
 
 // A URL already available, or with no available_at, is not waited for.
@@ -95,7 +95,7 @@ func TestAwaitAvailableNoWait(t *testing.T) {
 	got := sleeps(t, nil)
 	require.NoError(t, AwaitAvailable(t.Context(), now,
 		YouTubeTrack{FormatID: "137"},
-		YouTubeTrack{FormatID: "140", AvailableAt: now},
+		YouTubeTrack{FormatID: "140", AvailableAt: now.Add(-youtubeAvailableSkew)},
 		YouTubeTrack{FormatID: "141", AvailableAt: now.Add(-time.Minute)}))
 	assert.Equal(t, 0, len(*got))
 }

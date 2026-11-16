@@ -54,7 +54,7 @@ func TestHLSRemoteWaitsForAvailableAt(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 
 	env.Get(t, master).Status(http.StatusOK)
-	assert.Equal(t, []time.Duration{5 * time.Second}, waits())
+	assert.Equal(t, []time.Duration{5*time.Second + feed.YouTubeAvailableSkew}, waits())
 	assert.Equal(t, int32(0), srv.refused.Load())
 	assert.Equal(t, 1, len(stub.asked()))
 
@@ -72,7 +72,7 @@ func TestHLSRemoteDirectWaitsBeforeRedirect(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 
 	r := env.Get(t, sibling(master, "yt-video-137.mp4"), cogtest.StopRedirect).Status(http.StatusFound)
-	assert.Equal(t, []time.Duration{5 * time.Second}, waits())
+	assert.Equal(t, []time.Duration{5*time.Second + feed.YouTubeAvailableSkew}, waits())
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, r.Header.Get("Location"), nil)
 	require.NoError(t, err)
 	req.Header.Set("Range", "bytes=0-99")
@@ -90,7 +90,7 @@ func TestHLSRemoteProxyWaitsForAvailableAt(t *testing.T) {
 	master := masterURL(t, env, "alice", remoteItem(t, env, "alice"))
 
 	env.Get(t, sibling(master, "yt-audio-140.m4a"), cogtest.Header("Range", "bytes=0-99")).Status(http.StatusPartialContent)
-	assert.Equal(t, []time.Duration{5 * time.Second}, waits())
+	assert.Equal(t, []time.Duration{5*time.Second + feed.YouTubeAvailableSkew}, waits())
 	assert.Equal(t, int32(0), srv.refused.Load())
 	assert.Equal(t, 1, len(stub.asked()))
 }
@@ -122,7 +122,7 @@ func TestResolveMediaRemoteWaitsForAvailableAt(t *testing.T) {
 	src, err := resolveVideo(t, env, u, id)
 	require.NoError(t, err)
 	assert.Equal(t, "application/vnd.apple.mpegurl", src.Mime)
-	assert.Equal(t, []time.Duration{5 * time.Second}, waits())
+	assert.Equal(t, []time.Duration{5*time.Second + feed.YouTubeAvailableSkew}, waits())
 	d, err := feedStore(t, env, "alice").FindDownload(id)
 	require.NoError(t, err)
 	assert.Equal(t, "", d.State)

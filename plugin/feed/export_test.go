@@ -70,3 +70,6 @@ func SetHLSKey(s *Store, key []byte) error {
 	}
 	return nil
 }
+
+// YouTubeAvailableSkew is the margin added to every available_at.
+const YouTubeAvailableSkew = youtubeAvailableSkew

@@ -53,6 +53,11 @@ var sleepFor = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// youtubeAvailableSkew is added to every AvailableAt, because the time is
+// Google's and the wait runs on Cog's clock: a clock a little behind would
+// still ask too early and get a 403.
+const youtubeAvailableSkew = time.Second
+
 // AwaitAvailable returns once every track's URL is available (AvailableAt),
 // taking now as the time: googlevideo answers 403 to a URL asked for before
 // then. It waits for the latest, and not at all when every one has passed.
@@ -61,7 +66,7 @@ var sleepFor = func(ctx context.Context, d time.Duration) error {
 func AwaitAvailable(ctx context.Context, now time.Time, tracks ...YouTubeTrack) error {
 	var wait time.Duration
 	for _, t := range tracks {
-		d := t.AvailableAt.Sub(now)
+		d := t.AvailableAt.Add(youtubeAvailableSkew).Sub(now)
 		if t.AvailableAt.IsZero() || d <= 0 {
 			continue
 		}
