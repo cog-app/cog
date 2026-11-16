@@ -229,7 +229,8 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 	if len(asked) == 0 {
 		return false, nil
 	}
-	if _, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1, edges_wanted_at = unixepoch()
+	if _, err := s.db.Exec(`UPDATE downloads SET edges_wanted = 1, edges_wanted_at = unixepoch(),
+			edges_first_wanted_at = CASE WHEN edges_wanted = 0 THEN unixepoch() ELSE edges_first_wanted_at END
 		WHERE item_id IN (`+placeholders(len(asked))+`)`, int64Args(asked)...); err != nil {
 		return false, fmt.Errorf("want edges: %w", err)
 	}
@@ -240,22 +241,33 @@ func (s *Store) WantEdges(itemIDs ...int64) (bool, error) {
 // again: what failed may have been passing (a full disk, a killed ffmpeg).
 const edgesRetryAfter = 6 * time.Hour
 
+// profanityWait is how long after an item is first wanted its edges wait
+// for profanity muting still to run. Muting that never finishes (whisper
+// missing or failing, the processor failing, no profanity plugin) records
+// no failure to key on, so the wait is bounded by time instead. After it,
+// edges are made from the renditions there are; a clean track that lands
+// later resets them and they are made again.
+const profanityWait = 30 * time.Minute
+
 // PendingEdges returns up to limit wanted items whose edges are to be made,
 // most recently asked for first: packaged, silence detected, and neither
 // made nor failed less than edgesRetryAfter ago (the worker clears the
 // error of a failed item it takes, RetryEdges). The Clean
 // rendition is part of the plan, so an item whose clean audio is still to
 // come waits: a clean file waiting for its track, or profanity muting still
-// to run (once its captions are made, which it needs). Edges made before
-// the clean track lands would be reset under a player and made twice.
+// to run (once its captions are made, which it needs) for up to
+// profanityWait after the item was first wanted. Edges made before the
+// clean track lands would be reset under a player and made twice.
 func (s *Store) PendingEdges(limit int) ([]int64, error) {
 	rows, err := s.db.Query(`SELECT item_id FROM downloads
 		WHERE edges_wanted = 1 AND package_state = 'done' AND silence_state = 'done'
 			AND (edges_edit = '' AND edges_error = ''
 				OR edges_error != '' AND edges_failed_at < unixepoch() - ?)
 			AND NOT (clean_audio_path != '' AND clean_track_path = '' AND clean_track_error = '')
-			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1))
-		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`, int64(edgesRetryAfter/time.Second), limit)
+			AND NOT (needs_profanity = 1 AND (captions_path != '' OR needs_transcribe = 1)
+				AND edges_first_wanted_at >= unixepoch() - ?)
+		ORDER BY edges_wanted_at DESC, item_id LIMIT ?`,
+		int64(edgesRetryAfter/time.Second), int64(profanityWait/time.Second), limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending edges: %w", err)
 	}

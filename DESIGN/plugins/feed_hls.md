@@ -246,9 +246,15 @@ The cuts are the same, so every rendition ends up the same length.
   in the orchestrator tick, two items or 60 s per run, **most recently asked
   first** (`edges_wanted_at`, refreshed when a pending item is asked for
   again, at most once a minute). An item whose clean audio is still to come
-  waits: a clean file without its track, or profanity muting that can still
-  run (it has captions, or they are being made). The Clean track is part of
-  the plan, and edges made before it landed would be reset under a player. The result is `downloads.edges_edit` (the plan's id) and
+  waits: a clean file without its track (until it is packaged or fails), or
+  profanity muting that can still run (it has captions, or they are being
+  made). The Clean track is part of the plan, and edges made before it
+  landed would be reset under a player. Muting that never finishes (whisper
+  missing or failing, the processor failing, no profanity plugin) records
+  no failure, so that wait lasts at most 30 minutes (`profanityWait`) from
+  when the item was first wanted (`edges_first_wanted_at`, which asking
+  again does not move); then the edges are made from what there is, and a
+  clean track that lands later resets them. The result is `downloads.edges_edit` (the plan's id) and
   `downloads.edges_index` (each edge's byte layout), so playlists open no edge
   files. Edges live in the cache under `edges/<item>/<edit>/<a|c|v>-<n>.mp4`
   and are served as `edge-<edit>-<a|c|v>-<n>.mp4`.

@@ -298,6 +298,43 @@ func TestEdgesWaitForProfanity(t *testing.T) {
 	assert.True(t, edgesPending(t, store, id), "profanity cannot run")
 }
 
+// Profanity muting that never finishes (whisper failing, the processor
+// failing, no profanity plugin) holds the edges back for profanityWait after
+// the item was first wanted, and no longer: then they are made from what
+// there is. Asking again does not push the wait forward.
+func TestEdgesProfanityWaitBounded(t *testing.T) {
+	store, id := readyItem(t)
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	require.NoError(t, store.EnqueueProfanity(id))
+	require.NoError(t, store.EnqueueTranscribe(id))
+	_, err := store.WantEdges(id)
+	require.NoError(t, err)
+	assert.False(t, edgesPending(t, store, id), "just wanted")
+
+	wantedAgo := func(min int) {
+		t.Helper()
+		_, err := store.DB().Exec(`UPDATE downloads SET edges_first_wanted_at = unixepoch() - ?,
+			edges_wanted_at = unixepoch() - ? WHERE item_id = ?`, min*60, min*60, id)
+		require.NoError(t, err)
+	}
+	wantedAgo(29)
+	assert.False(t, edgesPending(t, store, id), "wanted 29 min ago")
+	// A player asking again refreshes the queue order, not the wait.
+	asked, err := store.WantEdges(id)
+	require.NoError(t, err)
+	require.True(t, asked)
+	wantedAgo(31)
+	asked, err = store.WantEdges(id)
+	require.NoError(t, err)
+	require.True(t, asked)
+	assert.True(t, edgesPending(t, store, id), "wanted 31 min ago, asked again now")
+
+	// A clean file waiting for its track still waits: that has an error.
+	require.NoError(t, store.SetCleanAudioPath(id, "media/1.clean.m4a"))
+	assert.False(t, edgesPending(t, store, id), "clean track pending")
+}
+
 // Failed edges are tried again after edgesRetryAfter, in case what failed
 // was passing (a full disk, a killed ffmpeg).
 func TestEdgesRetriedAfterFailure(t *testing.T) {
