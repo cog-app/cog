@@ -20,6 +20,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/query"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb/feedpbconnect"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // FeedService serves native clients the views, item state and management the
@@ -416,8 +417,16 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	id := req.Msg.ItemId
-	if _, err := getItem(store, id); err != nil {
+	item, err := getItem(store, id)
+	if err != nil {
 		return nil, err
+	}
+	progress := req.Msg.ProgressSec
+	if edit := req.Msg.EditList; edit != "" {
+		progress, err = itemProgress(store, item, edit, progress)
+		if err != nil {
+			return nil, err
+		}
 	}
 	at := time.Now()
 	if req.Msg.At != nil {
@@ -426,7 +435,7 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		}
 		at = req.Msg.At.AsTime()
 	}
-	if err := store.SetPlayback(id, req.Msg.ProgressSec, req.Msg.Completed, at); err != nil {
+	if err := store.SetPlayback(id, progress, req.Msg.Completed, at); err != nil {
 		return nil, err
 	}
 	if req.Msg.Completed {
@@ -440,6 +449,31 @@ func (s *FeedService) ReportProgress(ctx context.Context, req *connect.Request[f
 		return nil, err
 	}
 	return connect.NewResponse(playbackPB(pb)), nil
+}
+
+// itemProgress maps progress in a skip presentation's time to item time.
+//
+// The item end is the item's feed-reported duration when it has one (the
+// cheapest source; no ffprobe or packaged-track read), so a mapped time past
+// it clamps to it, and a report at the presentation's end is the item's end.
+// With no duration the mapped time is stored as is.
+func itemProgress(store *Store, item Item, edit string, presentation float64) (float64, error) {
+	cuts, err := store.EditCuts(item.ID, edit)
+	if errors.Is(err, ErrEditNotFound) {
+		return 0, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if err != nil {
+		return 0, err
+	}
+	t := hls.ItemTime(cuts, presentation)
+	if item.DurationSec <= 0 {
+		return t, nil
+	}
+	dur := float64(item.DurationSec)
+	if presentation >= hls.PresentationDuration(cuts, dur)-1e-6 || t > dur {
+		return dur, nil
+	}
+	return t, nil
 }
 
 // SavePlaylist creates a playlist (id 0) or replaces one, and returns it with

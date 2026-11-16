@@ -22,6 +22,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb/feedpbconnect"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // feedClient is a FeedService client signed in with authorization, over
@@ -239,6 +240,80 @@ func TestReportProgressOverGRPC(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, item.Msg.Item.Read)
 	assert.True(t, item.Msg.Item.Playback.Completed)
+}
+
+func TestReportProgressEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}))
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5, EditList: "abc123abc123",
+	}))
+	require.NoError(t, err)
+	assert.True(t, math.Abs(pb.Msg.ProgressSec-8) < 1e-9)
+	got, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: id}))
+	require.NoError(t, err)
+	assert.True(t, math.Abs(got.Msg.Item.Playback.ProgressSec-8) < 1e-9)
+}
+
+func TestReportProgressEditListClampsToDuration(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/feed", Title: "P"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "d", Type: "audio", Title: "d",
+		MediaURL: "https://cdn.example.com/d.mp3", DurationSec: 10})
+	require.NoError(t, err)
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}))
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+	report := func(sec float64, at time.Time) float64 {
+		t.Helper()
+		pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+			ItemId: id, ProgressSec: sec, EditList: "abc123abc123", At: timestamppb.New(at),
+		}))
+		require.NoError(t, err)
+		return pb.Msg.ProgressSec
+	}
+	now := time.Now()
+	// The presentation is 7s long; past it maps to the item's end.
+	assert.Equal(t, 10.0, report(50, now))
+	// At its end (within 1e-6) finishes the item, though the map says 10.
+	assert.Equal(t, 10.0, report(7-1e-7, now.Add(time.Second)))
+}
+
+func TestReportProgressUnknownEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	_, err := client.ReportProgress(context.Background(), connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5, EditList: "000000000000",
+	}))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	assert.Contains(t, err.Error(), "unknown edit list")
+}
+
+func TestReportProgressNoEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}}))
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	pb, err := client.ReportProgress(context.Background(), connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5,
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, 5.0, pb.Msg.ProgressSec)
 }
 
 func TestPreviewQueryOverGRPC(t *testing.T) {
