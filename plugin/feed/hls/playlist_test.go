@@ -250,3 +250,33 @@ func TestMediaPlaylistTargetDurationHalfway(t *testing.T) {
 	assert.True(t, strings.Contains(pl, "#EXTINF:2.499,"), pl)
 	assert.True(t, strings.Contains(pl, "#EXT-X-TARGETDURATION:2\n"), pl)
 }
+
+func cleanOriginal(a *hls.Track) []hls.Rendition {
+	return []hls.Rendition{
+		{Name: "Clean", URI: "clean.m3u8?s", Default: true, Track: a},
+		{Name: "Original", URI: "audio.m3u8?s", Track: a},
+	}
+}
+
+// Clean and original audio: both are listed, every variant names the group,
+// and the audio-only variant plays the default rendition.
+func TestMasterCleanRendition(t *testing.T) {
+	video := videoTrack()
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{Audio: cleanOriginal(&a), Video: &video, VideoURI: "video.m3u8?s"})
+	assert.True(t, strings.Contains(pl, `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Clean",DEFAULT=YES,AUTOSELECT=YES,URI="clean.m3u8?s"`+"\n"), pl)
+	assert.True(t, strings.Contains(pl, `NAME="Original",DEFAULT=NO`), pl)
+	assert.Equal(t, 1, strings.Count(pl, "DEFAULT=YES"), pl)
+	assert.Equal(t, 2, strings.Count(pl, "#EXT-X-STREAM-INF"), pl)
+	assert.True(t, strings.Contains(pl, `AUDIO="audio"`+"\nvideo.m3u8?s\n"), pl)
+	assert.True(t, strings.Contains(pl, `AUDIO="audio"`+"\nclean.m3u8?s\n"), pl)
+}
+
+func TestMasterAudioOnlyRenditions(t *testing.T) {
+	a := audioTrack()
+	pl := hls.Master(hls.Presentation{Audio: cleanOriginal(&a)})
+	assert.Equal(t, 1, strings.Count(pl, "#EXT-X-STREAM-INF"), pl)
+	assert.Equal(t, 2, strings.Count(pl, "#EXT-X-MEDIA:TYPE=AUDIO"), pl)
+	assert.Equal(t, 1, strings.Count(pl, "DEFAULT=YES"), pl)
+	assert.True(t, strings.Contains(pl, `AUDIO="audio"`+"\nclean.m3u8?s\n"), pl)
+}

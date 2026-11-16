@@ -170,15 +170,26 @@ func Master(p Presentation) string {
 			break
 		}
 	}
+	// Bandwidth and codecs describe the largest rendition, so a player that
+	// picks any of them stays within what the variant announces.
 	var audio Track
-	if def.Track != nil {
-		audio = *def.Track
+	var aPeak, aAvg int64
+	for i, r := range p.Audio {
+		var t Track
+		if r.Track != nil {
+			t = *r.Track
+		}
+		peak, avg := bandwidth(t)
+		if i == 0 || peak > aPeak {
+			audio, aPeak = t, peak
+		}
+		aAvg = max(aAvg, avg)
 	}
+	group := len(p.Audio) > 1
 	subs := ""
 	if len(p.Subtitles) > 0 {
 		subs = ",SUBTITLES=\"subs\""
 	}
-	aPeak, aAvg := bandwidth(audio)
 	media := func(typ, group string, r Rendition) {
 		fmt.Fprintf(&b, "#EXT-X-MEDIA:TYPE=%s,GROUP-ID=%q,NAME=%q", typ, group, r.Name)
 		if r.Language != "" {
@@ -186,7 +197,7 @@ func Master(p Presentation) string {
 		}
 		fmt.Fprintf(&b, ",DEFAULT=%s,AUTOSELECT=YES,URI=%q\n", yesNo(r.Default), r.URI)
 	}
-	if p.Video != nil {
+	if p.Video != nil || group {
 		for _, r := range p.Audio {
 			media("AUDIO", "audio", r)
 		}
@@ -209,6 +220,9 @@ func Master(p Presentation) string {
 	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AVERAGE-BANDWIDTH=%d", aPeak, aAvg)
 	if audio.Codecs != "" {
 		fmt.Fprintf(&b, ",CODECS=%q", audio.Codecs)
+	}
+	if group {
+		b.WriteString(",AUDIO=\"audio\"")
 	}
 	fmt.Fprintf(&b, "%s\n%s\n", subs, def.URI)
 	return b.String()
