@@ -273,7 +273,8 @@ The cuts are the same, so every rendition ends up the same length.
   keeps the end that joins the media beside it: its start after a cut, its
   end before media that follows without one, so only the time of the cut
   moves, by under a frame. `TestHLSSkipManyCutsInSync` plays a minute with
-  22 cuts in ffmpeg: the audio is within 3 ms of the presentation (it was
+  22 cuts in ffmpeg and holds the audio to within 25 ms (about one AAC
+  frame) of the presentation and of the video; it measures 2 ms (it was
   330 ms long when each edge ended past its piece).
 - **Video edges** are libx264 with `-bf 0` and `sps-id=1`, with the source's
   timescale and in-band parameter sets. Decode times are shifted by the

@@ -208,9 +208,13 @@ func TestHLSSkipManyCutsInSync(t *testing.T) {
 	}
 	audioSecs, videoSecs := float64(samples)/float64(rate), float64(frames)/24
 	t.Logf("audio %.4f s, video %.4f s, presentation %.4f s", audioSecs, videoSecs, presentation)
-	assert.InDelta(t, presentation, videoSecs, 1.0/24, "video")
-	assert.InDelta(t, videoSecs, audioSecs, 0.05, "audio against video")
-	assert.InDelta(t, presentation, audioSecs, 0.05, "audio against the presentation")
+	// The cuts are on frames, so the video is exactly its 60 s less the
+	// cuts. The audio track runs past 60 s to the end of its last AAC frame
+	// (duration, which the presentation is planned on); that tail is the
+	// audio's own, not drift. Within one AAC frame (23 ms) of both.
+	assert.InDelta(t, presentation-(duration-60), videoSecs, 1e-6, "video")
+	assert.InDelta(t, presentation, audioSecs, 0.025, "audio against the presentation")
+	assert.InDelta(t, videoSecs+(duration-60), audioSecs, 0.025, "audio against video")
 }
 
 type frameProbe struct {
