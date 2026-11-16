@@ -21,11 +21,12 @@ $ff -f lavfi -i sine=frequency=440:duration=6 -f lavfi -i color=c=red:size=64x64
 	-map 0:a -map 1:v -c:a libmp3lame -b:a 32k -c:v mjpeg -disposition:v attached_pic -id3v2_version 3 episode.mp3
 # The same tracks starting 1.5 s in, as a YouTube pair with an edit list or
 # priming would: captions must still land on the audio's first sample.
+# frag_discont writes the offset into the fragments' tfdt, as the sidx has it.
 $ff -f lavfi -i testsrc=size=160x90:rate=24:duration=12 -output_ts_offset 1.5 -avoid_negative_ts disabled \
 	-c:v libx264 -profile:v baseline -level 3.0 -g 48 -keyint_min 48 -sc_threshold 0 -pix_fmt yuv420p \
-	-movflags +frag_keyframe+empty_moov+default_base_moof+global_sidx -f mp4 video-offset.mp4
+	-movflags +frag_keyframe+empty_moov+default_base_moof+global_sidx+frag_discont -f mp4 video-offset.mp4
 $ff -f lavfi -i sine=frequency=440:duration=12 -output_ts_offset 1.5 -avoid_negative_ts disabled -c:a aac -b:a 32k \
-	-movflags +empty_moov+default_base_moof+global_sidx -frag_duration 2000000 -f mp4 audio-offset.m4a
+	-movflags +empty_moov+default_base_moof+global_sidx+frag_discont -frag_duration 2000000 -f mp4 audio-offset.m4a
 # What the profanity worker leaves behind for an AAC download: plain
 # progressive AAC, not fragmented.
 $ff -f lavfi -i sine=frequency=440:duration=12 -c:a aac -b:a 32k -movflags +faststart plain-audio.m4a
