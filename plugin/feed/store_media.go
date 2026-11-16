@@ -68,6 +68,17 @@ func (s *Store) SaveCleanTrack(itemID int64, path string) error {
 	return nil
 }
 
+// ResetCleanAudio forgets a clean file that no longer exists and asks for the
+// item to be cleaned again.
+func (s *Store) ResetCleanAudio(itemID int64) error {
+	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = '', needs_profanity = 1
+		WHERE item_id = ?`, itemID)
+	if err != nil {
+		return fmt.Errorf("reset clean audio: %w", err)
+	}
+	return nil
+}
+
 // MarkCleanTrackError records why the clean audio could not be packaged. It
 // is not tried again until a new clean file is set.
 func (s *Store) MarkCleanTrackError(itemID int64, msg string) error {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/assert"
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -314,6 +315,54 @@ func TestPackageCleanTrackFailure(t *testing.T) {
 	cached, err := space.Cache.ReadDir("package")
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(cached), "package left in the cache")
+}
+
+// Items cleaned before the clean track existed have their clean file under
+// the track's own name; packaging replaces it in place.
+func TestPackageCleanTrackLegacyName(t *testing.T) {
+	s, space, id := packagedWithClean(t, "plain-audio.m4a", "media/1.hls-audio.clean.m4a")
+	require.NoError(t, pipeline.NewPackager(s, space).RunCleanOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	require.Equal(t, "", d.CleanTrackError)
+	assert.Equal(t, "media/1.hls-audio.clean.m4a", d.CleanTrackPath)
+	assert.Equal(t, d.CleanTrackPath, d.CleanAudioPath)
+	assert.Equal(t, hls.Audio, storedTrack(t, space, d.CleanTrackPath).Kind)
+}
+
+// A failure after the clean file was replaced by the track must not leave a
+// clean_audio_path naming the file the cleanup removed: the item is cleaned again.
+func TestPackageCleanTrackLegacyNameFailure(t *testing.T) {
+	needFFmpeg(t)
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	p, _ := env.Providers.Plugins.Plugin(feed.PluginID)
+	db, err := p.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	space, err := p.(*feed.Plugin).Space(u.User.Username)
+	require.NoError(t, err)
+	s := feed.NewStore(db)
+	id := readyDownload(t, s, "audio")
+	putFixture(t, space, "audio.m4a", "media/1.hls-audio.m4a")
+	require.NoError(t, s.MarkDownloadReady(id, "media/1.hls-audio.m4a", 1))
+	require.NoError(t, pipeline.NewPackager(s, space).RunOnce(context.Background()))
+	legacy := "media/1.hls-audio.clean.m4a"
+	putFixture(t, space, "plain-audio.m4a", legacy)
+	require.NoError(t, s.SetCleanAudioPath(id, legacy))
+	// Saving the track fails, after it has replaced the clean file.
+	_, err = db.Exec(`CREATE TRIGGER fail_clean_track BEFORE UPDATE OF clean_track_path ON downloads
+		WHEN NEW.clean_track_path != '' BEGIN SELECT RAISE(ABORT, 'boom'); END`)
+	require.NoError(t, err)
+
+	require.NoError(t, pipeline.NewPackager(s, space).RunCleanOnce(context.Background()))
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "", d.CleanAudioPath)
+	assert.Equal(t, "", d.CleanTrackPath)
+	assert.True(t, d.NeedsProfanity, "item is cleaned again")
+	assert.True(t, strings.Contains(d.CleanTrackError, "boom"), d.CleanTrackError)
+	_, err = space.Own.Stat(legacy)
+	assert.Error(t, err)
 }
 
 // copyFixture is a profanity Processor that writes a fixture as the clean file.

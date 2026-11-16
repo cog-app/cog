@@ -372,6 +372,11 @@ func (p *Packager) packClean(ctx context.Context, itemID int64) (err error) {
 		err = errors.Join(err, p.space.Cache.Remove(t.cached))
 		if t.kept != "" {
 			err = errors.Join(err, p.space.Own.Remove(t.kept))
+			// The track replaced the clean file itself (cleaned before clean
+			// tracks existed), so the file the row names is gone: clean again.
+			if t.kept == d.CleanAudioPath {
+				err = errors.Join(err, p.store.ResetCleanAudio(itemID))
+			}
 		}
 	}()
 	if err := p.remux(ctx, t); err != nil {
