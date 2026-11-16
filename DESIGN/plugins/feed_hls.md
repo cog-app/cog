@@ -1,8 +1,8 @@
 # Feed media over HLS
 
-Status: phases 1 and 2 done (2026-11-15): downloaded items play over HLS from
-signed links, in the web player through hls.js, with a captions rendition.
-Phases 3 to 6 are open.
+Status: phases 1 to 3 done (2026-11-16): downloaded items play over HLS from
+signed links, in the web player through hls.js, with a captions rendition and
+a clean (profanity-muted) audio rendition. Phases 4 to 6 are open.
 Supersedes the merged-mp4 YouTube download (`feed: YouTube video plays from a
 download`, MR !54); merged downloads made before are repackaged as tracks.
 
@@ -127,17 +127,67 @@ and the request's options. They are text, cheap to write, and never stored.
 The media files stay static and cacheable.
 
 - **Master:** `EXT-X-MEDIA TYPE=AUDIO` (original, and clean when there are
-  mutes), `TYPE=SUBTITLES` (captions), the video variants referencing both
-  groups, and an audio-only variant.
+  a clean track exists), `TYPE=SUBTITLES` (captions), the video variants
+  referencing both groups, and an audio-only variant.
 - **Media:** `EXT-X-MAP` for the init section, then byte-range segments.
 
 ### Mute (profanity)
 
 The timeline is unchanged, so mute works in any player, video included.
-The clean audio rendition is the original's segments, except that a segment
-containing a mute range comes from a small file of re-encoded segments
-(silenced through the range). A playlist mixes byte ranges from both files.
-Captions in the clean presentation mask the muted words.
+
+**Departure from the first design.** This spec first said the clean rendition
+was the original's segments, except that a segment containing a mute range
+came from a small file of re-encoded segments. As built, the clean rendition
+is a whole re-encoded audio track. Reasons:
+
+- The profanity worker already re-encodes the whole file, including the TTS
+  replacements for the muted words, so the clean file exists anyway.
+- Splicing AAC segments from two encodes brings encoder priming and `tfdt`
+  seams at every join.
+- Audio encoding costs seconds per hour of audio.
+
+The cost is disk: about 60 MB per hour for each cleaned item.
+
+There is no `mute` option. A clean track is the switch, and it is the
+default: where one exists, the master lists Original first and Clean second,
+and Clean carries `DEFAULT=YES`. `TestBrowser/HLSClean` proves hls.js honours
+`DEFAULT`, not the first-listed rendition.
+
+Decisions:
+
+- **The packager makes the clean track**, not the profanity worker. The
+  packager owns "file to track" (probe, transcode or copy, `remux`, index
+  check, error state). The profanity worker stays "file to cleaned file", and
+  keeps working for downloads that were never packaged. `RunCleanOnce` runs
+  after the profanity worker, so a new clean file becomes a track in the same
+  tick. It also picks up clean files made before this phase, including ones
+  cleaned from a merged MP4 (video stream ignored) or an MP3 (transcoded).
+- **The cleaned file's own name** is `media/<id>.clean<ext of local_path>`,
+  never the track's name, so a re-clean never overwrites a live track with a
+  plain file. Once the track is kept, `clean_audio_path` points at it and the
+  plain file belongs to no download, so `Collect` removes it.
+  `SetCleanAudioPath` clears `clean_track_path` and `clean_track_error`: a new
+  clean file is not a track until the packager has seen it.
+- **A re-clean keeps the track name** `media/<id>.hls-audio.clean.m4a`,
+  replaced by an atomic rename (`TestRecleanReplacesTrack`).
+- **No ranges means no clean audio.** `CleanAudioFile` returns
+  `profanity.ErrNoRanges` when the word list is empty or matches nothing; the
+  worker clears the flag and `clean_audio_path`. This also ends the
+  retry-every-tick when `Keep` failed on a file never written.
+- **A cleaned video whose clean track is not ready** (pending or failed to
+  package) plays clean audio only, as before; it never plays HLS with
+  unclean audio.
+- **Audio-only item with a clean track:** the master has the audio group and
+  one `EXT-X-STREAM-INF` with `AUDIO="audio"`, whose URI is the default
+  (clean) rendition's playlist. A cleaned video keeps its audio-only variant,
+  which points at `clean.m3u8`.
+- **Captions are masked whenever the download has a clean track**, whichever
+  audio rendition plays, with a single subtitles rendition. If the profanity
+  plugin is unavailable, a cleaned item withholds its captions (no
+  `SUBTITLES` group, subtitle playlists 404, a warning is logged) rather than
+  serve unmasked captions over clean audio.
+- **The web player reports the audio rendition it plays** in
+  `data-hls-audio`, from hls.js's current audio track.
 
 ### Skip (silence)
 
@@ -171,8 +221,9 @@ between presentation time and item time:
 Query parameters on the master playlist, carried into every URL it writes:
 
 - `skip=silence`: apply skip ranges. Off by default.
-- `mute=profanity`: make the clean audio and captions the default. The
-  user's pref decides when it is absent.
+- There is no `mute` option: the clean track is the default whenever it
+  exists (see Mute). A switch would need a second, unmasked captions
+  rendition, which is not worth it until a client wants Original by default.
 - A player that can do something itself should: Cog's own clients ask
   without `skip` and skip silence natively (Media3's `skipSilenceEnabled`, the
   web player's ranges), and every player does its own speed. `skip=silence` is
@@ -211,7 +262,7 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
    media playlists for downloaded items, byte-range serving, and signed
    URLs. Web player on hls.js.
 2. The captions rendition. Done.
-3. Mute: the clean rendition, with spliced re-encoded segments.
+3. Mute: the clean rendition, as a whole re-encoded audio track. Done.
 4. Skip: segments left out, discontinuities, edge transcodes, minimum length
    and merging, the edit-list id and time mapping.
 5. Undownloaded YouTube segments straight from googlevideo, after the
@@ -233,6 +284,12 @@ A Cog playlist (or any view) is also an M3U of signed master URLs:
 - A captions language is not recorded: neither source (YouTube, whisper)
   records one reliably, so the rendition has no `LANGUAGE`.
 - How to get progress back from external players.
+- No trigger re-cleans an item when the word list changes.
+- A re-clean replaces the clean track under the same name. A client holding
+  an old playlist gets the new file's bytes under its old byte ranges until
+  it reloads.
+- Whether mpv plays an audio-only cleaned master whose variant URI is also the
+  default group rendition. Checked by hand in phase 6a.
 - YouTube's audio tracks come in fragments of about 10 s, so their segments
   run longer than 6 s. Fine for VOD; phase 4's cuts are coarser there unless
   the edge transcode splits a fragment.

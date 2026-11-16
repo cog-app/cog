@@ -173,7 +173,17 @@ the choices; this is what Cog needs for it, in the order the app needs it.
         `X-TIMESTAMP-MAP`, YouTube rolling-caption cleanup, `TestParseVTT*`,
         `TestVTTSegment*`, `TestHLSSubs*`, `TestHLSCaptions*`,
         `TestBrowser/HLSCaptions*`).
-  - [ ] Phase 3: mute, the clean rendition with spliced re-encoded segments.
+  - [x] Phase 3: mute, the clean rendition as a whole re-encoded audio track
+        (a departure from spliced segments; the packager makes it, Clean is
+        the default rendition, captions masked, no `mute` option;
+        `TestProfanityWorkerNoRanges*`, `TestCleanTrackStore`,
+        `TestPackageCleanTrack*`, `TestRecleanReplacesTrack`,
+        `TestMasterCleanRendition`, `TestMasterAudioOnlyRenditions`,
+        `TestHLSClean*`, `TestHLSCaptionsMaskedWhenClean`,
+        `TestHLSCaptionsWithheldWithoutProfanity`, `TestResolveMediaClean*`,
+        `TestPlayerFragmentCleanPending`, `TestBrowser/HLSClean`).
+        Still open: re-clean items when the word list changes; manual check
+        (phase 6a) of mpv on an audio-only cleaned master.
   - [ ] Phase 4: skip, with dropped segments, edge transcodes and the time
         mapping.
   - [ ] Phase 5: undownloaded YouTube from googlevideo, after the off-Wi-Fi
