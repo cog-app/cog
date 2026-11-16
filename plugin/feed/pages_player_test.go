@@ -3,12 +3,14 @@ package feed_test
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -331,9 +333,13 @@ func TestRangesPackagedTrackMissing(t *testing.T) {
 
 	// The player polls ranges: the track is warned about once, not on
 	// every poll.
-	var logs bytes.Buffer
-	defer slog.SetDefault(slog.Default())
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	logWriter := log.Writer()
+	t.Cleanup(func() {
+		if log.Writer() != logWriter {
+			t.Error("the log package's output was not restored")
+		}
+	})
+	logs := captureLogs(t)
 	for range 3 {
 		var got struct {
 			Ranges []feed.Range `json:"ranges"`
@@ -498,4 +504,40 @@ func TestStreamURLCleanedVideo(t *testing.T) {
 	got = streamURL(t, env, u, pending)
 	url, _ := got["url"].(string)
 	assert.Equal(t, "/apps/feed/items/"+strconv.FormatInt(pending, 10)+"/media", url)
+}
+
+// lockedBuffer is a bytes.Buffer that goroutines may write at once: the
+// plugin's background work logs while a test reads.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// captureLogs sends the default slog logger to a buffer for the rest of the
+// test. slog.SetDefault also points the log package at the new handler, and
+// restoring a default logger does not undo that, so the log package's
+// output and flags are restored too.
+func captureLogs(t *testing.T) *lockedBuffer {
+	t.Helper()
+	logs := &lockedBuffer{}
+	oldSlog, oldWriter, oldFlags := slog.Default(), log.Writer(), log.Flags()
+	t.Cleanup(func() {
+		slog.SetDefault(oldSlog)
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+	})
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	return logs
 }
