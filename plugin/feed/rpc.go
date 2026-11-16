@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -608,7 +609,7 @@ func (s *FeedService) SetPlayerPrefs(ctx context.Context, req *connect.Request[f
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skips must be in [%d, %d] seconds", MinSkipSec, MaxSkipSec))
 	case m.Volume < 0 || m.Volume > 1:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("volume must be in [0, 1]"))
-	case m.SkipSilenceMinSec != 0 && (m.SkipSilenceMinSec < MinSkipSilenceSec || m.SkipSilenceMinSec > MaxSkipSilenceSec):
+	case math.IsNaN(m.SkipSilenceMinSec) || m.SkipSilenceMinSec != 0 && (m.SkipSilenceMinSec < MinSkipSilenceSec || m.SkipSilenceMinSec > MaxSkipSilenceSec):
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("skip_silence_min_sec must be in [%g, %g]", MinSkipSilenceSec, MaxSkipSilenceSec))
 	}
 	store, err := s.store(ctx)

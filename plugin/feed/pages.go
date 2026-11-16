@@ -1651,10 +1651,10 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 			if d.PackageState == "done" {
 				audio, _, err := space.Track(d.LocalPath)
 				if err != nil {
-					httperr.Internal(w, r, err)
-					return
-				}
-				if n := len(audio.Fragments); n > 0 {
+					// The ranges stay useful unclamped; failing here would
+					// cost the player its mute ranges too.
+					slog.Warn("feed: ranges without the track's duration", "id", id, "path", d.LocalPath, "err", err)
+				} else if n := len(audio.Fragments); n > 0 {
 					last := audio.Fragments[n-1]
 					duration = last.Start + last.Duration
 				}
@@ -2224,7 +2224,7 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		cur.HideEmpty = v == "true" || v == "1" || v == "on"
 	}
 	if v := r.FormValue("skip_silence_min_sec"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
 			cur.SkipSilenceMinSec = min(max(f, MinSkipSilenceSec), MaxSkipSilenceSec)
 		}
 	}

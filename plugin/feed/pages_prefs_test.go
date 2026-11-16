@@ -90,7 +90,23 @@ func TestSavePlayerPrefsFormSkipSilenceMin(t *testing.T) {
 	csrfToken := auth.CSRFToken(sess.ID, env.Providers.CSRFSecret)
 	store := feedStore(t, env, u.Username)
 
-	for value, want := range map[string]float64{"3": 3, "99": 10, "0.1": 0.5} {
+	// NaN and Inf parse as floats but are ignored, like any unparseable
+	// value: the stored 3 stays.
+	for _, value := range []string{"3", "NaN", "Inf", "-Inf", "x"} {
+		post := func(value string) {
+			env.PostForm(t, "/apps/feed/player/prefs", url.Values{
+				"csrf_token":           {csrfToken},
+				"skip_silence_min_sec": {value},
+			}, sessionCookie).Status(http.StatusNoContent)
+		}
+		post(value)
+		got, err := store.LoadPlayerPrefs()
+		require.NoError(t, err)
+		if got.SkipSilenceMinSec != 3 {
+			t.Errorf("skip_silence_min_sec=%s stored %g, want 3", value, got.SkipSilenceMinSec)
+		}
+	}
+	for value, want := range map[string]float64{"99": 10, "0.1": 0.5} {
 		env.PostForm(t, "/apps/feed/player/prefs", url.Values{
 			"csrf_token":           {csrfToken},
 			"skip_silence_min_sec": {value},

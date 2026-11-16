@@ -295,6 +295,47 @@ func TestRangesApplyMinSkip(t *testing.T) {
 	assert.Equal(t, 2, len(got.Ranges))
 }
 
+// For a packaged item the cuts are clamped to the end of its audio track.
+func TestRangesClampToPackagedDuration(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	id := packagedItem(t, env, u.Username, false)
+	space, err := feedPlugin(t, env).Space(u.Username)
+	require.NoError(t, err)
+	track, _, err := space.Track("media/" + strconv.FormatInt(id, 10) + ".m4a")
+	require.NoError(t, err)
+	last := track.Fragments[len(track.Fragments)-1]
+	end := last.Start + last.Duration
+	require.NoError(t, feedStore(t, env, u.Username).SetSilenceRanges(id, []feed.Range{{Start: end - 3, End: end + 5, Action: "skip"}}))
+
+	var got struct {
+		Ranges []feed.Range `json:"ranges"`
+	}
+	env.Get(t, "/apps/feed/api/ranges/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).JSON(&got)
+	require.Equal(t, 1, len(got.Ranges))
+	assert.InDelta(t, end-3+0.1, got.Ranges[0].Start, 1e-9)
+	assert.InDelta(t, end, got.Ranges[0].End, 1e-9)
+}
+
+// A packaged item whose track cannot be read still answers with its ranges,
+// unclamped, rather than failing the player's whole request.
+func TestRangesPackagedTrackMissing(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "frank", "pass")
+	id := packagedItem(t, env, u.Username, false)
+	store := feedStore(t, env, u.Username)
+	require.NoError(t, store.SavePackage(id, "media/gone.m4a", "", 1))
+	require.NoError(t, store.SetSilenceRanges(id, []feed.Range{{Start: 3, End: 6, Action: "skip"}}))
+
+	var got struct {
+		Ranges []feed.Range `json:"ranges"`
+	}
+	env.Get(t, "/apps/feed/api/ranges/"+strconv.FormatInt(id, 10), u.Auth).Status(http.StatusOK).JSON(&got)
+	require.Equal(t, 1, len(got.Ranges))
+	assert.InDelta(t, 3.1, got.Ranges[0].Start, 1e-9)
+	assert.InDelta(t, 5.9, got.Ranges[0].End, 1e-9)
+}
+
 // The web player's YouTube video downloads first, as ResolveMedia's does:
 // stream-url queues it and says so, then answers the media route once the
 // download is ready.

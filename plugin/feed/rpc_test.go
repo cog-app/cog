@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -350,7 +351,7 @@ func TestSetPlayerPrefsSkipSilenceMin(t *testing.T) {
 	assert.Equal(t, 2.5, after.SkipSilenceMinSec)
 	assert.Equal(t, 1.25, after.Speed)
 
-	for _, bad := range []float64{0.4, 10.5, -1} {
+	for _, bad := range []float64{0.4, 10.5, -1, math.NaN(), math.Inf(1)} {
 		prefs.SkipSilenceMinSec = bad
 		_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
 		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%g", bad)
