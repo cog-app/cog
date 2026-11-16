@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -107,6 +108,18 @@ func m3uBody(entries []m3uEntry) string {
 	return b.String()
 }
 
+// m3uSafeURL reports whether a media URL from a feed may be an M3U entry:
+// an absolute http or https URL with a host (CheckURL) and no control
+// characters, which would break the line or reach the player.
+func m3uSafeURL(raw string) bool {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < 0x20 || raw[i] == 0x7f {
+			return false
+		}
+	}
+	return CheckURL(raw) == nil
+}
+
 // m3uTitle folds line breaks to spaces: a title is one line of the M3U.
 var m3uTitle = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
 
@@ -166,10 +179,15 @@ func (p *Plugin) m3uEntries(r *http.Request, store *Store, key []byte, username 
 			continue
 		case remoteEligible(kinds[it.SubscriptionID], it.Type, it.MediaURL, dl):
 			u = p.absoluteURL(r, hlsMasterPath(key, username, it.ID, o))
-		case it.MediaURL != "":
-			u = it.MediaURL
-		default:
+		case it.MediaURL == "":
 			continue
+		case !m3uSafeURL(it.MediaURL):
+			// Feed data, not our error: mpv would play a file:, edl: or
+			// lavfi: URL, and a line break would add an entry.
+			slog.Debug("feed m3u: media URL left out", "item", it.ID)
+			continue
+		default:
+			u = it.MediaURL
 		}
 		d := it.DurationSec
 		if d <= 0 {

@@ -342,3 +342,75 @@ func TestM3UHead(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(len(body)), r.Header.Get("Content-Length"))
 	assert.Equal(t, "", r.ReadBody())
 }
+
+// mediaItem stores an undownloaded item of type typ with mediaURL in an RSS
+// subscription titled "Pod", and returns its ID.
+func mediaItem(t *testing.T, store *feed.Store, typ, title, mediaURL string) int64 {
+	t.Helper()
+	sub, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://pod.example.com/" + strconv.Itoa(nextFeed()), Title: "Pod"})
+	require.NoError(t, err)
+	id, _, err := store.UpsertItem(feed.Item{SubscriptionID: sub, GUID: "g", Type: typ, Title: title, MediaURL: mediaURL})
+	require.NoError(t, err)
+	return id
+}
+
+// A media URL is feed data, and mpv plays what an M3U names, edl: and
+// lavfi: included: only an absolute http(s) URL with a host and no control
+// characters becomes an entry.
+func TestM3UUnsafeMediaURLLeftOut(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	for _, raw := range []string{
+		"file:///etc/passwd",
+		"edl://%0%file:///etc/passwd",
+		"lavfi://sine",
+		"ytdl://x",
+		"javascript:alert(1)",
+		"/relative.mp3",
+		"cdn.example.com/a.mp3",
+		"https:///nohost.mp3",
+		"https://cdn.example.com/a.mp3\nfile:///etc/passwd",
+		"https://cdn.example.com/a.mp3\r\n#EXTINF:1,x",
+		"https://cdn.example.com/a\x7f.mp3",
+		"https://cdn.example.com/a\x01.mp3",
+		"https://cdn.example.com/a\t.mp3",
+	} {
+		mediaItem(t, store, "audio", "Hostile", raw)
+	}
+	mediaItem(t, store, "audio", "Fine", "https://cdn.example.com/fine.mp3")
+	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, []string{"https://cdn.example.com/fine.mp3"}, entryURLs(body))
+	assert.Equal(t, "#EXTM3U\n#EXTINF:-1,Pod – Fine\nhttps://cdn.example.com/fine.mp3\n", body)
+}
+
+// A title is folded to one line, so it cannot add an entry.
+func TestM3UTitleNewlineNoInjection(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	mediaItem(t, feedStore(t, env, "alice"), "audio", "Evil\nfile:///etc/passwd\r\n#EXTINF:1,x\rlavfi://sine", "https://cdn.example.com/ep.mp3")
+	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, 3, strings.Count(body, "\n"), body)
+	assert.Equal(t, []string{"https://cdn.example.com/ep.mp3"}, entryURLs(body))
+	assert.Equal(t, 1, strings.Count(body, "\n#EXTINF:"), body)
+}
+
+func TestM3UEmptyMediaURLLeftOut(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	store := feedStore(t, env, "alice")
+	mediaItem(t, store, "audio", "Empty", "")
+	mediaItem(t, store, "video", "Empty video", "")
+	mediaItem(t, store, "audio", "Fine", "https://cdn.example.com/fine.mp3")
+	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, []string{"https://cdn.example.com/fine.mp3"}, entryURLs(body))
+}
+
+// A video that is not YouTube's plays from its own URL until downloaded.
+func TestM3UPodcastVideoNotDownloaded(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	env.CreateUser(t, "alice", "pw")
+	mediaItem(t, feedStore(t, env, "alice"), "video", "Vid", "https://cdn.example.com/v.mp4")
+	body := env.Get(t, m3uURL(t, env, "alice", "unread/all.m3u", false)).Status(http.StatusOK).ReadBody()
+	assert.Equal(t, "#EXTM3U\n#EXTINF:-1,Pod – Vid\nhttps://cdn.example.com/v.mp4\n", body)
+}
