@@ -26,6 +26,7 @@ templ Base(pd PageData) {
 			@docHead(pd.Title, pd.FaviconURL())
 			<script src={ Static.URL("htmx.min.js") }></script>
 			<script src={ Static.URL("cog-share.js") } defer></script>
+			<script src={ Static.URL("cog-picker.js") } defer></script>
 		</head>
 		<body hx-headers={ fmt.Sprintf(`{"X-CSRF-Token":"%s"}`, pd.CSRFToken) }>
 			@navbar(pd)

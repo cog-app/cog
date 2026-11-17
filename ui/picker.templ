@@ -23,7 +23,8 @@ templ Picker(searchURL, name, placeholder string, multi bool) {
 			autocomplete="off"
 			hx-get={ searchURL }
 			hx-trigger="input changed delay:200ms"
-			hx-target={ fmt.Sprintf("next .picker-results") }
+			hx-target="next .picker-results"
+			hx-swap="innerHTML"
 			name="q"
 		/>
 		<div class="picker-results"></div>
@@ -33,78 +34,6 @@ templ Picker(searchURL, name, placeholder string, multi bool) {
 		if !multi {
 			<input type="hidden" name={ name } class="picker-value"/>
 		}
-		<script>
-			(function () {
-				var el = document.currentScript.parentElement;
-				var input = el.querySelector(".picker-input");
-				var results = el.querySelector(".picker-results");
-				var isMulti = el.dataset.multi === "true";
-				var fieldName = el.dataset.name;
-				var chips = el.querySelector(".picker-chips");
-				var hiddenSingle = el.querySelector(".picker-value");
-
-				// Close results when clicking outside.
-				document.addEventListener("click", function (e) {
-					if (!el.contains(e.target)) results.innerHTML = "";
-				});
-
-				// Handle result click via event delegation.
-				results.addEventListener("click", function (e) {
-					var opt = e.target.closest(".picker-option");
-					if (!opt) return;
-					var id = opt.dataset.id;
-					var name = opt.dataset.name;
-					if (isMulti) {
-						// Check if already selected.
-						if (el.querySelector('input[value="' + id + '"]')) {
-							results.innerHTML = "";
-							input.value = "";
-							return;
-						}
-						var chip = document.createElement("span");
-						chip.className = "picker-chip";
-						chip.innerHTML =
-							name +
-							'<input type="hidden" name="' +
-							fieldName +
-							'" value="' +
-							id +
-							'"/>' +
-							'<button type="button" onclick="this.parentElement.remove()">&times;</button>';
-						chips.appendChild(chip);
-					} else {
-						hiddenSingle.value = id;
-						input.value = name;
-					}
-					results.innerHTML = "";
-					if (isMulti) input.value = "";
-				});
-
-				// Keyboard navigation.
-				input.addEventListener("keydown", function (e) {
-					var opts = results.querySelectorAll(".picker-option");
-					if (!opts.length) return;
-					var cur = results.querySelector(".picker-option.active");
-					var idx = cur ? Array.prototype.indexOf.call(opts, cur) : -1;
-					if (e.key === "ArrowDown") {
-						e.preventDefault();
-						if (cur) cur.classList.remove("active");
-						idx = (idx + 1) % opts.length;
-						opts[idx].classList.add("active");
-					} else if (e.key === "ArrowUp") {
-						e.preventDefault();
-						if (cur) cur.classList.remove("active");
-						idx = idx <= 0 ? opts.length - 1 : idx - 1;
-						opts[idx].classList.add("active");
-					} else if (e.key === "Enter") {
-						e.preventDefault();
-						if (cur) cur.click();
-					} else if (e.key === "Escape") {
-						results.innerHTML = "";
-					}
-				});
-			})();
-		</script>
 	</div>
 }
 

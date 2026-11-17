@@ -282,7 +282,7 @@
             <form action="/settings/groups/«hex»/members" class="form-inline mb-1" method="post">
               <input name="csrf_token" type="hidden" value="«hex»" />
               <div class="picker" data-multi="false" data-name="member_id">
-                <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=user" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search users to add…" type="search" />
+                <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=user" hx-swap="innerHTML" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search users to add…" type="search" />
                 <div class="picker-results" />
                 <input class="picker-value" name="member_id" type="hidden" />
               </div>
@@ -298,7 +298,7 @@
                 <input name="csrf_token" type="hidden" value="«hex»" />
                 <input name="member_type" type="hidden" value="GROUP" />
                 <div class="picker" data-multi="false" data-name="member_id">
-                  <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=group" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search groups…" type="search" />
+                  <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=group" hx-swap="innerHTML" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search groups…" type="search" />
                   <div class="picker-results" />
                   <input class="picker-value" name="member_id" type="hidden" />
                 </div>
