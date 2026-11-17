@@ -165,6 +165,26 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t, webtest.Mobile)
 	})
 
+	// The sharing panel is fetched into a dialog after the page has loaded,
+	// so the user picker inside it must work without running a script of its
+	// own: choosing a search result once did nothing.
+	t.Run("ShareWithUser", func(t *testing.T) {
+		eng := browserEnv(t, "sharer")
+		b := eng.Start(t)
+		b.Login(t, "sharer", "pass")
+		b.Navigate(t, "/apps/calendar/settings")
+		b.Click(t, "cog-share-button button")
+		b.WaitVisible(t, "dialog.modal .share-panel")
+		b.ClickText(t, "Share with a user")
+		b.Type(t, "dialog.modal .picker-input", "adm")
+		b.WaitVisible(t, "dialog.modal .picker-option")
+		b.Click(t, "dialog.modal .picker-option")
+		b.WaitNotVisible(t, "dialog.modal .picker-option")
+		b.Click(t, `dialog.modal details[open] button[type="submit"]`)
+		b.WaitVisible(t, "dialog.modal .share-panel table")
+		b.WaitText(t, "admin")
+	})
+
 	t.Run("SettingsMultipleCalendars", func(t *testing.T) {
 		eng := populatedEnv(t, "multi")
 		b := eng.Start(t)
