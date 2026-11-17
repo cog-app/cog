@@ -105,24 +105,10 @@ func TestHLSSkipPlaysInFFmpeg(t *testing.T) {
 				// streams are decoded: a stream ffmpeg discards reads short
 				// at 32 KiB into a segment and is reported corrupt.
 				probe := probeFrames(t, env.Providers.Config.BaseURL+skip, "-protocol_whitelist", "http,tcp,hls,file,crypto")
-				var audioStreams []int
-				rate := 0
-				for _, s := range probe.Streams {
-					if s.CodecType == "audio" {
-						audioStreams = append(audioStreams, s.Index)
-						r, err := strconv.Atoi(s.SampleRate)
-						require.NoError(t, err, s.SampleRate)
-						rate = r
-					}
-				}
-				require.Equal(t, 1, len(audioStreams), "audio streams")
-				var samples int
+				rate, samples := probe.audio(t)
 				var got []float64
 				for _, f := range probe.Frames {
-					switch {
-					case f.MediaType == "audio" && f.StreamIndex == audioStreams[0]:
-						samples += f.Samples
-					case f.MediaType == "video":
+					if f.MediaType == "video" {
 						got = append(got, f.pts(t))
 					}
 				}
@@ -189,20 +175,10 @@ func TestHLSSkipManyCutsInSync(t *testing.T) {
 	}
 
 	probe := probeFrames(t, env.Providers.Config.BaseURL+skip, "-protocol_whitelist", "http,tcp,hls,file,crypto")
-	rate, samples, frames := 0, 0, 0
-	for _, s := range probe.Streams {
-		if s.CodecType == "audio" {
-			r, err := strconv.Atoi(s.SampleRate)
-			require.NoError(t, err, s.SampleRate)
-			rate = r
-		}
-	}
-	require.NotEqual(t, 0, rate, "no audio stream")
+	rate, samples := probe.audio(t)
+	frames := 0
 	for _, f := range probe.Frames {
-		switch f.MediaType {
-		case "audio":
-			samples += f.Samples
-		case "video":
+		if f.MediaType == "video" {
 			frames++
 		}
 	}
@@ -231,6 +207,37 @@ type probedFrame struct {
 	StreamIndex int    `json:"stream_index"`
 	PTS         string `json:"pts_time"`
 	Samples     int    `json:"nb_samples"`
+}
+
+// audio returns the sample rate and sample count of the presentation's
+// audio. ffmpeg before 9 opens the master's audio rendition and its
+// audio-only variant as two streams although they are one playlist, so
+// every audio stream must carry the same samples, and one is counted.
+func (p frameProbe) audio(t *testing.T) (rate, samples int) {
+	t.Helper()
+	counts := map[int]int{}
+	for _, s := range p.Streams {
+		if s.CodecType != "audio" {
+			continue
+		}
+		r, err := strconv.Atoi(s.SampleRate)
+		require.NoError(t, err, s.SampleRate)
+		require.True(t, rate == 0 || rate == r, "audio streams at %d and %d Hz", rate, r)
+		rate = r
+		counts[s.Index] = 0
+	}
+	require.NotEqual(t, 0, len(counts), "no audio stream")
+	for _, f := range p.Frames {
+		if _, ok := counts[f.StreamIndex]; ok && f.MediaType == "audio" {
+			counts[f.StreamIndex] += f.Samples
+		}
+	}
+	samples = -1
+	for i, n := range counts {
+		require.True(t, samples < 0 || samples == n, "audio stream %d has %d samples, another %d", i, n, samples)
+		samples = n
+	}
+	return rate, samples
 }
 
 func (f probedFrame) pts(t *testing.T) float64 {
