@@ -373,7 +373,7 @@
                   User
                 </label>
                 <div class="picker" data-multi="false" data-name="subject_id">
-                  <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=user" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search users…" type="search" />
+                  <input autocomplete="off" class="form-control picker-input" hx-get="/api/picker/search?type=user" hx-swap="innerHTML" hx-target="next .picker-results" hx-trigger="input changed delay:200ms" name="q" placeholder="Search users…" type="search" />
                   <div class="picker-results" />
                   <input class="picker-value" name="subject_id" type="hidden" />
                 </div>
