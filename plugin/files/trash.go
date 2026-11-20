@@ -84,6 +84,21 @@ func (p *Plugin) Trash(username, filePath string) error {
 	if err != nil {
 		return err
 	}
+	// What is deleted from a folder shared with username goes to its
+	// owner's trash: it is theirs to restore.
+	t, ok, err := p.writable(username, filePath)
+	if err != nil {
+		return err
+	}
+	if ok {
+		if t.mountRoot {
+			return errMountPoint
+		}
+		if err := p.Trash(t.owner, t.path); err != nil {
+			return err
+		}
+		return forgetRows(db, filePath)
+	}
 
 	meta, err := getByPath(db, filePath)
 	if err != nil {
@@ -148,6 +163,9 @@ func (p *Plugin) Trash(username, filePath string) error {
 		return fmt.Errorf("commit trash: %w", err)
 	}
 	commit = true
+	if meta.IsDir {
+		p.treeChanged()
+	}
 	return nil
 }
 

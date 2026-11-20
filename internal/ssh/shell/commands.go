@@ -78,6 +78,8 @@ func (s *Shell) newRootCmd() *cobra.Command {
 		s.newPwdCmd(),
 		s.newExitCmd(),
 		s.newSearchCmd(),
+		s.newLnCmd(),
+		s.newUnlinkCmd(),
 	)
 
 	// _help is the renamed "help" (via callHandler) since the interpreter
@@ -324,6 +326,18 @@ func (s *Shell) newRmCmd() *cobra.Command {
 				if vp == "/" || vp == home {
 					s.errorf(stderr, "rm: cannot remove %s\n", vp)
 					return exitErr(1)
+				}
+				// A link is a mount: removing it unmounts, and what it
+				// held stays where it is.
+				if mounted, err := s.isLink(vp); err != nil {
+					s.errorf(stderr, "rm: %v\n", err)
+					return exitErr(1)
+				} else if mounted {
+					if err := s.unlink(vp); err != nil {
+						s.errorf(stderr, "rm: %v\n", err)
+						return exitErr(1)
+					}
+					continue
 				}
 				// Deleting a directory takes everything in it, and over
 				// SSH it does not go to the trash.

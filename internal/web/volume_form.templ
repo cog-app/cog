@@ -17,6 +17,9 @@ type volumeFormData struct {
 	SubmitLabel      string
 	ShowTypeSelector bool
 	CancelURL        string
+	// ShowKind offers the volume's kind: an admin's choice.
+	ShowKind bool
+	Kind     volume.Kind
 }
 
 script volumeFormToggle() {
@@ -105,6 +108,16 @@ templ volumeForm(fd volumeFormData) {
 		<input type="hidden" name="csrf_token" value={ fd.CSRFToken }/>
 		@ui.FormField("Name", "name", "text", fd.Name, "Unique volume name")
 		@ui.FormField("Description", "description", "text", fd.Description, "Optional description")
+		if fd.ShowKind {
+			<div class="form-group">
+				<label for="volume_kind">Kind</label>
+				<select class="form-control w-sm" id="volume_kind" name="kind">
+					<option value="raw" selected?={ fd.Kind != volume.Storage }>Raw access</option>
+					<option value="storage" selected?={ fd.Kind == volume.Storage }>User storage</option>
+				</select>
+				<p class="form-help">Raw access: whoever it is shared with can mount all of it. User storage: whoever it is shared with keeps folders of their own in it, and sees nothing else. Switching to user storage keeps existing mounts where they are, as each user's storage.</p>
+			</div>
+		}
 		if fd.ShowTypeSelector {
 			<div class="form-group">
 				<label for="conn_type">Connection Type</label>

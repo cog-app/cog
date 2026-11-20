@@ -173,6 +173,14 @@ func (a *volumeAccessAdapter) ListAccessible(userID string) ([]plugin.VolumeInfo
 		if err != nil {
 			return nil, err
 		}
+		// A storage volume shared with the user is under Shared with me,
+		// where they keep areas in it; it is listed here only for whoever
+		// may browse all of it.
+		if whole, err := a.access.WholePermissions(userID, &v); err != nil {
+			return nil, err
+		} else if whole == 0 {
+			continue
+		}
 		scheme := ""
 		if parsed, err := volume.ParseURI(v.URI); err != nil {
 			slog.Warn("volume has an unparsable URI", "volume", v.ID, "err", err)

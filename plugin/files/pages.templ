@@ -9,7 +9,7 @@ import (
 )
 
 // filesLayout is the frame every file browser page shares: the sidebar of
-// places (all files, favourites, volumes) and the page beside it.
+// places (all files, favourites, shared with me, volumes) and the page beside it.
 templ filesLayout(pd ui.PageData, active string) {
 	@ui.Base(pd) {
 		@filesScripts()
@@ -20,6 +20,9 @@ templ filesLayout(pd ui.PageData, active string) {
 				}
 				@filesSidebarItem("/apps/files/favorites", "Favorites", active == "favorites") {
 					@starOutlineIcon()
+				}
+				@filesSidebarItem("/apps/files/shared", "Shared with me", active == "shared") {
+					@sharedIcon()
 				}
 				@filesSidebarItem("/apps/files/volumes", "Volumes", active == "volumes") {
 					@volumeIcon()

@@ -140,18 +140,31 @@ CREATE TABLE IF NOT EXISTS volumes (
 	created_at INTEGER NOT NULL,
 	owner_id TEXT REFERENCES users(id),
 	config TEXT NOT NULL DEFAULT '{}',
-	owner_type TEXT NOT NULL DEFAULT 'user'
+	owner_type TEXT NOT NULL DEFAULT 'user',
+	-- raw: a share lets its audience mount the whole volume, or a part.
+	-- storage: a share lets its audience make areas of their own in it.
+	kind TEXT NOT NULL DEFAULT 'raw' CHECK(kind IN ('raw', 'storage'))
 );
 
+-- A mount puts something at user_path in a user's tree:
+--   volume: volume_subpath of a volume, as its share allows;
+--   area:   the user's own area of a storage volume, at volume_subpath;
+--   share:  a folder someone shared with them, the directory share_resource_id
+--           of share_owner_id's files.
 CREATE TABLE IF NOT EXISTS mounts (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
 	user_path TEXT NOT NULL,
-	volume_id TEXT NOT NULL REFERENCES volumes(id),
+	kind TEXT NOT NULL DEFAULT 'volume' CHECK(kind IN ('volume', 'area', 'share')),
+	volume_id TEXT REFERENCES volumes(id),
 	volume_subpath TEXT NOT NULL DEFAULT '',
+	share_owner_id TEXT,
+	share_resource_id TEXT,
 	read_only INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL,
-	UNIQUE(user_id, user_path)
+	UNIQUE(user_id, user_path),
+	CHECK((kind = 'share') = (volume_id IS NULL)),
+	CHECK((kind = 'share') = (share_owner_id IS NOT NULL AND share_resource_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_mounts_user ON mounts(user_id);
 CREATE INDEX IF NOT EXISTS idx_mounts_volume ON mounts(volume_id);

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,11 +58,24 @@ func (h *adminVolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_, err = h.p.Volumes.Create(name, r.FormValue("description"), uri, nil, config)
+	kind, err := volume.ParseKind(cmp.Or(r.FormValue("kind"), string(volume.Raw)))
+	if err != nil {
+		setFlash(w, "error", err.Error())
+		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
+		return
+	}
+	v, err := h.p.Volumes.Create(name, r.FormValue("description"), uri, nil, config)
 	if err != nil {
 		setFlash(w, "error", "Failed to create volume: "+err.Error())
 		http.Redirect(w, r, "/admin/volumes/new", http.StatusSeeOther)
 		return
+	}
+	if kind != volume.Raw {
+		if err := h.p.Volumes.SetKind(v.ID, kind); err != nil {
+			setFlash(w, "error", "The volume was created, but its kind could not be set: "+err.Error(), err)
+			http.Redirect(w, r, "/admin/volumes/"+v.ID, http.StatusSeeOther)
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/admin/volumes", http.StatusSeeOther)
@@ -91,6 +105,8 @@ func (h *adminVolumeHandler) EditVolumeForm(w http.ResponseWriter, r *http.Reque
 		SubmitLabel:      "Save",
 		ShowTypeSelector: true,
 		CancelURL:        "/admin/volumes",
+		ShowKind:         !v.IsDefault(),
+		Kind:             v.Kind,
 	}
 	if fd.ConnType == "file" {
 		fd.FilePath = v.URIPath()
@@ -167,9 +183,32 @@ func (h *adminVolumeHandler) UpdateVolume(w http.ResponseWriter, r *http.Request
 
 	if err := h.p.Volumes.Update(id, name, description, uri, config); err != nil {
 		setFlash(w, "error", "Failed to update: "+err.Error(), err)
-	} else {
-		setFlash(w, "success", "Volume updated.")
+		http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+		return
 	}
+	if k := r.FormValue("kind"); k != "" {
+		kind, err := volume.ParseKind(k)
+		if err != nil {
+			setFlash(w, "error", err.Error())
+			http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+			return
+		}
+		v, err := h.p.Volumes.GetByID(id)
+		if err == nil && v.Kind != kind {
+			if v.IsDefault() {
+				setFlash(w, "error", "The default volume holds everyone's files; its kind cannot change.")
+				http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+				return
+			}
+			err = h.p.Volumes.SetKind(id, kind)
+		}
+		if err != nil {
+			setFlash(w, "error", "Failed to change the kind: "+err.Error(), err)
+			http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
+			return
+		}
+	}
+	setFlash(w, "success", "Volume updated.")
 	http.Redirect(w, r, "/admin/volumes/"+id, http.StatusSeeOther)
 }
 

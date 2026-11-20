@@ -25,6 +25,11 @@ type Resolver struct {
 	volumes *volume.Store
 	access  *volume.Access
 
+	// DirPath returns where the directory resourceID is in owner's files,
+	// or "" when it is not there any more: a shared folder is named by its
+	// ID, and its path changes when it is moved.
+	DirPath func(owner, resourceID string) (string, error)
+
 	mu    sync.Mutex
 	cache map[string]cachedFS // by username
 }
@@ -36,6 +41,15 @@ type cachedFS struct {
 
 // cacheTTL is how long a user's VFS is trusted without a change notice.
 const cacheTTL = 30 * time.Second
+
+// SharedDirType is the share resource type of a directory of the files
+// plugin: what a share mount mounts.
+const SharedDirType = "files:directory"
+
+// maxShareDepth bounds how far a share mount is followed through the
+// owner's own share mounts (a folder reshared), so that two users who mount
+// each other's folders end rather than build each other's trees forever.
+const maxShareDepth = 3
 
 // NewResolver creates a new mount resolver. Access decides what a mount of a
 // volume other than the user's root may do: a mount outlives the share that
@@ -130,6 +144,12 @@ func (r *Resolver) EnsureUserDirs(username string) error {
 // UserFS returns a mount-aware VFS for the given user, built from their
 // mounts and kept until something changes or cacheTTL passes.
 func (r *Resolver) UserFS(username string) (vfs.FS, error) {
+	return r.userFS(username, 0)
+}
+
+// userFS is UserFS for a tree depth share mounts in. Only a whole tree is
+// kept: one built deeper may lack share mounts maxShareDepth cut off.
+func (r *Resolver) userFS(username string, depth int) (vfs.FS, error) {
 	now := time.Now()
 	r.mu.Lock()
 	c, ok := r.cache[username]
@@ -137,18 +157,20 @@ func (r *Resolver) UserFS(username string) (vfs.FS, error) {
 	if ok && now.Before(c.expires) {
 		return c.fs, nil
 	}
-	fs, err := r.buildUserFS(username)
+	fs, err := r.buildUserFS(username, depth)
 	if err != nil {
 		return nil, err
 	}
-	r.mu.Lock()
-	r.cache[username] = cachedFS{fs: fs, expires: now.Add(cacheTTL)}
-	r.mu.Unlock()
+	if depth == 0 {
+		r.mu.Lock()
+		r.cache[username] = cachedFS{fs: fs, expires: now.Add(cacheTTL)}
+		r.mu.Unlock()
+	}
 	return fs, nil
 }
 
 // buildUserFS loads the user's mounts and creates a backend for each.
-func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
+func (r *Resolver) buildUserFS(username string, depth int) (*volume.MountFS, error) {
 	u, err := r.users.GetByUsername(username)
 	if err != nil {
 		return nil, fmt.Errorf("resolve user %q: %w", username, err)
@@ -163,6 +185,20 @@ func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
 			return nil, fmt.Errorf("list mounts for %q: %w", username, err)
 		}
 
+		if m.Kind == Share {
+			if depth >= maxShareDepth {
+				continue
+			}
+			e, ok, err := r.shareEntry(u, &m, depth)
+			if err != nil {
+				return nil, fmt.Errorf("mount %q: %w", m.UserPath, err)
+			}
+			if ok {
+				entries = append(entries, e)
+			}
+			continue
+		}
+
 		v, err := r.volumes.GetByID(m.VolumeID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve volume %q for mount %q: %w", m.VolumeID, m.UserPath, err)
@@ -173,7 +209,7 @@ func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
 			// The root mount is the one the server made for the user. Any
 			// other reaches a volume only while the user may: a share
 			// revoked, or narrowed to read-only, takes effect here.
-			perms, err := r.access.Permissions(u.ID, v.ID)
+			perms, err := r.mountPermissions(u, v, &m)
 			if err != nil {
 				return nil, fmt.Errorf("check access to volume %q for mount %q: %w", v.Name, m.UserPath, err)
 			}
@@ -193,6 +229,8 @@ func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
 			VolumeSubpath: m.VolumeSubpath,
 			Backend:       backend,
 			ReadOnly:      readOnly,
+			VolumeID:      v.ID,
+			ChargeTo:      u.Username,
 		})
 	}
 
@@ -201,4 +239,66 @@ func (r *Resolver) buildUserFS(username string) (vfs.FS, error) {
 	}
 
 	return volume.NewMountFS(entries), nil
+}
+
+// mountPermissions returns what a mount of v other than the root may do:
+// an area, read and write while its storage volume is shared with the user;
+// a mount of the volume itself, what they may do with all of it.
+func (r *Resolver) mountPermissions(u *user.User, v *volume.Volume, m *Mount) (uint32, error) {
+	if m.Kind == Area {
+		ok, err := r.access.MayMakeAreas(u.ID, v)
+		if err != nil || !ok {
+			return 0, err
+		}
+		return plugin.PermRead | plugin.PermWrite, nil
+	}
+	return r.access.WholePermissions(u.ID, v)
+}
+
+// shareEntry resolves a share mount to where the shared folder is in its
+// owner's tree, as the owner's shares of it allow u. It is not mounted
+// (false) while they do not, or the folder or its owner is gone.
+func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEntry, bool, error) {
+	owner, err := r.users.GetByID(m.ShareOwnerID)
+	if errors.Is(err, user.ErrNotFound) {
+		return volume.MountEntry{}, false, nil
+	}
+	if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("owner of shared folder: %w", err)
+	}
+	// Only the owner's shares count: the folder is found in their files.
+	decision, err := r.access.Shares.CheckAccessGrantedBy(u.ID, SharedDirType, m.ShareResourceID,
+		func(id string) (bool, error) { return id == owner.ID, nil })
+	if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("check access to shared folder: %w", err)
+	}
+	perms := decision.EffectivePerms
+	if perms&plugin.PermRead == 0 || r.DirPath == nil {
+		return volume.MountEntry{}, false, nil
+	}
+	dir, err := r.DirPath(owner.Username, m.ShareResourceID)
+	if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("find shared folder in %s's files: %w", owner.Username, err)
+	}
+	if dir == "" {
+		return volume.MountEntry{}, false, nil
+	}
+	ownerFS, err := r.userFS(owner.Username, depth+1)
+	if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("files of %s: %w", owner.Username, err)
+	}
+	mfs, ok := ownerFS.(*volume.MountFS)
+	if !ok {
+		return volume.MountEntry{}, false, fmt.Errorf("files of %s are a %T", owner.Username, ownerFS)
+	}
+	e, err := mfs.Entry(dir)
+	if err != nil {
+		return volume.MountEntry{}, false, nil // the folder is no longer in a mount of theirs
+	}
+	e.UserPath = m.UserPath
+	e.ReadOnly = e.ReadOnly || perms&plugin.PermWrite == 0
+	e.ShareOwner = owner.Username
+	e.ShareOwnerPath = dir
+	e.Reshare = perms&plugin.PermReshare != 0
+	return e, true, nil
 }

@@ -59,6 +59,38 @@ func (a *Access) permissions(userID string, vol *Volume) (uint32, error) {
 	return decision.EffectivePerms, nil
 }
 
+// WholePermissions returns what the user may do with the whole volume, as a
+// raw mount or in the volume browser. A storage volume is seen whole only by
+// its owner, or an admin for a system one: what its shares grant is room
+// for areas of one's own, not a view of everyone's.
+func (a *Access) WholePermissions(userID string, vol *Volume) (uint32, error) {
+	if vol.Kind != Storage {
+		return a.permissions(userID, vol)
+	}
+	if vol.OwnerUserID != nil {
+		if *vol.OwnerUserID == userID {
+			return OwnerPerms, nil
+		}
+		return 0, nil
+	}
+	admin, err := a.grantor(vol)(userID)
+	if err != nil || !admin {
+		return 0, err
+	}
+	return OwnerPerms, nil
+}
+
+// MayMakeAreas reports whether the user may keep areas of their own in vol:
+// it is a storage volume, and they own it, administer it, or it was shared
+// with them, with any permissions.
+func (a *Access) MayMakeAreas(userID string, vol *Volume) (bool, error) {
+	if vol.Kind != Storage {
+		return false, nil
+	}
+	perms, err := a.permissions(userID, vol)
+	return perms != 0, err
+}
+
 // grantor reports whether a share of vol made by ownerID counts.
 func (a *Access) grantor(vol *Volume) func(ownerID string) (bool, error) {
 	return func(ownerID string) (bool, error) {

@@ -65,6 +65,8 @@ type Providers struct {
 	Invitations    *group.InvitationStore
 	Volumes        *volume.Store
 	Mounts         *mount.Store
+	Resolver       *mount.Resolver // builds each user's tree from their mounts
+	Shared         *files.Shared   // what others shared with each user
 	Access         *volume.Access
 	Quotas         *quota.Store
 	QuotaChecker   *quota.Checker // holds every write to Quotas
@@ -464,6 +466,7 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		Invitations:    group.NewInvitationStore(sysDB, c),
 		Volumes:        volumes,
 		Mounts:         mounts,
+		Resolver:       resolver,
 		Access:         access,
 		Quotas:         quotas,
 		Settings:       settingsStore,
@@ -504,6 +507,17 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		}
 		if err := registry.Add(p); err != nil {
 			return nil, fmt.Errorf("register plugin %s: %w", p.ID(), err)
+		}
+	}
+
+	// A mount of a shared folder finds it in its owner's files.
+	if plug, ok := registry.Plugin(files.PluginID); ok {
+		if fp, ok := plug.(*files.Plugin); ok {
+			resolver.DirPath = fp.DirPath
+			resolver.InvalidateAll() // trees built before could not follow one
+			fp.Shared = &files.Shared{Files: fp, Shares: shares, Users: users, Volumes: volumes, Access: access, Mounts: mounts,
+				Server: volume.ServerFiles{DataDir: cfg.DataDir, DBPath: cfg.DBPath}}
+			p.Shared = fp.Shared
 		}
 	}
 

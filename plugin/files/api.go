@@ -806,13 +806,18 @@ func (a *API) verifyOwnership(u *user.User, resourceType, resourceID string) err
 		return fmt.Errorf("%w: invalid resource id: %s", errNotOwned, resourceID)
 	}
 
-	if _, err := a.files.GetByID(u.Username, fileID); err != nil {
+	meta, err := a.files.GetByID(u.Username, fileID)
+	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return fmt.Errorf("%w: resource not found or not owned", errNotOwned)
 		}
 		return err
 	}
-
+	if err := a.files.MayShare(u.Username, meta.Path); errors.Is(err, ErrNoReshare) {
+		return fmt.Errorf("%w: %w", errNotOwned, err)
+	} else if err != nil {
+		return err
+	}
 	return nil
 }
 

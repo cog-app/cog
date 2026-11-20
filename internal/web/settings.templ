@@ -304,7 +304,9 @@ templ appPasswordList(appPasswords []auth.AppPassword) {
 // storageMount is one row of the mounts table.
 type storageMount struct {
 	mount.Mount
-	VolumeName string
+	// Source is where it comes from: a volume's name, or for a shared
+	// folder, who shared it.
+	Source string
 }
 
 templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts []storageMount, volumes []volume.Volume, ownedVolumes []volume.Volume, usage storageUsageInfo) {
@@ -327,7 +329,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 			}
 		}
 		@ui.Card("Mounts") {
-			<p class="card-desc">Folders from a volume that appear in your files at the path you choose.</p>
+			<p class="card-desc">Folders from a volume, storage you keep on one, and folders shared with you, at the path you choose in your files.</p>
 			if len(mounts) == 0 {
 				<p class="empty-state empty-state-sm">No mounts yet.</p>
 			} else {
@@ -336,7 +338,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 						<thead>
 							<tr>
 								<th>Path</th>
-								<th>Volume</th>
+								<th>From</th>
 								<th class="hide-mobile">Subpath</th>
 								<th class="col-shrink">Access</th>
 								<th class="col-actions"><span class="sr-only">Actions</span></th>
@@ -346,7 +348,15 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 							for _, m := range mounts {
 								<tr id={ "mount-" + m.ID }>
 									<td class="break-anywhere"><code>{ m.UserPath }</code></td>
-									<td class="break-anywhere">{ m.VolumeName }</td>
+									<td class="break-anywhere">
+										{ m.Source }
+										switch m.Kind {
+											case mount.Area:
+												<span class="badge badge-neutral">Storage</span>
+											case mount.Share:
+												<span class="badge badge-neutral">Shared</span>
+										}
+									</td>
 									<td class="hide-mobile break-anywhere">
 										if m.VolumeSubpath != "" {
 											<code>{ m.VolumeSubpath }</code>
@@ -367,7 +377,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 												hx-delete={ "/settings/mounts/" + m.ID }
 												hx-target={ "#mount-" + m.ID }
 												hx-swap="outerHTML"
-												hx-confirm={ "Remove the mount at " + m.UserPath + "? The files stay on the volume." }
+												hx-confirm={ "Remove the mount at " + m.UserPath + "? The files stay where they are." }
 											>Remove</button>
 										}
 									</td>

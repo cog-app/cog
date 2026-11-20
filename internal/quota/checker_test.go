@@ -19,7 +19,7 @@ func TestCheckerWithinQuota(t *testing.T) {
 
 	c := &quota.Checker{
 		Quotas:         env.Providers.Quotas,
-		Usage:          func(string) (int64, error) { return 5000, nil },
+		Usage:          func(quota.Account) (int64, error) { return 5000, nil },
 		RootVolume:     func(string) (string, error) { return vol.ID, nil },
 		GroupIDs:       func(string) ([]string, error) { return nil, nil },
 		UserIDFromName: func(string) (string, error) { return "uid1", nil },
@@ -36,7 +36,7 @@ func TestCheckerExceedsQuota(t *testing.T) {
 
 	c := &quota.Checker{
 		Quotas:         env.Providers.Quotas,
-		Usage:          func(string) (int64, error) { return 5000, nil },
+		Usage:          func(quota.Account) (int64, error) { return 5000, nil },
 		RootVolume:     func(string) (string, error) { return vol.ID, nil },
 		GroupIDs:       func(string) ([]string, error) { return nil, nil },
 		UserIDFromName: func(string) (string, error) { return "uid1", nil },
@@ -51,7 +51,7 @@ func TestCheckerUnlimited(t *testing.T) {
 	// No quotas set → unlimited.
 	c := &quota.Checker{
 		Quotas:         env.Providers.Quotas,
-		Usage:          func(string) (int64, error) { return 999999, nil },
+		Usage:          func(quota.Account) (int64, error) { return 999999, nil },
 		RootVolume:     func(string) (string, error) { return "somevol", nil },
 		GroupIDs:       func(string) ([]string, error) { return nil, nil },
 		UserIDFromName: func(string) (string, error) { return "uid1", nil },

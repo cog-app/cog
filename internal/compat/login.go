@@ -377,8 +377,8 @@ func clientName(ua string) string {
 	if name == "Mozilla" {
 		return name
 	}
-	if open := strings.IndexByte(ua, '('); open >= 0 {
-		comment := ua[open+1:]
+	if _, after, ok := strings.Cut(ua, "("); ok {
+		comment := after
 		if end := strings.IndexAny(comment, ";)"); end >= 0 {
 			comment = comment[:end]
 		}

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/config"
@@ -82,7 +81,9 @@ func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, u *u
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return nil, nil, false
 	}
-	perms, err := h.p.Access.Permissions(u.ID, volID)
+	// A storage volume is browsed whole only by whoever may see it whole;
+	// those it is shared with reach their areas through their own files.
+	perms, err := h.p.Access.WholePermissions(u.ID, vol)
 	if err != nil {
 		h.p.Log.Error("volume access check", "volume", volID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -110,77 +111,18 @@ func (h *volumeBrowserHandler) serverInternal(vol *volume.Volume, p string) bool
 	return serverInternalPath(&h.p.Config, vol, p)
 }
 
-// isDataDir reports whether vol is the data directory itself.
-func isDataDir(cfg *config.Config, vol *volume.Volume) bool {
-	if vol.Scheme() != "file" || cfg.DataDir == "" {
-		return false
-	}
-	root, err := filepath.Abs(vol.URIPath())
-	if err != nil {
-		return false
-	}
-	dataDir, err := filepath.Abs(cfg.DataDir)
-	return err == nil && root == dataDir
-}
-
-// mountExposesInternal reports whether a mount of subpath on vol would put
-// one of the server's own files in a user's tree. It refuses the internal
-// files themselves and the directories that hold them: the data directory
-// itself, with the system database, and a user's directory, with their
-// plugin databases. isUser says whether a name is an account's.
-func mountExposesInternal(cfg *config.Config, vol *volume.Volume, subpath string, isUser func(name string) bool) bool {
-	if !isDataDir(cfg, vol) {
-		return false
-	}
-	clean := strings.TrimPrefix(path.Clean("/"+subpath), "/")
-	if clean == "" || serverInternalPath(cfg, vol, clean) {
-		return true
-	}
-	return !strings.Contains(clean, "/") && isUser(clean)
+// serverFiles is where the server keeps its own files, for the checks that
+// keep them out of a volume browser or a mount.
+func serverFiles(cfg *config.Config) volume.ServerFiles {
+	return volume.ServerFiles{DataDir: cfg.DataDir, DBPath: cfg.DBPath}
 }
 
 func serverInternalPath(cfg *config.Config, vol *volume.Volume, p string) bool {
-	if !isDataDir(cfg, vol) {
-		return false
-	}
-	dataDir, err := filepath.Abs(cfg.DataDir)
-	if err != nil {
-		return false
-	}
+	return serverFiles(cfg).Internal(vol, p)
+}
 
-	clean := strings.TrimPrefix(path.Clean("/"+p), "/")
-	if clean == "" {
-		return false
-	}
-	segs := strings.Split(clean, "/")
-	for _, s := range segs {
-		if s == ".search" || s == "app_data" {
-			return true
-		}
-	}
-	if len(segs) == 1 && strings.HasPrefix(segs[0], ".cog-secret") {
-		return true // the master secret (services.loadSecret)
-	}
-	if strings.HasPrefix(segs[0], "cog-chunk") {
-		return true // uploads in progress (compat.ChunkedUploadHandler)
-	}
-	if len(segs) == 1 {
-		// The system database, when it lives in the data directory: where
-		// COG_DB puts it, or system.db when nothing says otherwise.
-		db := "system.db"
-		if cfg.DBPath != "" {
-			dbPath, err := filepath.Abs(cfg.DBPath)
-			if err != nil || filepath.Dir(dbPath) != dataDir {
-				return false
-			}
-			db = filepath.Base(dbPath)
-		}
-		// system.db, system.db-wal, system.db-shm, system.db-journal
-		if segs[0] == db || strings.HasPrefix(segs[0], db+"-") {
-			return true
-		}
-	}
-	return false
+func mountExposesInternal(cfg *config.Config, vol *volume.Volume, subpath string, isUser func(name string) bool) bool {
+	return serverFiles(cfg).MountExposesInternal(vol, subpath, isUser)
 }
 
 func (h *volumeBrowserHandler) Download(w http.ResponseWriter, r *http.Request) {

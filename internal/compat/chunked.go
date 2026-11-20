@@ -235,8 +235,15 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	staged -= replaced
+	// The upload is held to the quota of where it is going, which a
+	// client using chunking v2 names on every chunk: a folder on another
+	// volume, or one shared with them, has its own.
+	check := func(n int64) error { return h.Files.QuotaCheck(u.Username, n) }
+	if destPath, ok := chunkDestination(r.Header.Get("Destination")); ok {
+		check = func(n int64) error { return h.Files.QuotaCheckAt(u.Username, destPath, n) }
+	}
 	if r.ContentLength > 0 {
-		if err := h.Files.QuotaCheck(u.Username, staged+r.ContentLength); err != nil {
+		if err := check(staged + r.ContentLength); err != nil {
 			http.Error(w, err.Error(), http.StatusInsufficientStorage)
 			return
 		}
@@ -257,7 +264,7 @@ func (h *ChunkedUploadHandler) handlePut(w http.ResponseWriter, r *http.Request,
 		httperr.Internal(w, r, err)
 		return
 	}
-	if err := h.Files.QuotaCheck(u.Username, staged+written); err != nil {
+	if err := check(staged + written); err != nil {
 		if rmErr := os.Remove(chunkPath); rmErr != nil {
 			h.Log.Error("remove over-quota chunk", "path", chunkPath, "err", rmErr)
 		}

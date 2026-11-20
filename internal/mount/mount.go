@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
@@ -15,14 +17,48 @@ import (
 
 var ErrNotFound = errors.New("mount not found")
 
+// Kind is what a mount puts in a user's tree.
+type Kind string
+
+const (
+	// Volume mounts VolumeSubpath of a volume, as a share of it allows.
+	Volume Kind = "volume"
+	// Area mounts the user's own area of a storage volume, at VolumeSubpath.
+	Area Kind = "area"
+	// Share mounts a folder someone shared with the user: the directory
+	// ShareResourceID of ShareOwnerID's files.
+	Share Kind = "share"
+)
+
 type Mount struct {
 	ID            string
 	UserID        string
 	UserPath      string
-	VolumeID      string
+	Kind          Kind
+	VolumeID      string // empty for a Share
 	VolumeSubpath string
-	ReadOnly      bool
-	CreatedAt     time.Time
+	// ShareOwnerID and ShareResourceID name the shared directory of a Share.
+	ShareOwnerID    string
+	ShareResourceID string
+	ReadOnly        bool
+	CreatedAt       time.Time
+}
+
+// mountColumns are the columns scanMount reads, in order.
+const mountColumns = `id, user_id, user_path, kind, coalesce(volume_id, ''), volume_subpath,
+	coalesce(share_owner_id, ''), coalesce(share_resource_id, ''), read_only, created_at`
+
+type scanner interface{ Scan(dest ...any) error }
+
+func scanMount(row scanner) (Mount, error) {
+	var m Mount
+	var createdAt int64
+	if err := row.Scan(&m.ID, &m.UserID, &m.UserPath, &m.Kind, &m.VolumeID, &m.VolumeSubpath,
+		&m.ShareOwnerID, &m.ShareResourceID, &m.ReadOnly, &createdAt); err != nil {
+		return Mount{}, err
+	}
+	m.CreatedAt = time.Unix(createdAt, 0)
+	return m, nil
 }
 
 type Store struct {
@@ -43,77 +79,117 @@ func NewStore(db *sql.DB, c clock.Clock) *Store {
 	return &Store{db: db, clock: c}
 }
 
+// Create mounts volumeSubpath of a volume at userPath.
 func (s *Store) Create(userID, userPath, volumeID, volumeSubpath string, readOnly bool) (*Mount, error) {
+	return s.insert(Mount{UserID: userID, UserPath: userPath, Kind: Volume, VolumeID: volumeID,
+		VolumeSubpath: volumeSubpath, ReadOnly: readOnly})
+}
+
+// CreateShare mounts the directory resourceID of ownerID's files, shared
+// with userID, at userPath. What it may do is decided by the shares each
+// time it is used.
+func (s *Store) CreateShare(userID, userPath, ownerID, resourceID string) (*Mount, error) {
+	return s.insert(Mount{UserID: userID, UserPath: userPath, Kind: Share,
+		ShareOwnerID: ownerID, ShareResourceID: resourceID})
+}
+
+// CreateArea mounts an area of the storage volume volumeID at userPath,
+// at dir (<username>/<name>) in the volume. An area dir no mount holds is
+// reattached — the files of an area unmounted before are still there. One
+// another area holds, or that holds or is held by one, is taken, and the
+// name gets a suffix: Photos-2, Photos-3.
+func (s *Store) CreateArea(userID, userPath, volumeID, dir string) (*Mount, error) {
+	var taken []string
+	rows, err := s.db.Query(`SELECT volume_subpath FROM mounts WHERE volume_id = ? AND kind = 'area'`, volumeID)
+	if err != nil {
+		return nil, fmt.Errorf("list mounts of volume: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sub string
+		if err := rows.Scan(&sub); err != nil {
+			return nil, fmt.Errorf("scan mount: %w", err)
+		}
+		taken = append(taken, strings.Trim(sub, "/"))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	overlaps := func(c string) bool {
+		for _, t := range taken {
+			// An area converted from a mount of the whole volume holds
+			// everything; it cannot be stepped around, so it is not counted.
+			if t != "" && (t == c || strings.HasPrefix(c, t+"/") || strings.HasPrefix(t, c+"/")) {
+				return true
+			}
+		}
+		return false
+	}
+	dir = strings.Trim(dir, "/")
+	cand := dir
+	for i := 2; overlaps(cand); i++ {
+		cand = dir + "-" + strconv.Itoa(i)
+	}
+	return s.insert(Mount{UserID: userID, UserPath: userPath, Kind: Area, VolumeID: volumeID, VolumeSubpath: cand})
+}
+
+func (s *Store) insert(m Mount) (*Mount, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, err
 	}
-
 	now := s.clock().Unix()
-	ro := 0
-	if readOnly {
-		ro = 1
-	}
-
 	_, err = s.db.Exec(
-		`INSERT INTO mounts (id, user_id, user_path, volume_id, volume_subpath, read_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, userID, userPath, volumeID, volumeSubpath, ro, now,
+		`INSERT INTO mounts (id, user_id, user_path, kind, volume_id, volume_subpath, share_owner_id, share_resource_id, read_only, created_at)
+		VALUES (?, ?, ?, ?, nullif(?, ''), ?, nullif(?, ''), nullif(?, ''), ?, ?)`,
+		id, m.UserID, m.UserPath, m.Kind, m.VolumeID, m.VolumeSubpath, m.ShareOwnerID, m.ShareResourceID, m.ReadOnly, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert mount: %w", err)
 	}
 	s.changed()
-
-	return &Mount{
-		ID:            id,
-		UserID:        userID,
-		UserPath:      userPath,
-		VolumeID:      volumeID,
-		VolumeSubpath: volumeSubpath,
-		ReadOnly:      readOnly,
-		CreatedAt:     time.Unix(now, 0),
-	}, nil
+	m.ID = id
+	m.CreatedAt = time.Unix(now, 0)
+	return &m, nil
 }
 
 func (s *Store) GetByID(id string) (*Mount, error) {
-	var m Mount
-	var createdAt int64
-	var ro int
-	err := s.db.QueryRow(
-		`SELECT id, user_id, user_path, volume_id, volume_subpath, read_only, created_at FROM mounts WHERE id = ?`, id,
-	).Scan(&m.ID, &m.UserID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt)
+	m, err := scanMount(s.db.QueryRow(`SELECT `+mountColumns+` FROM mounts WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get mount: %w", err)
 	}
-	m.ReadOnly = ro != 0
-	m.CreatedAt = time.Unix(createdAt, 0)
+	return &m, nil
+}
+
+// GetByUserPath returns the user's mount at userPath.
+func (s *Store) GetByUserPath(userID, userPath string) (*Mount, error) {
+	m, err := scanMount(s.db.QueryRow(`SELECT `+mountColumns+` FROM mounts WHERE user_id = ? AND user_path = ?`, userID, userPath))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get mount at %s: %w", userPath, err)
+	}
 	return &m, nil
 }
 
 func (s *Store) ListByUser(userID string) iter.Seq2[Mount, error] {
 	return func(yield func(Mount, error) bool) {
-		rows, err := s.db.Query(
-			`SELECT id, user_id, user_path, volume_id, volume_subpath, read_only, created_at FROM mounts WHERE user_id = ? ORDER BY user_path`,
-			userID,
-		)
+		rows, err := s.db.Query(`SELECT `+mountColumns+` FROM mounts WHERE user_id = ? ORDER BY user_path`, userID)
 		if err != nil {
 			yield(Mount{}, fmt.Errorf("list mounts: %w", err))
 			return
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var m Mount
-			var createdAt int64
-			var ro int
-			if err := rows.Scan(&m.ID, &m.UserID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt); err != nil {
+			m, err := scanMount(rows)
+			if err != nil {
 				yield(Mount{}, fmt.Errorf("scan mount: %w", err))
 				return
 			}
-			m.ReadOnly = ro != 0
-			m.CreatedAt = time.Unix(createdAt, 0)
 			if !yield(m, nil) {
 				return
 			}
@@ -126,22 +202,11 @@ func (s *Store) ListByUser(userID string) iter.Seq2[Mount, error] {
 
 // GetUserRoot returns the root mount (user_path="/") for a user.
 func (s *Store) GetUserRoot(userID string) (*Mount, error) {
-	var m Mount
-	var createdAt int64
-	var ro int
-	err := s.db.QueryRow(
-		`SELECT id, user_id, user_path, volume_id, volume_subpath, read_only, created_at FROM mounts WHERE user_id = ? AND user_path = '/'`,
-		userID,
-	).Scan(&m.ID, &m.UserID, &m.UserPath, &m.VolumeID, &m.VolumeSubpath, &ro, &createdAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
+	m, err := s.GetByUserPath(userID, "/")
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, fmt.Errorf("get user root mount: %w", err)
 	}
-	m.ReadOnly = ro != 0
-	m.CreatedAt = time.Unix(createdAt, 0)
-	return &m, nil
+	return m, err
 }
 
 func (s *Store) Delete(id string) error {

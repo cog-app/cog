@@ -86,3 +86,40 @@ If a plugin registers a hierarchy (e.g., `Deck` owns `Cards`), sharing the `Deck
 - `token` (Text, Nullable)
 - `password_hash` (Text, Nullable)
 - `expiration` (Integer, Nullable)
+
+## Shared with me, mounts and storage volumes
+
+A user's files are a tree of mounts (`internal/mount`), each one of three
+kinds:
+
+- **volume** — a part of a volume, as a share of the volume allows. Only a
+  *raw* volume can be mounted this way by someone it is shared with.
+- **area** — the user's own space in a *storage* volume, at
+  `<username>/<name>` on it. Sharing a storage volume lets its audience make
+  areas, and see nothing else of it; only its owner (or an admin, for a
+  system volume) sees it whole. Switching a volume from raw to storage turns
+  existing mounts of it into areas in place.
+- **share** — a folder someone shared with the user, named by owner and file
+  ID. The resolver finds the folder's current path in the owner's files and
+  mounts the owner's backend there, as the owner's shares allow each time the
+  tree is built: revoked, it disappears; read-only, it is read-only.
+
+Everything shared with a user is listed beside their files, at
+`/apps/files/shared` on the web and `/shared/<owner>/<name>` over SSH, where a
+folder can be browsed without mounting it. "Add to my files" (or `ln -s` in
+the shell) makes a share mount; "Add storage" makes an area; removing either
+(Settings → Storage, `rm`/`unlink`) only unmounts.
+
+A change made through a share mount is made **as the owner**: the owner's
+rows keep the IDs shares and favourites hang from, what is deleted goes to the
+owner's trash, and the bytes count against the owner's quota on the volume
+they land on. Quotas are per volume (`quota.Account`): a write is charged to
+whoever the mount holding its path charges.
+
+Over SSH, `/volumes/<name>` shows the volumes the user may look at, read-only:
+a volume they may see whole, or on a storage volume, their own areas (mounted
+or not). `ln -s` from there mounts a folder of the volume, or an area by name;
+what is written goes through the mount, recorded and held to the quota. The
+server's own files in the data directory are never shown.
+
+Sharing on what is in a share mount needs the Reshare permission.
