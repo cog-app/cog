@@ -131,23 +131,26 @@ func (p *Plugin) Exists(username, path string) (bool, error) {
 // transfer clients save by writing a new file and removing the old, and the
 // trash would keep every version.
 func (p *Plugin) FS(username string) (vfs.FS, error) {
-	fsys, err := p.userFS(username)
-	if err != nil {
+	if _, err := p.userFS(username); err != nil {
 		return nil, err
 	}
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
 	}
-	return &recordedFS{p: p, db: db, username: username, fs: fsys}, nil
+	return &recordedFS{p: p, db: db, username: username}, nil
 }
 
 type recordedFS struct {
 	p        *Plugin
 	db       *sql.DB
 	username string
-	fs       vfs.FS
 }
+
+// tree is the user's mount tree as it is now. A session outlives mounts
+// made and removed during it, so it is looked up on each call rather than
+// kept; the resolver caches it until the mounts change.
+func (f *recordedFS) tree() (vfs.FS, error) { return f.p.userFS(f.username) }
 
 var (
 	_ vfs.FileOpener = (*recordedFS)(nil)
@@ -155,10 +158,37 @@ var (
 	_ vfs.AttrSetter = (*recordedFS)(nil)
 )
 
-func (f *recordedFS) List(path string) ([]vfs.FileInfo, error) { return f.fs.List(path) }
-func (f *recordedFS) Stat(path string) (*vfs.FileInfo, error)  { return f.fs.Stat(path) }
-func (f *recordedFS) Get(path string) (io.ReadCloser, error)   { return f.fs.Get(path) }
-func (f *recordedFS) ReadFile(path string) ([]byte, error)     { return f.fs.ReadFile(path) }
+func (f *recordedFS) List(path string) ([]vfs.FileInfo, error) {
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	return t.List(path)
+}
+
+func (f *recordedFS) Stat(path string) (*vfs.FileInfo, error) {
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	return t.Stat(path)
+}
+
+func (f *recordedFS) Get(path string) (io.ReadCloser, error) {
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	return t.Get(path)
+}
+
+func (f *recordedFS) ReadFile(path string) ([]byte, error) {
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	return t.ReadFile(path)
+}
 
 func (f *recordedFS) Put(path string, content io.Reader) error {
 	_, err := f.p.Upload(f.username, path, content)
@@ -168,10 +198,14 @@ func (f *recordedFS) Put(path string, content io.Reader) error {
 // Mkdir makes path and any missing parents, and records each.
 func (f *recordedFS) Mkdir(path string) error {
 	path = normalizePath(path)
-	if err := f.fs.Mkdir(path); err != nil {
+	t, err := f.tree()
+	if err != nil {
 		return err
 	}
-	if err := f.p.recordDirs(f.db, f.fs, path); err != nil {
+	if err := t.Mkdir(path); err != nil {
+		return err
+	}
+	if err := f.p.recordDirs(f.db, t, path); err != nil {
 		return err
 	}
 	return f.p.recordShared(f.username, path)
@@ -187,7 +221,11 @@ func (f *recordedFS) Delete(path string) error {
 	} else if ok && t.mountRoot {
 		return errMountPoint
 	}
-	if err := f.fs.Delete(path); err != nil {
+	t, err := f.tree()
+	if err != nil {
+		return err
+	}
+	if err := t.Delete(path); err != nil {
 		return err
 	}
 	if err := forgetRows(f.db, path); err != nil {
@@ -235,7 +273,11 @@ func (f *recordedFS) ReadDirEntries(path string) ([]iofs.DirEntry, error) {
 }
 
 func (f *recordedFS) dirReader() (vfs.DirReader, error) {
-	dr, ok := f.fs.(vfs.DirReader)
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	dr, ok := t.(vfs.DirReader)
 	if !ok {
 		return nil, fmt.Errorf("read directory: %w", errors.ErrUnsupported)
 	}
@@ -243,7 +285,11 @@ func (f *recordedFS) dirReader() (vfs.DirReader, error) {
 }
 
 func (f *recordedFS) attrSetter() (vfs.AttrSetter, error) {
-	as, ok := f.fs.(vfs.AttrSetter)
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	as, ok := t.(vfs.AttrSetter)
 	if !ok {
 		return nil, fmt.Errorf("set attributes: %w", errors.ErrUnsupported)
 	}
@@ -268,7 +314,11 @@ func (f *recordedFS) Chtimes(path string, atime, mtime time.Time) error {
 	if err := as.Chtimes(path, atime, mtime); err != nil {
 		return err
 	}
-	if _, err := f.p.record(f.db, f.fs, path); err != nil {
+	t, err := f.tree()
+	if err != nil {
+		return err
+	}
+	if _, err := f.p.record(f.db, t, path); err != nil {
 		return err
 	}
 	return f.p.recordShared(f.username, path)
@@ -280,7 +330,11 @@ func (f *recordedFS) Truncate(path string, size int64) error {
 	if err != nil {
 		return err
 	}
-	fi, err := f.fs.Stat(path)
+	t, err := f.tree()
+	if err != nil {
+		return err
+	}
+	fi, err := t.Stat(path)
 	if err != nil {
 		return err
 	}
@@ -296,7 +350,7 @@ func (f *recordedFS) Truncate(path string, size int64) error {
 		w.Abandon()
 		return err
 	}
-	_, err = f.p.record(f.db, f.fs, path)
+	_, err = f.p.record(f.db, t, path)
 	if err == nil {
 		err = f.p.recordShared(f.username, path)
 	}
@@ -312,7 +366,11 @@ func (f *recordedFS) Link(oldname, newname string) error {
 // OpenFile opens path. A handle that can write is held to the quota as it
 // writes, and records the file when it is closed.
 func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File, error) {
-	opener, ok := f.fs.(vfs.FileOpener)
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	opener, ok := t.(vfs.FileOpener)
 	if !ok {
 		return nil, fmt.Errorf("open %s: %w", path, errors.ErrUnsupported)
 	}
@@ -321,7 +379,7 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 	}
 
 	var before int64
-	if fi, err := f.fs.Stat(path); err == nil {
+	if fi, err := t.Stat(path); err == nil {
 		before = fi.Size
 	} else if !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, iofs.ErrNotExist) {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
@@ -335,7 +393,7 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 		w.Abandon()
 		return nil, err
 	}
-	h := &recordedFile{File: file, fs: f, w: w, path: path, appending: flag&os.O_APPEND != 0, end: before}
+	h := &recordedFile{File: file, fs: f, tree: t, w: w, path: path, appending: flag&os.O_APPEND != 0, end: before}
 	if flag&os.O_TRUNC != 0 {
 		// Truncating on open freed what the file held.
 		w.Shrink(h.end)
@@ -348,6 +406,7 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 type recordedFile struct {
 	vfs.File
 	fs        *recordedFS
+	tree      vfs.FS
 	w         *budget.Write
 	path      string
 	appending bool
@@ -410,7 +469,7 @@ func (h *recordedFile) Truncate(size int64) error {
 // once the row counts it.
 func (h *recordedFile) Close() error {
 	err := h.File.Close()
-	if _, rerr := h.fs.p.record(h.fs.db, h.fs.fs, h.path); rerr != nil {
+	if _, rerr := h.fs.p.record(h.fs.db, h.tree, h.path); rerr != nil {
 		err = errors.Join(err, rerr)
 	} else if rerr := h.fs.p.recordShared(h.fs.username, h.path); rerr != nil {
 		err = errors.Join(err, rerr)

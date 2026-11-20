@@ -321,6 +321,9 @@ func TestShellLinksSharedFolder(t *testing.T) {
 	_, err = run("ln -s /shared/jonathan/Photos ~/Photos")
 	require.NoError(t, err)
 	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "wife", "/Photos"))
+	out, err = run("ls ~/Photos")
+	require.NoError(t, err)
+	require.Contains(t, out, "beach.jpg")
 
 	// Storage on a volume is linked the same way.
 	_, err = run("ln -s /shared/admin/hdd /files/Backups")
@@ -336,6 +339,9 @@ func TestShellLinksSharedFolder(t *testing.T) {
 	require.True(t, errors.Is(err, mount.ErrNotFound))
 	_, err = l.fp.GetByPath("jonathan", "/Photos/beach.jpg")
 	require.NoError(t, err)
+	out, err = run("ls ~")
+	require.NoError(t, err)
+	require.NotContains(t, out, "Photos")
 
 	out, err = run("ln -s /files/elsewhere /files/x")
 	require.Error(t, err)
