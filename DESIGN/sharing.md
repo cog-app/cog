@@ -116,4 +116,10 @@ owner's trash, and the bytes count against the owner's quota on the volume
 they land on. Quotas are per volume (`quota.Account`): a write is charged to
 whoever the mount holding its path charges.
 
+Over SSH, `/volumes/<name>` shows the volumes the user may look at, read-only:
+a volume they may see whole, or on a storage volume, their own areas (mounted
+or not). `ln -s` from there mounts a folder of the volume, or an area by name;
+what is written goes through the mount, recorded and held to the quota. The
+server's own files in the data directory are never shown.
+
 Sharing on what is in a share mount needs the Reshare permission.

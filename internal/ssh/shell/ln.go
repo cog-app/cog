@@ -9,8 +9,8 @@ import (
 // Linker is a session filesystem that can put something shared with the
 // user into their files: the only links a session can make are mounts.
 type Linker interface {
-	// Symlink mounts target, a folder or storage volume under /shared, at
-	// link, a path under /files.
+	// Symlink mounts target, a folder or storage volume under /shared or a
+	// volume or a folder of one under /volumes, at link, a path under /files.
 	Symlink(target, link string) error
 	// IsLink reports whether p is a mount made by Symlink, or another
 	// mount of the user's.
@@ -37,10 +37,12 @@ func (s *Shell) newLnCmd() *cobra.Command {
 	var symbolic bool
 	cmd := &cobra.Command{
 		Use:   "ln -s <target> <link>",
-		Short: "Put a folder or storage shared with you into your files",
-		Long: `ln -s mounts something from /shared in your files: a shared folder, which
-then is in your files for every app, or a storage volume, which gets a folder
-of yours kept on it. Remove the link with rm or unlink; what it holds stays.`,
+		Short: "Put a shared folder, or a volume's, into your files",
+		Long: `ln -s mounts something from /shared or /volumes in your files: a shared
+folder, which then is in your files for every app; a storage volume, which
+gets a folder of yours kept on it (or one of your folders under
+/volumes/<name>, brought back); or a folder of a volume you may see whole.
+Remove the link with rm or unlink; what it holds stays.`,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {

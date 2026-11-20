@@ -436,3 +436,79 @@ func TestChunkedUploadToSharedFolderUsesItsQuota(t *testing.T) {
 	webdavReq(t, l.env, "MKCOL", uploads+"/mine/", "", l.wife.Auth).Status(http.StatusCreated)
 	webdavReq(t, l.env, "PUT", uploads+"/mine/00001", "twelve bytes", l.wife.Auth).Status(http.StatusInsufficientStorage)
 }
+
+// shellFor runs commands in username's SSH shell.
+func shellFor(t *testing.T, l *photoLibrary, username string) func(string) (string, error) {
+	t.Helper()
+	fsys, err := cogssh.SessionFS(l.env.Providers, l.env.Providers.SSHKeys, username)
+	require.NoError(t, err)
+	sh := shell.New(username, fsys, nil, l.env.Providers.Users.Usernames, nil, slog.New(slog.DiscardHandler))
+	return func(cmd string) (string, error) {
+		var out, errOut bytes.Buffer
+		err := sh.Run(context.Background(), cmd, strings.NewReader(""), &out, &errOut)
+		return out.String() + errOut.String(), err
+	}
+}
+
+func TestShellVolumesStorage(t *testing.T) {
+	l := newPhotoLibrary(t, plugin.PermRead)
+	wife := shellFor(t, l, "wife")
+
+	out, err := wife("ls /volumes")
+	require.NoError(t, err)
+	require.Contains(t, out, "hdd")
+	require.False(t, strings.Contains(out, "default"), "the data directory is not hers to see")
+	// Her view of a storage volume is her own areas: none yet.
+	out, err = wife("ls /volumes/hdd")
+	require.NoError(t, err)
+	require.False(t, strings.Contains(out, "jonathan"))
+
+	_, err = wife("ln -s /volumes/hdd /files/Backups")
+	require.NoError(t, err)
+	m, err := l.env.Providers.Mounts.GetByUserPath(l.wife.ID, "/Backups")
+	require.NoError(t, err)
+	require.Equal(t, "wife/Backups", m.VolumeSubpath)
+	_, err = l.fp.Upload("wife", "/Backups/phone.jpg", strings.NewReader("pic"))
+	require.NoError(t, err)
+
+	out, err = wife("ls /volumes/hdd/Backups")
+	require.NoError(t, err)
+	require.Contains(t, out, "phone.jpg")
+	// Looking is all /volumes is for.
+	_, err = wife("touch /volumes/hdd/Backups/new.txt")
+	require.Error(t, err)
+
+	// Unmounted and linked again by name, it is the same storage.
+	_, err = wife("rm /files/Backups")
+	require.NoError(t, err)
+	_, err = wife("ln -s /volumes/hdd/Backups /files/Phone")
+	require.NoError(t, err)
+	require.Equal(t, []string{"phone.jpg"}, listNames(t, l.fp, "wife", "/Phone"))
+
+	_, err = wife("ln -s /volumes/hdd/Backups/deeper /files/x")
+	require.Error(t, err)
+}
+
+func TestShellVolumesWhole(t *testing.T) {
+	l := newPhotoLibrary(t, plugin.PermRead)
+	admin := shellFor(t, l, "admin")
+
+	out, err := admin("ls /volumes/hdd/jonathan")
+	require.NoError(t, err)
+	require.Contains(t, out, "Photos")
+	_, err = admin("ln -s /volumes/hdd/jonathan/Photos /files/JPhotos")
+	require.NoError(t, err)
+	m, err := l.env.Providers.Mounts.GetByUserPath(l.admin.ID, "/JPhotos")
+	require.NoError(t, err)
+	require.Equal(t, mount.Volume, m.Kind)
+	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "admin", "/JPhotos"))
+
+	// The server's own files stay out of sight, and out of reach.
+	out, err = admin("ls /volumes/default")
+	require.NoError(t, err)
+	require.False(t, strings.Contains(out, "system.db"))
+	_, err = admin("cat /volumes/default/system.db")
+	require.Error(t, err)
+	_, err = admin("ln -s /volumes/default /files/data")
+	require.Error(t, err)
+}

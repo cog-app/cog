@@ -219,14 +219,19 @@ func SessionFS(p *services.Providers, ks *keys.Store, username string) (vfs.FS, 
 		return nil, err
 	}
 	ofs.Mount(sharedRoot, fp.Shared.Tree(u))
+	ofs.Mount(volumesRoot, fp.Shared.VolumeTree(u))
 	return &linkingFS{OverlayFS: ofs, shared: fp.Shared, user: u}, nil
 }
 
-// sharedRoot is where a session sees what was shared with its user.
-const sharedRoot = "/shared"
+// sharedRoot is where a session sees what was shared with its user, and
+// volumesRoot the volumes they may look at.
+const (
+	sharedRoot  = "/shared"
+	volumesRoot = "/volumes"
+)
 
 // linkingFS is a session's filesystem, which can mount what is under
-// /shared into the user's files.
+// /shared or /volumes into the user's files.
 type linkingFS struct {
 	*vfs.OverlayFS
 	shared *files.Shared
@@ -250,10 +255,19 @@ func (l *linkingFS) Symlink(target, link string) error {
 	if !ok {
 		return fmt.Errorf("%s: a link goes in your files, under /files", link)
 	}
-	rel, ok := strings.CutPrefix(path.Clean("/"+target), sharedRoot+"/")
+	target = path.Clean("/" + target)
+	if rel, ok := strings.CutPrefix(target, volumesRoot+"/"); ok {
+		vol, subpath, err := l.shared.VolumeTarget(l.user, rel)
+		if err != nil {
+			return fmt.Errorf("%s: %w", target, err)
+		}
+		_, err = l.shared.MountVolume(l.user, vol, subpath, userPath)
+		return err
+	}
+	rel, ok := strings.CutPrefix(target, sharedRoot+"/")
 	owner, name, _ := strings.Cut(rel, "/")
 	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
-		return fmt.Errorf("%s: only a folder or volume under %s/<owner> can be linked", target, sharedRoot)
+		return fmt.Errorf("%s: only a folder or volume under %s/<owner>, or one under %s, can be linked", target, sharedRoot, volumesRoot)
 	}
 	e, err := l.shared.Lookup(l.user, owner, name)
 	if err != nil {

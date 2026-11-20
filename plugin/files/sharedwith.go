@@ -29,6 +29,9 @@ type Shared struct {
 	Volumes *volume.Store
 	Access  *volume.Access
 	Mounts  *mount.Store
+	// Server is where the server keeps its own files, which no volume
+	// shows or mounts.
+	Server volume.ServerFiles
 }
 
 // SharedKind is what a shared entry is.
@@ -332,6 +335,12 @@ func (s *Shared) MountFolder(u *user.User, e *SharedEntry, userPath string) (*mo
 // mounts it at userPath. The area is <username>/<name> in the volume, the
 // name taken from the folder it is mounted at.
 func (s *Shared) AddArea(u *user.User, vol *volume.Volume, userPath string) (*mount.Mount, error) {
+	return s.AddAreaNamed(u, vol, "", userPath)
+}
+
+// AddAreaNamed is AddArea for the area name, or the folder's name when name
+// is empty: an area of that name not mounted anywhere is mounted again.
+func (s *Shared) AddAreaNamed(u *user.User, vol *volume.Volume, name, userPath string) (*mount.Mount, error) {
 	ok, err := s.Access.MayMakeAreas(u.ID, vol)
 	if err != nil {
 		return nil, err
@@ -343,7 +352,42 @@ func (s *Shared) AddArea(u *user.User, vol *volume.Volume, userPath string) (*mo
 	if err != nil {
 		return nil, err
 	}
-	return s.Mounts.CreateArea(u.ID, userPath, vol.ID, u.Username+"/"+path.Base(userPath))
+	if name == "" {
+		name = path.Base(userPath)
+	}
+	if name != path.Base(path.Clean("/"+name)) || name == "." || name == vfs.TrashDir {
+		return nil, fmt.Errorf("%w: %q is not a name for storage", ErrMountPoint, name)
+	}
+	return s.Mounts.CreateArea(u.ID, userPath, vol.ID, u.Username+"/"+name)
+}
+
+// MountVolume mounts subpath of vol at userPath in u's files: on a volume
+// they may see whole, that part of it, read-only unless they may write; on a
+// storage volume, their area named by subpath (or after the folder).
+func (s *Shared) MountVolume(u *user.User, vol *volume.Volume, subpath, userPath string) (*mount.Mount, error) {
+	subpath = strings.Trim(path.Clean("/"+subpath), "/")
+	perms, err := s.Access.WholePermissions(u.ID, vol)
+	if err != nil {
+		return nil, err
+	}
+	if perms&plugin.PermRead == 0 {
+		if strings.Contains(subpath, "/") {
+			return nil, fmt.Errorf("%w: link one of your storage folders on %s, not a folder inside it", ErrMountPoint, vol.Name)
+		}
+		return s.AddAreaNamed(u, vol, subpath, userPath)
+	}
+	isUser := func(name string) bool {
+		_, err := s.Users.GetByUsername(name)
+		return err == nil
+	}
+	if s.Server.MountExposesInternal(vol, subpath, isUser) {
+		return nil, fmt.Errorf("%w: that holds the server's own files", ErrMountPoint)
+	}
+	userPath, err = s.MountPoint(u, userPath)
+	if err != nil {
+		return nil, err
+	}
+	return s.Mounts.Create(u.ID, userPath, vol.ID, subpath, perms&plugin.PermWrite == 0)
 }
 
 // Unmount removes u's mount at userPath, leaving what it held where it is.

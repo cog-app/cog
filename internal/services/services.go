@@ -515,7 +515,8 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 		if fp, ok := plug.(*files.Plugin); ok {
 			resolver.DirPath = fp.DirPath
 			resolver.InvalidateAll() // trees built before could not follow one
-			fp.Shared = &files.Shared{Files: fp, Shares: shares, Users: users, Volumes: volumes, Access: access, Mounts: mounts}
+			fp.Shared = &files.Shared{Files: fp, Shares: shares, Users: users, Volumes: volumes, Access: access, Mounts: mounts,
+				Server: volume.ServerFiles{DataDir: cfg.DataDir, DBPath: cfg.DBPath}}
 			p.Shared = fp.Shared
 		}
 	}
