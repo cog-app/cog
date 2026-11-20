@@ -195,7 +195,7 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 	// oc:permissions says what the client may do; on a read-only mount
 	// that is read and share, so the client does not offer edits that
 	// would fail.
-	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	place, err := h.Files.Placements(u.Username)
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
@@ -209,7 +209,7 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 	}
 	now := h.Clock()
 	href := davHref(hrefPrefix, filePath, rootMeta.IsDir)
-	entry := metaToEntry(href, rootMeta, u.Username, displayName, readOnly(filePath))
+	entry := metaToEntry(href, rootMeta, u.Username, displayName, place(filePath))
 	entry.Propstat.Prop.LockDiscovery = lockDiscoveryFor(hrefPrefix, filePath, locks, now)
 	entries = append(entries, entry)
 
@@ -224,7 +224,7 @@ func (h *WebDAVHandler) handlePropfind(w http.ResponseWriter, r *http.Request, u
 		for i := range children {
 			child := &children[i]
 			childHref := davHref(hrefPrefix, child.Path, child.IsDir)
-			entry := metaToEntry(childHref, child, u.Username, displayName, readOnly(child.Path))
+			entry := metaToEntry(childHref, child, u.Username, displayName, place(child.Path))
 			entry.Propstat.Prop.LockDiscovery = lockDiscoveryFor(hrefPrefix, child.Path, locks, now)
 			entries = append(entries, entry)
 		}
@@ -885,7 +885,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 		displayName = u.Username
 	}
 
-	readOnly, err := h.Files.ReadOnlyChecker(u.Username)
+	place, err := h.Files.Placements(u.Username)
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
@@ -894,7 +894,7 @@ func (h *WebDAVHandler) handleReport(w http.ResponseWriter, r *http.Request, u *
 	for i := range favorites {
 		f := &favorites[i]
 		href := davHref(hrefPrefix, f.Path, f.IsDir)
-		entries = append(entries, metaToEntry(href, f, u.Username, displayName, readOnly(f.Path)))
+		entries = append(entries, metaToEntry(href, f, u.Username, displayName, place(f.Path)))
 	}
 
 	writeMultiStatus(h.Log, w, entries)
@@ -920,7 +920,7 @@ func writeMultiStatus(log *slog.Logger, w http.ResponseWriter, entries []propfin
 	}
 }
 
-func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string, readOnly bool) propfindEntry {
+func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName string, place files.Placement) propfindEntry {
 	var rt resourceType
 	if meta.IsDir {
 		rt.Collection = &struct{}{}
@@ -931,9 +931,27 @@ func metaToEntry(href string, meta *files.FileMeta, ownerID, ownerDisplayName st
 		name = ""
 	}
 
-	permissions := "RGDNVCK" // read, share, delete, rename, move, create, mkdir
-	if readOnly {
+	// R share, G read, D delete, N rename, V move, C create, K mkdir; on
+	// a folder shared with them, S shared and M mounted, and no resharing.
+	var permissions string
+	switch {
+	case place.Owner != "":
+		ownerID, ownerDisplayName = place.Owner, place.Owner
+		permissions = "SMG"
+		if place.Reshare {
+			permissions += "R"
+		}
+		if !place.ReadOnly {
+			permissions += "DNVCK"
+		}
+	case place.ReadOnly:
 		permissions = "RG"
+	default:
+		permissions = "RGDNVCK"
+	}
+	if place.MountPoint {
+		// Unmounted, not deleted, renamed or moved.
+		permissions = strings.NewReplacer("D", "", "N", "", "V", "").Replace(permissions)
 	}
 
 	favInt := 0

@@ -82,7 +82,9 @@ func (h *volumeBrowserHandler) open(w http.ResponseWriter, r *http.Request, u *u
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return nil, nil, false
 	}
-	perms, err := h.p.Access.Permissions(u.ID, volID)
+	// A storage volume is browsed whole only by whoever may see it whole;
+	// those it is shared with reach their areas through their own files.
+	perms, err := h.p.Access.WholePermissions(u.ID, vol)
 	if err != nil {
 		h.p.Log.Error("volume access check", "volume", volID, "err", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)

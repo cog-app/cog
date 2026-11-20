@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"git.duckfam.us/jj-software/cog/internal/services"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/vfs"
 
@@ -206,5 +209,83 @@ func SessionFS(p *services.Providers, ks *keys.Store, username string) (vfs.FS, 
 	ofs.Bind("/dev/null", newDevHandler(devNull, "null"))
 	ofs.Bind("/dev/zero", newDevHandler(devZero, "zero"))
 	ofs.Bind("/dev/urandom", newDevHandler(devURandom, "urandom"))
-	return ofs, nil
+	if fp.Shared == nil {
+		return ofs, nil
+	}
+	// What others shared with them, beside their own files; ln -s puts it
+	// in them.
+	u, err := p.Users.GetByUsername(username)
+	if err != nil {
+		return nil, err
+	}
+	ofs.Mount(sharedRoot, fp.Shared.Tree(u))
+	return &linkingFS{OverlayFS: ofs, shared: fp.Shared, user: u}, nil
+}
+
+// sharedRoot is where a session sees what was shared with its user.
+const sharedRoot = "/shared"
+
+// linkingFS is a session's filesystem, which can mount what is under
+// /shared into the user's files.
+type linkingFS struct {
+	*vfs.OverlayFS
+	shared *files.Shared
+	user   *user.User
+}
+
+var _ shell.Linker = (*linkingFS)(nil)
+
+// filesPath is where p, a session path, is in the user's files.
+func filesPath(p string) (string, bool) {
+	p = path.Clean("/" + p)
+	rel, ok := strings.CutPrefix(p, "/files")
+	if !ok || (rel != "" && rel[0] != '/') {
+		return "", false
+	}
+	return path.Clean("/" + rel), true
+}
+
+func (l *linkingFS) Symlink(target, link string) error {
+	userPath, ok := filesPath(link)
+	if !ok {
+		return fmt.Errorf("%s: a link goes in your files, under /files", link)
+	}
+	rel, ok := strings.CutPrefix(path.Clean("/"+target), sharedRoot+"/")
+	owner, name, _ := strings.Cut(rel, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return fmt.Errorf("%s: only a folder or volume under %s/<owner> can be linked", target, sharedRoot)
+	}
+	e, err := l.shared.Lookup(l.user, owner, name)
+	if err != nil {
+		return fmt.Errorf("%s: %w", target, err)
+	}
+	switch {
+	case e.Kind == files.SharedFolder:
+		_, err = l.shared.MountFolder(l.user, e, userPath)
+	case e.IsStorage():
+		_, err = l.shared.AddArea(l.user, e.Volume, userPath)
+	default:
+		return fmt.Errorf("%s: only a shared folder or storage volume can be linked", target)
+	}
+	return err
+}
+
+func (l *linkingFS) IsLink(p string) (bool, error) {
+	userPath, ok := filesPath(p)
+	if !ok || userPath == "/" {
+		return false, nil
+	}
+	_, err := l.shared.Mounts.GetByUserPath(l.user.ID, userPath)
+	if errors.Is(err, mount.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (l *linkingFS) Unlink(p string) error {
+	userPath, ok := filesPath(p)
+	if !ok {
+		return fmt.Errorf("%s is not in your files", p)
+	}
+	return l.shared.Unmount(l.user, userPath)
 }

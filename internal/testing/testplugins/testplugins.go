@@ -49,7 +49,7 @@ func recordSources(t testing.TB, root, pkg string) {
 	if err != nil {
 		t.Fatalf("list packages of %s: %v", pkg, err)
 	}
-	for _, dir := range strings.Fields(string(out)) {
+	for dir := range strings.FieldsSeq(string(out)) {
 		if _, err := os.ReadDir(dir); err != nil {
 			t.Fatalf("read %s: %v", dir, err)
 		}

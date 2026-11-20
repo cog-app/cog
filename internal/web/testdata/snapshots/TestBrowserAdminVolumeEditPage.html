@@ -286,6 +286,22 @@
                 <input autocomplete="" class="form-control" id="description" name="description" placeholder="Optional description" type="text" value="Cold storage for old projects" />
               </div>
               <div class="form-group">
+                <label for="volume_kind">
+                  Kind
+                </label>
+                <select class="form-control w-sm" id="volume_kind" name="kind">
+                  <option selected="" value="raw">
+                    Raw access
+                  </option>
+                  <option value="storage">
+                    User storage
+                  </option>
+                </select>
+                <p class="form-help">
+                  Raw access: whoever it is shared with can mount all of it. User storage: whoever it is shared with keeps folders of their own in it, and sees nothing else. Switching to user storage keeps existing mounts where they are, as each user's storage.
+                </p>
+              </div>
+              <div class="form-group">
                 <label for="conn_type">
                   Connection Type
                 </label>

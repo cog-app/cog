@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,12 +27,7 @@ var PlayOrders = []PlayOrder{OrderNewest, OrderOldest, OrderShortest, OrderShuff
 
 // Valid reports whether o is one of PlayOrders.
 func (o PlayOrder) Valid() bool {
-	for _, x := range PlayOrders {
-		if o == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(PlayOrders, o)
 }
 
 // Label is how a picker names o.

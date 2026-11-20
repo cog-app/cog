@@ -30,6 +30,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/bodylimit"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -68,6 +69,10 @@ type Plugin struct {
 	// uploads serializes writes of the same file (see lockPath).
 	uploadsMu sync.Mutex
 	uploads   map[string]*pathLock
+
+	// Shared is what others shared with each user, for the Shared with me
+	// pages. The host sets it once its stores exist.
+	Shared *Shared
 }
 
 // pathLock is the lock of one file being uploaded, and how many uploads
@@ -196,6 +201,9 @@ func (p *Plugin) registerRoutes(priv plugin.PrivilegedContext) {
 	// Files browser UI
 	priv.RegisterRoute("GET /apps/files/favorites", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeFavorites)))
 	priv.RegisterRoute("GET /apps/files/volumes", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeVolumes)))
+	priv.RegisterRoute("GET /apps/files/shared", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeShared)))
+	priv.RegisterRoute("GET /apps/files/shared/{owner}/{rest...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeSharedItem)))
+	priv.RegisterRoute("POST /apps/files/shared/{owner}/{rest...}", bodylimit.Unlimited(csrfWrap(http.HandlerFunc(pages.ServeSharedPost))))
 	priv.RegisterRoute("GET /apps/files/{path...}", auth.RequireAuthWeb(http.HandlerFunc(pages.ServeGet)))
 	// Uploads post here; quota bounds them.
 	priv.RegisterRoute("POST /apps/files/{path...}", bodylimit.Unlimited(csrfWrap(http.HandlerFunc(pages.ServePost))))
@@ -239,21 +247,6 @@ func (p *Plugin) folderIcon(username, folderPath string) string {
 func (p *Plugin) Stop() error { return nil }
 
 // userFS returns the mount-aware VFS for the given user.
-// ReadOnlyChecker returns a function that reports whether a path of the
-// user's is on a read-only mount. It is built once per listing: the VFS
-// is resolved once and the check itself touches no disk.
-func (p *Plugin) ReadOnlyChecker(username string) (func(path string) bool, error) {
-	fs, err := p.userFS(username)
-	if err != nil {
-		return nil, err
-	}
-	ro, ok := fs.(interface{ ReadOnly(string) bool })
-	if !ok {
-		return func(string) bool { return false }, nil
-	}
-	return func(path string) bool { return ro.ReadOnly(normalizePath(path)) }, nil
-}
-
 func (p *Plugin) userFS(username string) (vfs.FS, error) {
 	return p.ctx.UserVFS(username)
 }
@@ -277,6 +270,16 @@ func (p *Plugin) EnsureRootDir(username string) error {
 // CreateDir creates a directory.
 func (p *Plugin) CreateDir(username, dirPath string) (*FileMeta, error) {
 	dirPath = normalizePath(dirPath)
+	t, ok, err := p.writable(username, dirPath)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		if _, err := p.CreateDir(t.owner, t.path); err != nil {
+			return nil, err
+		}
+		return p.follow(username, dirPath)
+	}
 	parentPath := filepath.Dir(dirPath)
 	name := filepath.Base(dirPath)
 
@@ -348,6 +351,13 @@ func (p *Plugin) Upload(username, filePath string, content io.Reader) (*FileMeta
 
 func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precondition) (*FileMeta, error) {
 	filePath = normalizePath(filePath)
+	t, ok, err := p.writable(username, filePath)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return p.uploadShared(username, filePath, t, content, pre)
+	}
 	defer p.lockPath(username, filePath)()
 	parentPath := filepath.Dir(filePath)
 	name := filepath.Base(filePath)
@@ -378,7 +388,7 @@ func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precon
 	}
 	// The bytes are drawn from the budget writers in progress share as they
 	// arrive, so uploads at once cannot each take the whole of what is left.
-	w, err := p.beginWrite(username)
+	w, err := p.beginWrite(username, filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +471,28 @@ func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precon
 		MimeType:   mimeType,
 		ETag:       etag,
 	}, nil
+}
+
+// uploadShared is upload to a folder shared with username: the owner's
+// file is written, the condition checked against what username knows of it.
+func (p *Plugin) uploadShared(username, filePath string, t sharedTarget, content io.Reader, pre Precondition) (*FileMeta, error) {
+	if pre != nil {
+		db, err := p.DB(username)
+		if err != nil {
+			return nil, err
+		}
+		old, err := currentMeta(db, filePath)
+		if err != nil {
+			return nil, err
+		}
+		if err := pre(old); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := p.upload(t.owner, t.path, content, nil); err != nil {
+		return nil, err
+	}
+	return p.follow(username, filePath)
 }
 
 func (p *Plugin) logActivity(username, typ, subject, objectID, objectName string) {
@@ -562,13 +594,32 @@ func (p *Plugin) GetByIDs(username string, ids []int64) (map[int64]*FileMeta, er
 }
 
 // GetByPath returns file metadata by path.
+//
+// A path with no row that is there all the same — a folder just mounted, or
+// a file written beneath the plugin, neither yet seen in a listing — is
+// recorded and returned, so that a link to it works before its folder is
+// listed.
 func (p *Plugin) GetByPath(username, path string) (*FileMeta, error) {
 	path = normalizePath(path)
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
 	}
-	return getByPath(db, path)
+	meta, err := getByPath(db, path)
+	if !errors.Is(err, ErrNotFound) || path == "/" {
+		return meta, err
+	}
+	fsys, ferr := p.userFS(username)
+	if ferr != nil {
+		return nil, ferr
+	}
+	if _, serr := fsys.Stat(path); serr != nil {
+		return nil, err // not there either
+	}
+	if err := p.recordDirs(db, fsys, filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	return p.record(db, fsys, path)
 }
 
 // Delete moves a file or directory to the trash.
@@ -586,6 +637,19 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	db, err := p.DB(username)
 	if err != nil {
 		return err
+	}
+	t, ok, err := p.writable(username, filePath)
+	if err != nil {
+		return err
+	}
+	if ok {
+		if t.mountRoot {
+			return errMountPoint
+		}
+		if err := p.HardDelete(t.owner, t.path); err != nil {
+			return err
+		}
+		return forgetRows(db, filePath)
 	}
 
 	meta, err := getByPath(db, filePath)
@@ -617,6 +681,9 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit hard-delete: %w", err)
 	}
+	if meta.IsDir {
+		p.treeChanged()
+	}
 	p.logActivity(username, "file_deleted", username+" deleted "+filepath.Base(filePath), strconv.FormatInt(meta.ID, 10), filePath)
 	return nil
 }
@@ -629,6 +696,9 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
+	}
+	if meta, ok, err := p.renameShared(db, username, oldPath, newPath); ok || err != nil {
+		return meta, err
 	}
 
 	// Rename on disk via VFS.
@@ -644,6 +714,64 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		return nil, fmt.Errorf("rename: %w", err)
 	}
 
+	moved, err := p.moveRows(db, oldPath, newPath)
+	if err != nil {
+		return nil, err
+	}
+
+	p.logActivity(username, "file_changed", username+" renamed "+filepath.Base(oldPath)+" to "+filepath.Base(newPath), "", newPath)
+	if moved == 0 {
+		// Written outside the plugin and not yet reconciled: it has no row
+		// to carry over, so it gets one now.
+		return p.record(db, fs, newPath)
+	}
+	meta, err := p.GetByPath(username, newPath)
+	if err == nil && meta.IsDir {
+		p.treeChanged()
+	}
+	return meta, err
+}
+
+// renameShared is Rename within a folder shared with username (true): the
+// owner's file is moved, and username's rows follow it. Moving in or out of
+// one is moving between mounts, which a rename cannot.
+func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string) (*FileMeta, bool, error) {
+	from, fromShared, err := p.writable(username, oldPath)
+	if err != nil {
+		return nil, true, err
+	}
+	to, toShared, err := p.writable(username, newPath)
+	if err != nil {
+		return nil, true, err
+	}
+	if !fromShared && !toShared {
+		return nil, false, nil
+	}
+	if !fromShared || !toShared || from.owner != to.owner {
+		return nil, true, vfs.ErrCrossMount
+	}
+	if from.mountRoot || to.mountRoot {
+		return nil, true, errMountPoint
+	}
+	if _, err := p.Rename(from.owner, from.path, to.path); err != nil {
+		return nil, true, err
+	}
+	moved, err := p.moveRows(db, oldPath, newPath)
+	if err != nil {
+		return nil, true, err
+	}
+	if moved == 0 {
+		meta, err := p.follow(username, newPath)
+		return meta, true, err
+	}
+	meta, err := p.GetByPath(username, newPath)
+	return meta, true, err
+}
+
+// moveRows carries the rows of oldPath and everything beneath it to newPath
+// after the move on disk, keeping their IDs, and reports how many rows
+// oldPath itself had (0 or 1).
+func (p *Plugin) moveRows(db *sql.DB, oldPath, newPath string) (int64, error) {
 	newParent := filepath.Dir(newPath)
 	newName := filepath.Base(newPath)
 	now := p.ctx.Now().Unix()
@@ -653,18 +781,18 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	// the two statements would otherwise strand children under the old path.
 	tx, err := db.Begin()
 	if err != nil {
-		return nil, fmt.Errorf("begin rename tx: %w", err)
+		return 0, fmt.Errorf("begin rename tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	// What the rename replaced on disk is gone; its rows would collide.
 	if newPath != oldPath {
 		if err := forgetRows(tx, newPath); err != nil {
-			return nil, err
+			return 0, err
 		}
 		// A lock covers what is at a path, and does not move with it.
 		if err := forgetLocks(tx, oldPath); err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
 
@@ -673,11 +801,11 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		WHERE path = ?`,
 		newPath, newParent, newName, now, etag, oldPath)
 	if err != nil {
-		return nil, fmt.Errorf("update file metadata: %w", err)
+		return 0, fmt.Errorf("update file metadata: %w", err)
 	}
 	moved, err := res.RowsAffected()
 	if err != nil {
-		return nil, fmt.Errorf("update file metadata: %w", err)
+		return 0, fmt.Errorf("update file metadata: %w", err)
 	}
 
 	n, prefix := subtree(oldPath)
@@ -689,19 +817,12 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		newPath, n,
 		newPath, n,
 		n, prefix); err != nil {
-		return nil, fmt.Errorf("update children metadata: %w", err)
+		return 0, fmt.Errorf("update children metadata: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit rename: %w", err)
+		return 0, fmt.Errorf("commit rename: %w", err)
 	}
-
-	p.logActivity(username, "file_changed", username+" renamed "+filepath.Base(oldPath)+" to "+newName, "", newPath)
-	if moved == 0 {
-		// Written outside the plugin and not yet reconciled: it has no row
-		// to carry over, so it gets one now.
-		return p.record(db, fs, newPath)
-	}
-	return p.GetByPath(username, newPath)
+	return moved, nil
 }
 
 // Replace moves srcPath over dstPath as an update of dstPath, for a client
@@ -716,6 +837,26 @@ func (p *Plugin) Replace(username, srcPath, dstPath string) (*FileMeta, error) {
 	db, err := p.DB(username)
 	if err != nil {
 		return nil, err
+	}
+	from, fromShared, err := p.writable(username, srcPath)
+	if err != nil {
+		return nil, err
+	}
+	to, toShared, err := p.writable(username, dstPath)
+	if err != nil {
+		return nil, err
+	}
+	if fromShared && toShared && from.owner == to.owner && !from.mountRoot && !to.mountRoot {
+		if _, err := p.Replace(from.owner, from.path, to.path); err != nil {
+			return nil, err
+		}
+		if err := forgetRows(db, srcPath); err != nil {
+			return nil, err
+		}
+		return p.follow(username, dstPath)
+	}
+	if fromShared || toShared {
+		return p.Rename(username, srcPath, dstPath) // refuses what it cannot do
 	}
 	dst, err := getByPath(db, dstPath)
 	if errors.Is(err, ErrNotFound) {
@@ -1275,20 +1416,112 @@ func (p *Plugin) QuotaCheck(username string, additionalBytes int64) error {
 	return p.ctx.QuotaCheck(username, additionalBytes)
 }
 
-// Usage returns the bytes a user's files take, trashed ones included: they
-// are still on disk.
+// QuotaCheckAt is QuotaCheck for a write to path, held to whichever quota
+// that path is charged to: a storage area's volume, or the owner of a folder
+// shared with the user.
+func (p *Plugin) QuotaCheckAt(username, path string, additionalBytes int64) error {
+	if p.priv == nil {
+		return p.QuotaCheck(username, additionalBytes)
+	}
+	return p.priv.QuotaCheckAt(username, normalizePath(path), additionalBytes)
+}
+
+// Usage returns the bytes a user's files on their root volume take,
+// trashed ones included: they are still on disk.
 func (p *Plugin) Usage(username string) (int64, error) {
-	db, err := p.DB(username)
+	byVol, root, err := p.UsageByVolume(username)
 	if err != nil {
 		return 0, err
 	}
-	var used int64
-	err = db.QueryRow(`SELECT (SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0)
-		+ (SELECT coalesce(sum(size), 0) FROM trash)`).Scan(&used)
+	return byVol[root], nil
+}
+
+// UsageByVolume returns the bytes of the user's own files on each volume,
+// trashed ones included, and the ID of their root volume. What is in a
+// folder shared with them is its owner's, and counted in the owner's files.
+func (p *Plugin) UsageByVolume(username string) (byVolume map[string]int64, rootVolume string, err error) {
+	db, err := p.DB(username)
 	if err != nil {
-		return 0, fmt.Errorf("usage query: %w", err)
+		return nil, "", err
 	}
-	return used, nil
+	fsys, err := p.userFS(username)
+	if err != nil {
+		return nil, "", err
+	}
+	byVolume = map[string]int64{}
+	lister, ok := fsys.(interface{ Mounts() []volume.MountEntry })
+	if !ok {
+		// One backend, all theirs.
+		var used int64
+		if err := db.QueryRow(`SELECT (SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0)
+			+ (SELECT coalesce(sum(size), 0) FROM trash)`).Scan(&used); err != nil {
+			return nil, "", fmt.Errorf("usage query: %w", err)
+		}
+		byVolume[""] = used
+		return byVolume, "", nil
+	}
+	mounts := lister.Mounts() // longest path first
+
+	// Each mount holds its subtree but the mounts within it.
+	under := make([]int64, len(mounts))
+	for i, m := range mounts {
+		n, prefix := subtree(m.UserPath)
+		if err := db.QueryRow(`SELECT coalesce(sum(size), 0) FROM files WHERE is_dir = 0 AND (path = ? OR substr(path, 1, ?) = ?)`,
+			m.UserPath, n, prefix).Scan(&under[i]); err != nil {
+			return nil, "", fmt.Errorf("usage of %s: %w", m.UserPath, err)
+		}
+	}
+	own := slices.Clone(under)
+	for i, m := range mounts {
+		// The nearest mount holding m is the first one after it (longest
+		// first) whose path is a prefix of m's.
+		for j := i + 1; j < len(mounts); j++ {
+			if within(m.UserPath, mounts[j].UserPath) {
+				own[j] -= under[i]
+				break
+			}
+		}
+	}
+
+	trashed := map[string]int64{}
+	rows, err := db.Query(`SELECT mount, coalesce(sum(size), 0) FROM trash GROUP BY mount`)
+	if err != nil {
+		return nil, "", fmt.Errorf("trash usage: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mount string
+		var size int64
+		if err := rows.Scan(&mount, &size); err != nil {
+			return nil, "", fmt.Errorf("trash usage: %w", err)
+		}
+		trashed[mount] = size
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("trash usage: %w", err)
+	}
+
+	for i, m := range mounts {
+		if m.UserPath == "/" {
+			rootVolume = m.VolumeID
+		}
+		if m.ChargeTo != username {
+			continue // a folder shared with them: its owner's
+		}
+		byVolume[m.VolumeID] += own[i] + trashed[m.UserPath]
+		delete(trashed, m.UserPath)
+	}
+	// Trash of a mount that is gone stays on disk somewhere; without its
+	// mount it is counted on the root volume.
+	for _, size := range trashed {
+		byVolume[rootVolume] += size
+	}
+	return byVolume, rootVolume, nil
+}
+
+// within reports whether p is dir or beneath it.
+func within(p, dir string) bool {
+	return dir == "/" || p == dir || strings.HasPrefix(p, dir+"/")
 }
 
 // Search returns files matching a simple name pattern.

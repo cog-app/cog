@@ -100,14 +100,14 @@ func (p *Plugin) recordDirs(db *sql.DB, fsys vfs.FS, dir string) error {
 	return nil
 }
 
-// beginWrite starts a write for username, drawing its growth from the
-// budget their writes in progress share, so that uploads, open handles and
-// plugins' storage at once cannot each take what is left of the quota.
-func (p *Plugin) beginWrite(username string) (*budget.Write, error) {
+// beginWrite starts a write to path for username, drawing its growth from
+// the budget of the account it is charged to, so that uploads, open handles
+// and plugins' storage at once cannot each take what is left of the quota.
+func (p *Plugin) beginWrite(username, path string) (*budget.Write, error) {
 	if p.priv == nil {
 		return new(budget.Write), nil
 	}
-	return p.priv.BeginWrite(username)
+	return p.priv.BeginWriteAt(username, path)
 }
 
 // Exists reports whether path is on disk, row or no row.
@@ -171,7 +171,10 @@ func (f *recordedFS) Mkdir(path string) error {
 	if err := f.fs.Mkdir(path); err != nil {
 		return err
 	}
-	return f.p.recordDirs(f.db, f.fs, path)
+	if err := f.p.recordDirs(f.db, f.fs, path); err != nil {
+		return err
+	}
+	return f.p.recordShared(f.username, path)
 }
 
 func (f *recordedFS) Delete(path string) error {
@@ -179,10 +182,18 @@ func (f *recordedFS) Delete(path string) error {
 	if path == "/" {
 		return fmt.Errorf("delete /: %w", iofs.ErrPermission)
 	}
+	if t, ok, err := f.p.shared(f.username, path); err != nil {
+		return err
+	} else if ok && t.mountRoot {
+		return errMountPoint
+	}
 	if err := f.fs.Delete(path); err != nil {
 		return err
 	}
 	if err := forgetRows(f.db, path); err != nil {
+		return err
+	}
+	if err := f.p.recordShared(f.username, path); err != nil {
 		return err
 	}
 	f.p.logActivity(f.username, "file_deleted", f.username+" deleted "+filepath.Base(path), "", path)
@@ -257,8 +268,10 @@ func (f *recordedFS) Chtimes(path string, atime, mtime time.Time) error {
 	if err := as.Chtimes(path, atime, mtime); err != nil {
 		return err
 	}
-	_, err = f.p.record(f.db, f.fs, path)
-	return err
+	if _, err := f.p.record(f.db, f.fs, path); err != nil {
+		return err
+	}
+	return f.p.recordShared(f.username, path)
 }
 
 // Truncate resizes path, held to the quota when it grows.
@@ -271,7 +284,7 @@ func (f *recordedFS) Truncate(path string, size int64) error {
 	if err != nil {
 		return err
 	}
-	w, err := f.p.beginWrite(f.username)
+	w, err := f.p.beginWrite(f.username, path)
 	if err != nil {
 		return err
 	}
@@ -284,6 +297,9 @@ func (f *recordedFS) Truncate(path string, size int64) error {
 		return err
 	}
 	_, err = f.p.record(f.db, f.fs, path)
+	if err == nil {
+		err = f.p.recordShared(f.username, path)
+	}
 	w.Done()
 	return err
 }
@@ -310,7 +326,7 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 	} else if !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, iofs.ErrNotExist) {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
-	w, err := f.p.beginWrite(f.username)
+	w, err := f.p.beginWrite(f.username, path)
 	if err != nil {
 		return nil, err
 	}
@@ -395,6 +411,8 @@ func (h *recordedFile) Truncate(size int64) error {
 func (h *recordedFile) Close() error {
 	err := h.File.Close()
 	if _, rerr := h.fs.p.record(h.fs.db, h.fs.fs, h.path); rerr != nil {
+		err = errors.Join(err, rerr)
+	} else if rerr := h.fs.p.recordShared(h.fs.username, h.path); rerr != nil {
 		err = errors.Join(err, rerr)
 	}
 	h.w.Done()

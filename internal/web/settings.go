@@ -246,8 +246,26 @@ func (h *settingsHandler) ShowStorage(w http.ResponseWriter, r *http.Request) {
 	for _, v := range volumes {
 		volumeNames[v.ID] = v.Name
 	}
+	var sharers []string
+	for _, m := range mounts {
+		if m.Kind == mount.Share {
+			sharers = append(sharers, m.ShareOwnerID)
+		}
+	}
+	owners, err := h.p.Users.GetByIDs(sharers)
+	if err != nil {
+		h.p.Log.Error("owners of shared folders", "user", u.Username, "err", err)
+	}
 	for i := range mounts {
-		mounts[i].VolumeName = volumeNames[mounts[i].VolumeID]
+		m := &mounts[i]
+		switch {
+		case m.Kind != mount.Share:
+			m.Source = volumeNames[m.VolumeID]
+		case owners[m.ShareOwnerID] != nil:
+			m.Source = "Shared by " + owners[m.ShareOwnerID].Username
+		default:
+			m.Source = "Shared folder (gone)"
+		}
 	}
 
 	var ownedVolumes []volume.Volume
@@ -489,18 +507,42 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 	}
 	volumeSubpath = strings.TrimPrefix(path.Clean("/"+volumeSubpath), "/")
 
-	// The mount reaches anything in the volume, so the user needs access to
-	// all of it, and a mount of a volume shared read-only is read-only.
-	perms, err := h.p.Access.Permissions(u.ID, volumeID)
+	vol, err := h.p.Volumes.GetByID(volumeID)
 	if errors.Is(err, volume.ErrNotFound) {
-		perms, err = 0, nil
+		setFlash(w, "error", "You do not have access to that volume.")
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
 	}
 	if err != nil {
 		setFlash(w, "error", "Could not check access to that volume.", err)
 		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
 	}
+	// The mount reaches anything in the volume, so the user needs access to
+	// all of it, and a mount of a volume shared read-only is read-only.
+	perms, err := h.p.Access.WholePermissions(u.ID, vol)
+	if err != nil {
+		setFlash(w, "error", "Could not check access to that volume.", err)
+		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+		return
+	}
 	if perms&plugin.PermRead == 0 {
+		// A storage volume shared with them gives them an area of their own.
+		if h.p.Shared != nil {
+			if ok, err := h.p.Access.MayMakeAreas(u.ID, vol); err != nil {
+				setFlash(w, "error", "Could not check access to that volume.", err)
+				http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+				return
+			} else if ok {
+				if _, err := h.p.Shared.AddArea(u, vol, userPath); err != nil {
+					setFlash(w, "error", "Failed to add storage: "+err.Error())
+				} else {
+					setFlash(w, "success", "Storage added.")
+				}
+				http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
+				return
+			}
+		}
 		setFlash(w, "error", "You do not have access to that volume.")
 		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
 		return
@@ -509,12 +551,6 @@ func (h *settingsHandler) CreateMount(w http.ResponseWriter, r *http.Request) {
 
 	// The volume browser keeps the server's own files out of reach; a
 	// mount of them would hand them to the files plugin, and to WebDAV.
-	vol, err := h.p.Volumes.GetByID(volumeID)
-	if err != nil {
-		setFlash(w, "error", "Could not check access to that volume.", err)
-		http.Redirect(w, r, "/settings/storage", http.StatusSeeOther)
-		return
-	}
 	isUser := func(name string) bool {
 		_, err := h.p.Users.GetByUsername(name)
 		return err == nil

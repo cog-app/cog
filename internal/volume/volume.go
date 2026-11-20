@@ -31,6 +31,42 @@ type Volume struct {
 	CreatedAt   time.Time
 	OwnerUserID *string
 	Config      string
+	Kind        Kind
+}
+
+// Kind says what a share of a volume lets its audience do.
+type Kind string
+
+const (
+	// Raw: mount the volume, or a part of it, as the share allows.
+	Raw Kind = "raw"
+	// Storage: make areas of their own in it, each at
+	// <username>/<name>, and see nothing else of it.
+	Storage Kind = "storage"
+)
+
+// ParseKind returns the kind named s.
+func ParseKind(s string) (Kind, error) {
+	switch k := Kind(s); k {
+	case Raw, Storage:
+		return k, nil
+	}
+	return "", fmt.Errorf("unknown volume kind %q", s)
+}
+
+// volumeColumns are the columns scanVolume reads, in order.
+const volumeColumns = `id, name, description, uri, created_at, owner_id, config, kind`
+
+type scanner interface{ Scan(dest ...any) error }
+
+func scanVolume(row scanner) (Volume, error) {
+	var v Volume
+	var createdAt int64
+	if err := row.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config, &v.Kind); err != nil {
+		return Volume{}, err
+	}
+	v.CreatedAt = time.Unix(createdAt, 0)
+	return v, nil
 }
 
 // IsDefault returns true if this is the system default volume.
@@ -143,59 +179,46 @@ func (s *Store) Create(name, description, uri string, ownerUserID *string, confi
 		CreatedAt:   time.Unix(now, 0),
 		OwnerUserID: ownerUserID,
 		Config:      config,
+		Kind:        Raw,
 	}, nil
 }
 
 func (s *Store) GetByID(id string) (*Volume, error) {
-	var v Volume
-	var createdAt int64
-	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes WHERE id = ?`, id,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config)
+	v, err := scanVolume(s.db.QueryRow(`SELECT `+volumeColumns+` FROM volumes WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get volume: %w", err)
 	}
-	v.CreatedAt = time.Unix(createdAt, 0)
 	return &v, nil
 }
 
 func (s *Store) GetByName(name string) (*Volume, error) {
-	var v Volume
-	var createdAt int64
-	err := s.db.QueryRow(
-		`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes WHERE name = ?`, name,
-	).Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config)
+	v, err := scanVolume(s.db.QueryRow(`SELECT `+volumeColumns+` FROM volumes WHERE name = ?`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get volume by name: %w", err)
 	}
-	v.CreatedAt = time.Unix(createdAt, 0)
 	return &v, nil
 }
 
 func (s *Store) List() iter.Seq2[Volume, error] {
 	return func(yield func(Volume, error) bool) {
-		rows, err := s.db.Query(
-			`SELECT id, name, description, uri, created_at, owner_id, config FROM volumes ORDER BY name`,
-		)
+		rows, err := s.db.Query(`SELECT ` + volumeColumns + ` FROM volumes ORDER BY name`)
 		if err != nil {
 			yield(Volume{}, fmt.Errorf("list volumes: %w", err))
 			return
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var v Volume
-			var createdAt int64
-			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config); err != nil {
+			v, err := scanVolume(rows)
+			if err != nil {
 				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
 				return
 			}
-			v.CreatedAt = time.Unix(createdAt, 0)
 			if !yield(v, nil) {
 				return
 			}
@@ -211,7 +234,7 @@ func (s *Store) List() iter.Seq2[Volume, error] {
 func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq2[Volume, error] {
 	return func(yield func(Volume, error) bool) {
 		// Build query with placeholders for shared IDs.
-		query := `SELECT id, name, description, uri, created_at, owner_id, config
+		query := `SELECT ` + volumeColumns + `
 			FROM volumes WHERE owner_id IS NULL OR owner_id = ?`
 		args := []any{userID}
 
@@ -232,13 +255,11 @@ func (s *Store) ListAccessible(userID string, sharedVolumeIDs []string) iter.Seq
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var v Volume
-			var createdAt int64
-			if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.URI, &createdAt, &v.OwnerUserID, &v.Config); err != nil {
+			v, err := scanVolume(rows)
+			if err != nil {
 				yield(Volume{}, fmt.Errorf("scan volume: %w", err))
 				return
 			}
-			v.CreatedAt = time.Unix(createdAt, 0)
 			if !yield(v, nil) {
 				return
 			}
@@ -269,6 +290,47 @@ func (s *Store) Update(id, name, description, uri, config string) error {
 	}
 	if n == 0 {
 		return ErrNotFound
+	}
+	s.changed()
+	return nil
+}
+
+// SetKind changes what the volume's shares let their audience do, and
+// converts the mounts of it to match, in one transaction: to Storage, each
+// mount of it by someone who may not see it whole (not an admin, not its
+// owner) becomes their area, its files left where they are; to Raw, areas
+// become plain mounts of the same place.
+func (s *Store) SetKind(id string, kind Kind) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE volumes SET kind = ? WHERE id = ?`, kind, id)
+	if err != nil {
+		return fmt.Errorf("set volume kind: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	switch kind {
+	case Storage:
+		_, err = tx.Exec(`UPDATE mounts SET kind = 'area', read_only = 0
+			WHERE volume_id = ?1 AND kind = 'volume' AND user_path != '/'
+			  AND user_id NOT IN (SELECT id FROM users WHERE is_admin = 1)
+			  AND user_id IS NOT (SELECT owner_id FROM volumes WHERE id = ?1)`, id)
+	case Raw:
+		_, err = tx.Exec(`UPDATE mounts SET kind = 'volume' WHERE volume_id = ? AND kind = 'area'`, id)
+	}
+	if err != nil {
+		return fmt.Errorf("convert mounts of volume %s: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	s.changed()
 	return nil

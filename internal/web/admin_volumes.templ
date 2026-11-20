@@ -39,6 +39,9 @@ templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], 
 									if v.IsDefault() {
 										<span class="badge badge-neutral" title="The volume user files are created on">Default</span>
 									}
+									if v.Kind == volume.Storage {
+										<span class="badge badge-neutral" title="Whoever it is shared with keeps folders of their own in it">User storage</span>
+									}
 								</td>
 								<td><code class="truncate uri-cell" title={ v.URI }>{ v.URI }</code></td>
 								<td class="hide-mobile text-muted">{ v.Description }</td>
@@ -63,6 +66,7 @@ templ adminVolumeNewPage(pd ui.PageData, errMsg string) {
 				SubmitLabel:      "Create volume",
 				ShowTypeSelector: true,
 				CancelURL:        "/admin/volumes",
+				ShowKind:         true,
 			})
 		}
 	}

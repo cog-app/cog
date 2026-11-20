@@ -11,6 +11,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/dav"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
+	"git.duckfam.us/jj-software/cog/plugin/files"
 )
 
 // ownsResource reports whether u owns the resource a share would name. A
@@ -61,6 +62,23 @@ func (h *shareHandler) ownsResource(u *user.User, resType, resID string) (bool, 
 	}
 	if err != nil {
 		return false, fmt.Errorf("look up %s %s: %w", resType, resID, err)
+	}
+	// What is in a folder shared with them is in their files too, but is
+	// theirs to share only if the share says so.
+	if pluginID == files.PluginID && h.p.Shared != nil {
+		id, err := strconv.ParseInt(resID, 10, 64)
+		if err != nil {
+			return false, nil
+		}
+		meta, err := h.p.Shared.Files.GetByID(u.Username, id)
+		if err != nil {
+			return false, fmt.Errorf("look up %s %s: %w", resType, resID, err)
+		}
+		if err := h.p.Shared.Files.MayShare(u.Username, meta.Path); errors.Is(err, files.ErrNoReshare) {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }

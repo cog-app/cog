@@ -53,6 +53,12 @@ type QuotaChecker interface {
 	// BeginWrite starts a write for the user, drawing its growth from the
 	// budget their writes in progress share.
 	BeginWrite(username string) (*budget.Write, error)
+	// BeginWriteAt and QuotaCheckAt are BeginWrite and QuotaCheck for a
+	// write to a path in the user's files, charged to whoever's quota on
+	// whichever volume that path is: a storage area's volume, or the owner
+	// of a folder shared with them.
+	BeginWriteAt(username, path string) (*budget.Write, error)
+	QuotaCheckAt(username, path string, additionalBytes int64) error
 }
 
 // RegistryServices holds optional services that are wired into plugin contexts.
@@ -848,6 +854,40 @@ func (r *Registry) BeginWrite(username string) (*budget.Write, error) {
 func (pr *pluginRegistrar) BeginWrite(username string) (*budget.Write, error) {
 	return pr.registry.BeginWrite(username)
 }
+
+// BeginWriteAt is BeginWrite for a write to path in username's files.
+func (r *Registry) BeginWriteAt(username, path string) (*budget.Write, error) {
+	if r.services.QuotaChecker == nil {
+		return new(budget.Write), nil
+	}
+	return r.services.QuotaChecker.BeginWriteAt(username, path)
+}
+
+func (pr *pluginRegistrar) BeginWriteAt(username, path string) (*budget.Write, error) {
+	return pr.registry.BeginWriteAt(username, path)
+}
+
+// QuotaCheckAt is QuotaCheck for a write to path in username's files.
+func (r *Registry) QuotaCheckAt(username, path string, additionalBytes int64) error {
+	if r.services.QuotaChecker == nil {
+		return nil
+	}
+	return r.services.QuotaChecker.QuotaCheckAt(username, path, additionalBytes)
+}
+
+func (pr *pluginRegistrar) QuotaCheckAt(username, path string, additionalBytes int64) error {
+	return pr.registry.QuotaCheckAt(username, path, additionalBytes)
+}
+
+// TreeChanged forgets every user's cached tree: a folder moved or went, and
+// folders shared from it are now elsewhere, or nowhere.
+func (r *Registry) TreeChanged() {
+	if inv, ok := r.mountResolver.(interface{ InvalidateAll() }); ok {
+		inv.InvalidateAll()
+	}
+}
+
+func (pr *pluginRegistrar) TreeChanged() { pr.registry.TreeChanged() }
 
 func (pr *pluginRegistrar) UserVFS(username string) (vfs.FS, error) {
 	return pr.registry.UserFS(username)

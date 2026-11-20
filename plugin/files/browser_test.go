@@ -340,6 +340,48 @@ func TestBrowser(t *testing.T) {
 		b.Snapshot(t)
 		b.Snapshot(t, webtest.Mobile)
 	})
+
+	// sharer shares a folder of photos with sharee, who can edit it.
+	sharer := env.CreateUser(t, "sharer", "pass")
+	sharee := env.CreateUser(t, "sharee", "pass")
+	_, err := fp.Upload("sharer", "/Photos/beach.jpg", strings.NewReader("sand"))
+	require.NoError(t, err)
+	_, err = fp.CreateDir("sharer", "/Photos/2026")
+	require.NoError(t, err)
+	photos, err := fp.GetByPath("sharer", "/Photos")
+	require.NoError(t, err)
+	_, err = env.Providers.Shares.Create(sharer.ID, "files:directory", files.IDString(photos), "USER", sharee.ID, 3)
+	require.NoError(t, err)
+
+	t.Run("SharedWithMe", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "sharee", "pass")
+		b.Navigate(t, "/apps/files/shared")
+		b.WaitText(t, "Photos")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("SharedFolder", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "sharee", "pass")
+		b.Navigate(t, "/apps/files/shared/sharer/Photos")
+		b.WaitText(t, "beach.jpg")
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+	})
+
+	t.Run("SharedFolderMount", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "sharee", "pass")
+		b.Navigate(t, "/apps/files/shared/sharer/Photos")
+		b.Click(t, `[data-testid="shared-mount-open"]`)
+		b.WaitVisible(t, `[data-testid="shared-mount-path"]`)
+		b.Snapshot(t)
+		b.Click(t, `[data-testid="shared-mount-submit"]`)
+		b.WaitText(t, "is now in your files at /Photos")
+		b.WaitText(t, "beach.jpg")
+	})
 }
 
 // createFolder makes a folder through the New folder dialog.

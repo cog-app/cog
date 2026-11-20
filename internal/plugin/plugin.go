@@ -142,4 +142,12 @@ type PrivilegedContext interface {
 	// budget their writes in progress share, for a writer whose bytes are
 	// recorded only when it is done (see budget).
 	BeginWrite(username string) (*budget.Write, error)
+	// BeginWriteAt and QuotaCheckAt hold a write to path in username's
+	// files to the quota it is charged to: theirs on the volume it lands
+	// on, or, in a folder shared with them, its owner's.
+	BeginWriteAt(username, path string) (*budget.Write, error)
+	QuotaCheckAt(username, path string, additionalBytes int64) error
+	// TreeChanged says a folder in someone's files moved or went, so that
+	// mounts of folders shared from it are found again.
+	TreeChanged()
 }

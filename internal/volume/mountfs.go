@@ -33,6 +33,7 @@ type mountEntry struct {
 	volumeSubpath string
 	backend       vfs.FS
 	readOnly      bool
+	info          MountEntry
 }
 
 // NewMountFS creates a MountFS from a set of mount entries.
@@ -45,7 +46,9 @@ func NewMountFS(entries []MountEntry) *MountFS {
 			volumeSubpath: e.VolumeSubpath,
 			backend:       e.Backend,
 			readOnly:      e.ReadOnly,
+			info:          e,
 		}
+		mounts[i].info.UserPath = mounts[i].userPath
 	}
 	sort.Slice(mounts, func(i, j int) bool {
 		return len(mounts[i].userPath) > len(mounts[j].userPath)
@@ -59,6 +62,58 @@ type MountEntry struct {
 	VolumeSubpath string
 	Backend       vfs.FS
 	ReadOnly      bool
+	// VolumeID is the volume the bytes land on, and ChargeTo the username
+	// whose quota on it they count against: the user's own for their
+	// mounts, the owner's for a folder shared with them.
+	VolumeID string
+	ChargeTo string
+	// ShareOwner is set on a folder shared with the user: the username who
+	// shared it, and ShareOwnerPath where it is in their files.
+	ShareOwner     string
+	ShareOwnerPath string
+	// Reshare says the user may share on what is in a folder shared with
+	// them.
+	Reshare bool
+}
+
+// Mounts returns the mounts, longest path first.
+func (m *MountFS) Mounts() []MountEntry {
+	out := make([]MountEntry, len(m.mounts))
+	for i := range m.mounts {
+		out[i] = m.mounts[i].info
+	}
+	return out
+}
+
+// Entry returns the mount holding p as if it were mounted at p: the backend
+// and where p is in it, the volume and whose quota, and for a shared folder,
+// where p is in its owner's files. A folder in it can be mounted elsewhere
+// with what Entry returns, as a folder shared from these files is.
+func (m *MountFS) Entry(p string) (MountEntry, error) {
+	me, sub, err := m.match(p)
+	if err != nil {
+		return MountEntry{}, err
+	}
+	if first, _, _ := strings.Cut(strings.TrimPrefix(sub, "/"), "/"); first == vfs.TrashDir {
+		return MountEntry{}, fmt.Errorf("%s: %w", p, vfs.ErrNotFound)
+	}
+	e := me.info
+	e.UserPath = path.Clean("/" + p)
+	e.VolumeSubpath = path.Join(me.volumeSubpath, sub)
+	if e.ShareOwner != "" {
+		e.ShareOwnerPath = path.Join(e.ShareOwnerPath, sub)
+	}
+	return e, nil
+}
+
+// ShareTarget reports whether p is in a folder shared with the user, and if
+// so whose it is and where p is in their files.
+func (m *MountFS) ShareTarget(p string) (owner, ownerPath string, ok bool) {
+	me, sub, err := m.match(p)
+	if err != nil || me.info.ShareOwner == "" {
+		return "", "", false
+	}
+	return me.info.ShareOwner, path.Join(me.info.ShareOwnerPath, sub), true
 }
 
 // resolve finds the mount matching the given path and returns the backend,
@@ -239,7 +294,26 @@ func (m *MountFS) Mkdir(p string) error {
 	return backend.Mkdir(subpath)
 }
 
+// isMountPoint reports whether p is where a mount other than the root is:
+// removing or moving it would remove or move what is mounted, which is
+// unmounting's to do.
+func (m *MountFS) isMountPoint(p string) bool {
+	p = path.Clean("/" + p)
+	for _, me := range m.mounts {
+		if me.userPath == p && p != "/" {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrMountPoint refuses removing or moving a mount point.
+var ErrMountPoint = fmt.Errorf("a mounted folder is removed by unmounting it: %w", fs.ErrPermission)
+
 func (m *MountFS) Delete(p string) error {
+	if m.isMountPoint(p) {
+		return ErrMountPoint
+	}
 	backend, subpath, err := m.checkWrite(p)
 	if err != nil {
 		return err
@@ -248,6 +322,9 @@ func (m *MountFS) Delete(p string) error {
 }
 
 func (m *MountFS) Rename(oldPath, newPath string) error {
+	if m.isMountPoint(oldPath) || m.isMountPoint(newPath) {
+		return ErrMountPoint
+	}
 	oldBackend, oldSub, oldRO, err := m.resolve(oldPath)
 	if err != nil {
 		return err

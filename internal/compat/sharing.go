@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
+	"git.duckfam.us/jj-software/cog/internal/mount"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -334,6 +335,24 @@ func (h *SharingHandler) lookupShare(w http.ResponseWriter, r *http.Request) (*s
 	return rec, true
 }
 
+// mountedShares maps each folder shared with u that they mounted, by owner
+// ID and file ID, to where it is in their files.
+func (h *SharingHandler) mountedShares(u *user.User) (map[[2]string]string, error) {
+	out := map[[2]string]string{}
+	if h.Files == nil || h.Files.Shared == nil {
+		return out, nil
+	}
+	for m, err := range h.Files.Shared.Mounts.ListByUser(u.ID) {
+		if err != nil {
+			return nil, err
+		}
+		if m.Kind == mount.Share {
+			out[[2]string{m.ShareOwnerID, m.ShareResourceID}] = m.UserPath
+		}
+	}
+	return out, nil
+}
+
 // HandleListShares handles GET .../shares
 func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
@@ -372,6 +391,13 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 			return
 		}
+		mounted, err := h.mountedShares(u)
+		if err != nil {
+			h.Log.Error("list shares: mounts", "err", err)
+			httperr.Log(r, err)
+			writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
+			return
+		}
 		for _, rec := range records {
 			owner := owners[rec.OwnerUserID]
 			if owner == nil {
@@ -383,6 +409,11 @@ func (h *SharingHandler) HandleListShares(w http.ResponseWriter, r *http.Request
 				httperr.Log(r, err)
 				writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "internal error")
 				return
+			}
+			// A folder they mounted is in their files there, which is
+			// where a client looks for it.
+			if at, ok := mounted[[2]string{rec.OwnerUserID, rec.ResourceID}]; ok && rec.ResourceType == mount.SharedDirType {
+				ocs.Path, ocs.FileTarget = at, at
 			}
 			result = append(result, ocs)
 		}
@@ -466,6 +497,15 @@ func (h *SharingHandler) HandleCreateShare(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		h.Log.Error("create share: look up file", "user", u.Username, "path", path, "err", err)
 		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "look up file failed")
+		return
+	}
+
+	if err := h.Files.MayShare(u.Username, meta.Path); errors.Is(err, files.ErrNoReshare) {
+		writeOCSErrorReq(w, r, http.StatusForbidden, 403, err.Error())
+		return
+	} else if err != nil {
+		h.Log.Error("create share: check reshare", "user", u.Username, "path", path, "err", err)
+		writeOCSErrorReq(w, r, http.StatusInternalServerError, 500, "check reshare failed")
 		return
 	}
 
