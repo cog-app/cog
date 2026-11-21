@@ -108,16 +108,67 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 }
 
 func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
-	if hasPTY {
-		sh.SetSSHMode(termWidth, termHeight)
+	sh, err := s.newShell(username, userFS, hasPTY, termWidth, termHeight)
+	if err != nil {
+		return s.exitCode(channel, username, err)
 	}
 	return s.exitCode(channel, username, sh.Run(ctx, command, channel, channel, channel.Stderr()))
 }
 
-// exitCode turns a shell's result into the session's exit status. A command's
-// own exit status passes through, and it has already said why it failed; any
-// other error (a parse error, a runner failure) is the user's to see too.
+// newShell returns the shell for a session of username's in userFS.
+func (s *Server) newShell(username string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) (*shell.Shell, error) {
+	sh, err := NewShell(s.providers, s.keys, s.log, username, userFS)
+	if err != nil {
+		return nil, err
+	}
+	if hasPTY {
+		sh.SetSSHMode(termWidth, termHeight)
+	}
+	return sh, nil
+}
+
+// NewShell returns a shell for username in userFS, as an SSH session or
+// cog shell runs it. An admin's offers su.
+func NewShell(p *services.Providers, ks *keys.Store, log *slog.Logger, username string, userFS vfs.FS) (*shell.Shell, error) {
+	sh := shell.New(username, userFS, p.Plugins.UserCommands(), p.Users.Usernames, p.Search, log)
+	u, err := p.Users.GetByUsername(username)
+	if err != nil {
+		return nil, fmt.Errorf("look up %s: %w", username, err)
+	}
+	if u.IsAdmin {
+		sh.SetSwitchUser(switchUser(p, ks, log, u.ID))
+	}
+	return sh, nil
+}
+
+// switchUser lets the admin adminID's shell act as another user, in the
+// filesystem a session of that user's would have. Whether they are still an
+// admin is asked at every su, not only when the session began.
+func switchUser(p *services.Providers, ks *keys.Store, log *slog.Logger, adminID string) shell.SwitchUser {
+	return func(username string) (string, vfs.FS, error) {
+		admin, err := p.Users.GetByID(adminID)
+		if err != nil {
+			return "", nil, err
+		}
+		if !admin.IsAdmin {
+			return "", nil, errors.New("permission denied")
+		}
+		u, err := p.Users.GetByUsername(username)
+		if errors.Is(err, user.ErrNotFound) {
+			return "", nil, fmt.Errorf("user %s does not exist", username)
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		fsys, err := SessionFS(p, ks, u.Username)
+		if err != nil {
+			return "", nil, err
+		}
+		log.Info("shell su", "admin", admin.Username, "user", u.Username)
+		return u.Username, fsys, nil
+	}
+}
+
 func (s *Server) exitCode(channel gossh.Channel, username string, err error) int {
 	if err == nil {
 		return 0
@@ -131,9 +182,9 @@ func (s *Server) exitCode(channel gossh.Channel, username string, err error) int
 }
 
 func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
-	if hasPTY {
-		sh.SetSSHMode(termWidth, termHeight)
+	sh, err := s.newShell(username, userFS, hasPTY, termWidth, termHeight)
+	if err != nil {
+		return s.exitCode(channel, username, err)
 	}
 	return s.exitCode(channel, username, sh.RunInteractive(ctx, channel, channel, channel.Stderr()))
 }

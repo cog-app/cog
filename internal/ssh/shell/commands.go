@@ -81,6 +81,9 @@ func (s *Shell) newRootCmd() *cobra.Command {
 		s.newLnCmd(),
 		s.newUnlinkCmd(),
 	)
+	if s.switchUser != nil {
+		root.AddCommand(s.newSuCmd())
+	}
 
 	// _help is the renamed "help" (via callHandler) since the interpreter
 	// intercepts "help" as a builtin. Delegates to cobra's help system.
@@ -843,19 +846,33 @@ func (s *Shell) newExitCmd() *cobra.Command {
 		// A negative status ("exit -1") is an argument, not a flag.
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			code, status := "", 0
+			if len(args) > 0 {
+				code = args[0]
+				n, err := strconv.Atoi(code)
+				if err != nil {
+					// As bash does: exit anyway, with status 2.
+					_, stderr, _, _ := getHC(cmd)
+					s.errorf(stderr, "exit: %s: numeric argument required\n", code)
+					code, n = "2", 2
+				}
+				status = n & 0xff
+			}
+			// Inside an su, exit leaves it, as it would a nested shell, and
+			// its status is su's.
+			if len(s.suStack) > 0 {
+				s.suExit()
+				if status == 0 {
+					return nil
+				}
+				return exitErr(uint8(status))
+			}
 			// The interpreter's own exit is what stops the rest of the
 			// script and makes Runner.Exited report it. It takes the status
 			// modulo 256, as POSIX shells do, and with no argument the last
 			// command's status.
 			builtin := []string{"exit"}
-			if len(args) > 0 {
-				code := args[0]
-				if _, err := strconv.Atoi(code); err != nil {
-					// As bash does: exit anyway, with status 2.
-					_, stderr, _, _ := getHC(cmd)
-					s.errorf(stderr, "exit: %s: numeric argument required\n", code)
-					code = "2"
-				}
+			if code != "" {
 				builtin = append(builtin, code)
 			}
 			return exitRequest{interp.HandlerCtx(cmd.Context()).Builtin(cmd.Context(), builtin)}
