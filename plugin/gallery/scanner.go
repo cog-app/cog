@@ -209,6 +209,9 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		remaining, err = p.analyzePhotos(ctx, galleryDB, username, cfg, time.Now().Add(analysisBudget), &report)
 		release()
 		if err != nil {
+			// Left to the next timed scan: going round again at once would
+			// spin on an error that persists.
+			remaining = false
 			warn("analysis", err)
 		}
 	}
