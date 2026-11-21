@@ -213,9 +213,11 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		rlCfg.FuncOnWidthChanged = func(func()) {}
 	}
 
+	hl := newHighlighter(s, func() string { return runner.Dir })
+	rlCfg.Listener = hl.listen
 	rlCfg.Painter = func(line []rune, _ int) []rune {
 		width, _ := rlCfg.FuncGetSize()
-		return comp.paint(prompt, line, width)
+		return comp.paint(prompt, line, hl.paint(line), width)
 	}
 
 	rl, err := readline.NewFromConfig(rlCfg)
@@ -274,6 +276,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 			}
 		}
 
+		hl.reset()
 		// Update prompt — pwd may have changed.
 		prompt = s.prompt(runner)
 		rl.SetPrompt(prompt)

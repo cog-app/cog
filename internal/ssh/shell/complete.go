@@ -120,23 +120,24 @@ func completable(root *cobra.Command, args []string, partial string) error {
 	return nil
 }
 
-// paint appends the pending problem to line on the row below it and returns
-// the cursor to the end of line, where readline expects it. Readline's next
+// paint appends the pending problem to painted, line as drawn, on the row
+// below it and returns the cursor to the end of line, where readline expects
+// it. Readline's next
 // full redraw clears below the prompt, which takes the message away with it.
-func (c *completer) paint(prompt string, line []rune, width int) []rune {
+func (c *completer) paint(prompt string, line, painted []rune, width int) []rune {
 	if c.problem == "" {
-		return line
+		return painted
 	}
 	problem := c.problem
 	c.problem = ""
 	col := (runewidth.StringWidth(stripANSI(prompt)) + runewidth.StringWidth(string(line))) % width
 	// At the right edge readline parks the cursor on the next row itself.
 	if width < 2 || col == 0 {
-		return line
+		return painted
 	}
 	c.shown = true
 	msg := c.shell.colorize(ansiRed, runewidth.Truncate(problem, width-1, ""))
-	return append(line, []rune(fmt.Sprintf("\n\033[K%s\033[1A\033[%dG", msg, col+1))...)
+	return append(painted, []rune(fmt.Sprintf("\n\033[K%s\033[1A\033[%dG", msg, col+1))...)
 }
 
 // clearShown erases a problem still drawn below the line. Readline leaves the
