@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +20,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
+
+var anyAddress = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")}
 
 // workerBatch is how many photos a worker leases at once: enough to keep
 // the next one downloading and decoding while one is recognised.
@@ -82,9 +87,10 @@ func (p *Plugin) runRemoteWorker(ctx context.Context, server string) error {
 		token:     token,
 		modelsDir: modelsDir,
 		threads:   threads,
-		http:      &http.Client{Timeout: 10 * time.Minute},
-		release:   func() {},
-		checked:   map[string]string{},
+		// The server is the operator's own, and usually on their network.
+		http:    safehttp.ClientWith(10*time.Minute, safehttp.Options{Allow: anyAddress}),
+		release: func() {},
+		checked: map[string]string{},
 	}
 	rw.info.Store(&workerInfo{
 		Protocol: workerProtocol,
