@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS media (
     fingerprint TEXT NOT NULL DEFAULT '',
     quality_score REAL NOT NULL DEFAULT -1,
     content_key TEXT NOT NULL DEFAULT '',
-    scan_error TEXT NOT NULL DEFAULT ''
+    scan_error TEXT NOT NULL DEFAULT '',
+    shared_from TEXT NOT NULL DEFAULT '' -- the owner whose gallery analyses this photo, for one in a folder shared with the user
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);

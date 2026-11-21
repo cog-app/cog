@@ -1389,7 +1389,8 @@ func (p Pending) String() string {
 }
 
 // PendingWork counts what is waiting, in one pass over the media table.
-// A stage that is switched off still counts what it would do.
+// A stage that is switched off still counts what it would do; a photo another
+// user's gallery analyses is theirs to count.
 func PendingWork(db *sql.DB) (Pending, error) {
 	var p Pending
 	err := db.QueryRow(`SELECT
@@ -1399,7 +1400,7 @@ func PendingWork(db *sql.DB) (Pending, error) {
 		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND ocr_text = ''), 0),
 		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND recognition_state = 0), 0),
 		COALESCE(SUM(scan_error != '' OR recognition_state = 2), 0)
-		FROM media`).Scan(&p.Metadata, &p.Quality, &p.Fingerprint, &p.OCR, &p.Recognition, &p.Failed)
+		FROM media WHERE shared_from = ''`).Scan(&p.Metadata, &p.Quality, &p.Fingerprint, &p.OCR, &p.Recognition, &p.Failed)
 	if err != nil {
 		return p, fmt.Errorf("count pending work: %w", err)
 	}

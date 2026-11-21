@@ -183,6 +183,13 @@ func (p *Plugin) EnsurePreview(username, filePath string, size int) (generated b
 
 func (p *Plugin) ensurePreview(username, filePath string, size int, generated *bool) (plugin.Storage, string, error) {
 	size = plugin.ThumbnailSize(size)
+	// A shared folder's thumbnails are its owner's, made once for everyone
+	// it is shared with.
+	if t, ok, err := p.shared(username, filePath); err != nil {
+		return nil, "", err
+	} else if ok {
+		return p.ensurePreview(t.owner, t.path, size, generated)
+	}
 
 	meta, err := p.GetByPath(username, filePath)
 	if err != nil {

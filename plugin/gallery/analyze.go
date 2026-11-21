@@ -145,7 +145,7 @@ func (c *analysisConfig) pendingClause() string {
 	if c.recognition != nil {
 		conds = append(conds, "m.recognition_state = 0")
 	}
-	return "m.mime_type LIKE 'image/%' AND m.width > 0 AND (" + strings.Join(conds, " OR ") + ")"
+	return "m.mime_type LIKE 'image/%' AND m.width > 0 AND m.shared_from = '' AND (" + strings.Join(conds, " OR ") + ")"
 }
 
 // stageStat is what one stage did in a scan.

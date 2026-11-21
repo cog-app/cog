@@ -91,7 +91,7 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 		return nil, nil
 	}
 
-	pending := usernames
+	pending := p.ownersFirst(usernames)
 	for len(pending) > 0 {
 		var next []string
 		for _, username := range pending {
@@ -183,6 +183,9 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 	if err := report.time("discover", func() error { return p.discoverFiles(ctx, galleryDB, filesDB, username) }); err != nil {
 		return warnings, false, fmt.Errorf("discover: %w", err)
+	}
+	if err := report.time("shared", func() error { return p.adoptShared(ctx, galleryDB, filesDB, username) }); err != nil {
+		warn("shared", err)
 	}
 	if err := report.time("metadata", func() error { return p.extractMetadata(ctx, galleryDB, username) }); err != nil {
 		return warnings, false, fmt.Errorf("metadata: %w", err)
@@ -431,7 +434,7 @@ func (p *Plugin) contentKeyOf(username, filePath string) string {
 // extractMetadata reads EXIF data from images that haven't been processed yet.
 func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username string) error {
 	// Find media that needs metadata extraction (width == 0 means unprocessed).
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width = 0 AND m.height = 0`)
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width = 0 AND m.height = 0 AND m.shared_from = ''`)
 	if err != nil {
 		return err
 	}
@@ -537,7 +540,7 @@ func extractVideoMetadata(path string, m *Media) error {
 // reverseGeocode fills in place_name for media with GPS coordinates but no city.
 func (p *Plugin) reverseGeocode(db *sql.DB) error {
 	rows, err := db.Query(`SELECT id, latitude, longitude FROM media
-		WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND city = ''`)
+		WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND city = '' AND shared_from = ''`)
 	if err != nil {
 		return fmt.Errorf("list ungeocoded media: %w", err)
 	}
@@ -754,7 +757,7 @@ func loadAutoAlbums(db *sql.DB) (map[autoAlbumKey]*autoAlbum, error) {
 
 // preGenerateThumbnails generates 256px thumbnails for all media that don't have one cached yet.
 func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username string) error {
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width > 0`)
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width > 0 AND m.shared_from = ''`)
 	if err != nil {
 		return err
 	}
@@ -824,6 +827,13 @@ func (p *Plugin) ensureThumbnail(username string, m *Media, size int) (bool, err
 // or the video thumbnail cache for videos.
 func (p *Plugin) PreviewPath(username string, m *Media, size int) (cogplugin.StoredFile, error) {
 	if m.IsVideo() {
+		owner, theirs, err := p.sharedMedia(username, m)
+		if err != nil {
+			return nil, err
+		}
+		if theirs != nil {
+			return p.videoThumbnail(owner, theirs, size)
+		}
 		return p.videoThumbnail(username, m, size)
 	}
 	fp, err := p.filesPlugin()
