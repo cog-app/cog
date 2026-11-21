@@ -4,6 +4,7 @@ package gallery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
@@ -52,6 +53,7 @@ const (
 	scrfdFile      = "det_10g.onnx"
 	genderageFile  = "genderage.onnx"
 
+	minFacePixels       = 32 // smaller faces upscale into embeddings that match anyone
 	scrfdInputSize      = 640
 	scrfdScoreThreshold = 0.5
 	scrfdNMSThreshold   = 0.4
@@ -106,6 +108,7 @@ type OnnxBackend struct {
 	ModelsDir   string   // directory to store/load ONNX model files
 	LibraryPath string   // path to libonnxruntime.so
 	TagModel    TagModel // which tag model to use (mobilenet/joytag/wd14)
+	Threads     int      // threads each model may use; 0 leaves it to onnxruntime
 
 	once         sync.Once
 	initErr      error
@@ -287,7 +290,7 @@ func ensureModel(path, url string) error {
 }
 
 // newCachedSession creates a reusable ONNX session with pre-allocated tensors.
-func newCachedSession(modelPath string, inputNames, outputNames []string, inputShape ort.Shape, outputShapes []ort.Shape) (*cachedSession, error) {
+func newCachedSession(opts *ort.SessionOptions, modelPath string, inputNames, outputNames []string, inputShape ort.Shape, outputShapes []ort.Shape) (*cachedSession, error) {
 	input, err := ort.NewEmptyTensor[float32](inputShape)
 	if err != nil {
 		return nil, fmt.Errorf("create input tensor: %w", err)
@@ -309,7 +312,7 @@ func newCachedSession(modelPath string, inputNames, outputNames []string, inputS
 
 	session, err := ort.NewAdvancedSession(modelPath,
 		inputNames, outputNames,
-		[]ort.Value{input}, outputValues, nil)
+		[]ort.Value{input}, outputValues, opts)
 	if err != nil {
 		input.Destroy()
 		for _, o := range outputs {
@@ -329,22 +332,27 @@ func (b *OnnxBackend) ensureSessions() error {
 		return nil // already created
 	}
 
-	var err error
+	opts, err := b.sessionOptions()
+	if err != nil {
+		return err
+	}
+	defer opts.Destroy()
+
 	switch b.TagModel {
 	case TagModelJoyTag:
-		b.tagSession, err = newCachedSession(
+		b.tagSession, err = newCachedSession(opts,
 			filepath.Join(b.ModelsDir, joytagFile),
 			[]string{"input"}, []string{"output"},
 			ort.NewShape(1, 3, 448, 448),
 			[]ort.Shape{ort.NewShape(1, int64(len(b.tagLabels)))})
 	case TagModelWD14:
-		b.tagSession, err = newCachedSession(
+		b.tagSession, err = newCachedSession(opts,
 			filepath.Join(b.ModelsDir, wd14File),
 			[]string{"input"}, []string{"output"},
 			ort.NewShape(1, 448, 448, 3), // NHWC format
 			[]ort.Shape{ort.NewShape(1, int64(len(b.tagLabels)))})
 	default: // MobileNet
-		b.tagSession, err = newCachedSession(
+		b.tagSession, err = newCachedSession(opts,
 			filepath.Join(b.ModelsDir, mobilenetFile),
 			[]string{"input"}, []string{"output"},
 			ort.NewShape(1, 3, 224, 224),
@@ -355,7 +363,7 @@ func (b *OnnxBackend) ensureSessions() error {
 	}
 
 	if b.hasArcface {
-		b.arcfaceSession, err = newCachedSession(
+		b.arcfaceSession, err = newCachedSession(opts,
 			filepath.Join(b.ModelsDir, arcfaceFile),
 			[]string{"input.1"}, []string{"683"},
 			ort.NewShape(1, 3, 112, 112),
@@ -365,8 +373,16 @@ func (b *OnnxBackend) ensureSessions() error {
 		}
 	}
 
-	// Genderage uses per-call sessions (not cached) because the cached
-	// session pattern may not reliably update the C-side tensor data.
+	if b.hasGenderage {
+		b.genderageSession, err = newCachedSession(opts,
+			filepath.Join(b.ModelsDir, genderageFile),
+			[]string{"data"}, []string{"fc1"},
+			ort.NewShape(1, 3, 96, 96),
+			[]ort.Shape{ort.NewShape(1, 3)})
+		if err != nil {
+			return fmt.Errorf("genderage session: %w", err)
+		}
+	}
 
 	if b.hasSCRFD {
 		var gs [3]int64
@@ -379,7 +395,7 @@ func (b *OnnxBackend) ensureSessions() error {
 			ort.NewShape(gs[0], 4), ort.NewShape(gs[1], 4), ort.NewShape(gs[2], 4),
 			ort.NewShape(gs[0], 10), ort.NewShape(gs[1], 10), ort.NewShape(gs[2], 10),
 		}
-		b.scrfdSession, err = newCachedSession(
+		b.scrfdSession, err = newCachedSession(opts,
 			filepath.Join(b.ModelsDir, scrfdFile),
 			[]string{"input.1"}, scrfdOutputNames,
 			ort.NewShape(1, 3, scrfdInputSize, scrfdInputSize),
@@ -392,6 +408,25 @@ func (b *OnnxBackend) ensureSessions() error {
 	return nil
 }
 
+// sessionOptions limits each model to b.Threads threads that sleep rather
+// than spin between runs: onnxruntime otherwise takes every core and keeps
+// them busy-waiting, which on a shared machine steals from everything else.
+func (b *OnnxBackend) sessionOptions() (*ort.SessionOptions, error) {
+	opts, err := ort.NewSessionOptions()
+	if err != nil {
+		return nil, fmt.Errorf("session options: %w", err)
+	}
+	if b.Threads > 0 {
+		err = errors.Join(opts.SetIntraOpNumThreads(b.Threads), opts.SetInterOpNumThreads(1))
+	}
+	err = errors.Join(err, opts.AddSessionConfigEntry("session.intra_op.allow_spinning", "0"))
+	if err != nil {
+		opts.Destroy()
+		return nil, fmt.Errorf("session options: %w", err)
+	}
+	return opts, nil
+}
+
 // Release frees ONNX runtime sessions and their C-allocated memory.
 // Call after a scan batch completes to reclaim the ~GB of model workspace memory.
 func (b *OnnxBackend) Release() {
@@ -399,7 +434,8 @@ func (b *OnnxBackend) Release() {
 	b.tagSession = nil
 	b.arcfaceSession.destroy()
 	b.arcfaceSession = nil
-	// genderageSession uses per-call sessions (not cached), no cleanup needed.
+	b.genderageSession.destroy()
+	b.genderageSession = nil
 	b.scrfdSession.destroy()
 	b.scrfdSession = nil
 }
@@ -441,18 +477,20 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		result.Tags = tags
 	}
 
-	// Face detection: SCRFD (if available) or Pigo fallback.
+	// Pigo stands in only when SCRFD cannot run: a photo SCRFD found no face
+	// in would otherwise be decoded again and searched by a detector that
+	// finds faces in wallpaper.
 	var detectedFaces []DetectedFace
+	scrfdRan := false
 	if b.hasSCRFD {
 		faces, err := b.detectFacesSCRFD(img)
 		if err != nil {
 			slog.Warn("scrfd detect", "path", imagePath, "err", err)
 		} else {
-			detectedFaces = faces
+			detectedFaces, scrfdRan = faces, true
 		}
 	}
-	if detectedFaces == nil {
-		// Pigo fallback.
+	if !scrfdRan {
 		pigoResult, err := b.pigo.Analyze(ctx, imagePath)
 		if err != nil {
 			slog.Warn("pigo face detect", "path", imagePath, "err", err)
@@ -461,16 +499,17 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		}
 	}
 
-	// Compute embeddings and age estimates for detected faces.
+	// A face too small to embed is dropped rather than stored: with no
+	// embedding it cannot join anyone, and clustering would make each one a
+	// person of its own.
 	bounds := img.Bounds()
+	kept := detectedFaces[:0]
 	for i := range detectedFaces {
 		face := &detectedFaces[i]
 		face.EstimatedAge = -1
-
-		// Skip tiny faces — upscaling produces garbage embeddings.
 		facePixW := int(face.W * float64(bounds.Dx()))
 		facePixH := int(face.H * float64(bounds.Dy()))
-		if facePixW < 32 || facePixH < 32 {
+		if facePixW < minFacePixels || facePixH < minFacePixels {
 			continue
 		}
 
@@ -499,8 +538,9 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 				face.EstimatedAge = age
 			}
 		}
+		kept = append(kept, *face)
 	}
-	result.Faces = detectedFaces
+	result.Faces = kept
 
 	return result, nil
 }
@@ -836,34 +876,13 @@ func softmax(logits []float32) []float32 {
 // estimateAge runs the genderage model on a 112×112 aligned face and returns estimated age.
 // The model expects 96×96 input with raw 0-255 pixel values (NOT normalized).
 func (b *OnnxBackend) estimateAge(aligned image.Image) (float64, error) {
-	data := preprocessRaw(aligned, 96, 96)
-
-	inputTensor, err := ort.NewTensor(ort.NewShape(1, 3, 96, 96), data)
-	if err != nil {
-		return -1, fmt.Errorf("create age input tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
-
-	outputTensor, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3))
-	if err != nil {
-		return -1, fmt.Errorf("create age output tensor: %w", err)
-	}
-	defer outputTensor.Destroy()
-
-	session, err := ort.NewAdvancedSession(
-		filepath.Join(b.ModelsDir, genderageFile),
-		[]string{"data"}, []string{"fc1"},
-		[]ort.Value{inputTensor}, []ort.Value{outputTensor}, nil)
-	if err != nil {
-		return -1, fmt.Errorf("create genderage session: %w", err)
-	}
-	defer session.Destroy()
-
-	if err := session.Run(); err != nil {
+	s := b.genderageSession
+	copy(s.input.GetData(), preprocessRaw(aligned, 96, 96))
+	if err := s.session.Run(); err != nil {
 		return -1, fmt.Errorf("run genderage: %w", err)
 	}
 
-	output := outputTensor.GetData()
+	output := s.outputs[0].GetData()
 	// output[0] = female logit, output[1] = male logit, output[2] = age/100
 	age := float64(output[2]) * 100
 	if age < 0 || age > 120 {

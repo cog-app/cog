@@ -19,11 +19,31 @@ func useSubprocess() bool {
 	return os.Getenv("COG_NO_WORKER") == ""
 }
 
-// setNice sets the niceness (priority) of a process. A failure only costs
-// the server some priority over the worker, so it is logged, not returned.
-func setNice(pid, niceness int) {
-	if err := syscall.Setpriority(syscall.PRIO_PROCESS, pid, niceness); err != nil {
-		slog.Warn("set worker priority", "pid", pid, "nice", niceness, "err", err)
+// lowerOwnPriority gives every thread of this process the lowest CPU
+// priority and the lowest best-effort I/O priority, for a worker that shares
+// a machine. Linux keeps both per thread, so setting the process's main
+// thread from outside left the threads it had already started at normal
+// priority; threads started later inherit from the thread that starts them.
+// A failure only costs the server some priority over the worker, so it is
+// logged, not returned.
+func lowerOwnPriority() {
+	tasks, err := os.ReadDir("/proc/self/task")
+	if err != nil {
+		slog.Warn("lower worker priority", "err", err)
+		return
+	}
+	const ioprioWhoProcess, ioprioClassBE, ioprioClassShift = 1, 2, 13
+	for _, t := range tasks {
+		tid, err := strconv.Atoi(t.Name())
+		if err != nil {
+			continue
+		}
+		if err := syscall.Setpriority(syscall.PRIO_PROCESS, tid, 19); err != nil {
+			slog.Warn("lower worker cpu priority", "tid", tid, "err", err)
+		}
+		if _, _, errno := syscall.Syscall(syscall.SYS_IOPRIO_SET, ioprioWhoProcess, uintptr(tid), ioprioClassBE<<ioprioClassShift|7); errno != 0 {
+			slog.Warn("lower worker io priority", "tid", tid, "err", errno)
+		}
 	}
 }
 

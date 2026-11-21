@@ -8,8 +8,7 @@ import "context"
 // On non-Linux platforms, always run in-process.
 func useSubprocess() bool { return false }
 
-// setNice is a no-op on non-Linux platforms.
-func setNice(pid, niceness int) {}
+func lowerOwnPriority() {}
 
 // killProcess kills a process by PID.
 func killProcess(pid int) {}

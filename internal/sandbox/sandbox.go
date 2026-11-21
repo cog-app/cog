@@ -32,6 +32,9 @@ type Spec struct {
 	Write []string
 	// Network lets it make connections, for a program that fetches.
 	Network bool
+	// Env are variables set for it, as "KEY=value", on top of the minimal
+	// environment the sandbox gives every program.
+	Env []string
 }
 
 // systemDirs hold programs, libraries and their configuration: what any of
@@ -76,17 +79,24 @@ func Status() error {
 // spec when sandboxing works. It is exec.CommandContext otherwise. The
 // caller must not set Env, which the sandbox replaces.
 func CommandContext(ctx context.Context, spec Spec, name string, args ...string) *exec.Cmd {
+	unsandboxed := func() *exec.Cmd {
+		cmd := exec.CommandContext(ctx, name, args...)
+		if len(spec.Env) > 0 {
+			cmd.Env = append(os.Environ(), spec.Env...)
+		}
+		return cmd
+	}
 	bwrap, err := probe()
 	if err != nil {
-		return exec.CommandContext(ctx, name, args...)
+		return unsandboxed()
 	}
 	prog, err := exec.LookPath(name)
 	if err != nil {
 		// Let Start report the missing program as it would unsandboxed.
-		return exec.CommandContext(ctx, name, args...)
+		return unsandboxed()
 	}
 	if prog, err = filepath.Abs(prog); err != nil {
-		return exec.CommandContext(ctx, name, args...)
+		return unsandboxed()
 	}
 	return exec.CommandContext(ctx, bwrap, append(argsFor(spec, prog), args...)...)
 }
@@ -101,6 +111,10 @@ func argsFor(spec Spec, prog string) []string {
 		"--setenv", "HOME", "/tmp",
 		"--setenv", "TMPDIR", "/tmp",
 		"--setenv", "LANG", "C.UTF-8",
+	}
+	for _, kv := range spec.Env {
+		k, v, _ := strings.Cut(kv, "=")
+		a = append(a, "--setenv", k, v)
 	}
 	if spec.Network {
 		a = append(a, "--share-net")

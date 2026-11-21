@@ -1224,7 +1224,8 @@ var (
 	SettingQualityScoringEnabled    = boolSetting("quality_scoring_enabled", true)
 
 	// Worker resource limits
-	SettingWorkerMaxRSS = intSetting("worker_max_rss_mb", 2048)
+	SettingWorkerMaxRSS       = intSetting("worker_max_rss_mb", 2048)
+	SettingRecognitionThreads = intSetting("recognition_threads", 2)
 
 	// Scan status (internal)
 	SettingScanRunning   = boolSetting("scan_running", false)

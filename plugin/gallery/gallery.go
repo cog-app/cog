@@ -628,7 +628,6 @@ func (p *Plugin) manageScanWorker(ctx context.Context) {
 
 		pid := cmd.Process.Pid
 		p.log.Info("scan worker started", "pid", pid)
-		setNice(pid, 10)
 
 		// Create RPC client over the subprocess pipes.
 		client := newRPCScanClient(readWriteCloser{stdout, stdin})

@@ -444,3 +444,35 @@ func TestSettingsSectionIndependence(t *testing.T) {
 	assert.Equal(t, "", GetSetting(db, "duplicate_detection_enabled", ""))
 	// This demonstrates the bug — the empty string overwrites the setting.
 }
+
+// Recognising a photo again replaces what the last pass found, so a changed
+// file does not keep its old faces beside the new ones; a tag added by hand
+// stays.
+func TestStoreRecognitionReplacesEarlierPass(t *testing.T) {
+	db := testDB(t)
+	mid := insertTestMedia(t, db, 1718409600)
+	insertTestFace(t, db, mid, makeEmbedding(0, 0), -1)
+	manual, err := UpsertTag(db, "grandma's house", 0)
+	require.NoError(t, err)
+	require.NoError(t, AddMediaTag(db, mid, manual, 1.0))
+	machine, err := UpsertTag(db, "dog", 1)
+	require.NoError(t, err)
+	require.NoError(t, AddMediaTag(db, mid, machine, 0.6))
+
+	face := DetectedFace{X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Embedding: makeEmbedding(1, 0), Confidence: 0.9, EstimatedAge: -1}
+	require.NoError(t, storeRecognition(db, mid, []RecognizedTag{{Name: "cat", Confidence: 0.8, Type: 1}}, []DetectedFace{face}, 0.35, 0.7, 1, nil))
+
+	var faces int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM faces WHERE media_id = ?`, mid).Scan(&faces))
+	require.Equal(t, 1, faces)
+	rows, err := db.Query(`SELECT t.name FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = ? ORDER BY t.name`, mid)
+	require.NoError(t, err)
+	var names []string
+	for rows.Next() {
+		var n string
+		require.NoError(t, rows.Scan(&n))
+		names = append(names, n)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []string{"cat", "grandma's house"}, names)
+}

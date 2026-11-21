@@ -254,6 +254,7 @@ func (s *ScanRPC) MemStats(_ *struct{}, result *MemStatsResult) error {
 // Called when the subprocess is launched via `cog gallery scan worker`.
 func (p *Plugin) runScanWorker(ctx context.Context) error {
 	p.isWorker = true
+	lowerOwnPriority()
 
 	// Clear stale "running" flag from a previous crashed worker.
 	p.clearStaleScanRunning()

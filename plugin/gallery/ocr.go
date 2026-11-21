@@ -31,7 +31,9 @@ func tesseractOCR(imagePath string) (string, error) {
 	defer cancel()
 
 	// tesseract <input> stdout -l eng --psm 3
-	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{imagePath}}, tesseractPath, imagePath, "stdout", "-l", "eng", "--psm", "3")
+	// One thread: tesseract otherwise takes every core of a machine the
+	// worker shares.
+	cmd := sandbox.CommandContext(ctx, sandbox.Spec{Read: []string{imagePath}, Env: []string{"OMP_THREAD_LIMIT=1"}}, tesseractPath, imagePath, "stdout", "-l", "eng", "--psm", "3")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("tesseract: %w", err)

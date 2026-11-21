@@ -77,6 +77,7 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 			ModelsDir:   modelsDir,
 			LibraryPath: SettingOnnxLibraryPath.MustGet(db),
 			TagModel:    SettingTagModel.MustGet(db),
+			Threads:     SettingRecognitionThreads.MustGet(db),
 		}
 		if !b.Available() {
 			return nil, fmt.Errorf("onnx backend not available: libonnxruntime.so not found (library_path=%q)", b.LibraryPath)
@@ -243,6 +244,14 @@ func storeRecognition(db *sql.DB, mediaID int64, tags []RecognizedTag, faces []D
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer tx.Rollback()
+	// What an earlier pass found belongs to the file as it was; a tag
+	// someone added by hand (confidence 1) stays.
+	if _, err := tx.Exec(`DELETE FROM faces WHERE media_id = ?`, mediaID); err != nil {
+		return fmt.Errorf("clear faces of media %d: %w", mediaID, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM media_tags WHERE media_id = ? AND confidence < 1`, mediaID); err != nil {
+		return fmt.Errorf("clear tags of media %d: %w", mediaID, err)
+	}
 	if err := storeTags(tx, mediaID, tags, tagMinConf); err != nil {
 		return err
 	}
