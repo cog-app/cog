@@ -1028,12 +1028,53 @@ templ personNameForm(person *Person, csrfToken string) {
 				</div>
 				<p class="form-help">Pick someone from the list to merge their photos with this person's, or a contact to link them.</p>
 			</div>
+			if person.Name == "" {
+				<div
+					hx-get={ fmt.Sprintf("/apps/gallery/api/people/%d/suggestions", person.ID) }
+					hx-trigger="click once from:[data-modal-open=gallery-name-person]"
+					hx-swap="innerHTML"
+				></div>
+			}
 		</div>
 		<div class="modal-footer">
 			<button type="button" class="btn" data-modal-close>Cancel</button>
 			<button type="submit" class="btn btn-primary">Save</button>
 		</div>
 	</form>
+	if person.Name == "" {
+		// The suggestions sit inside the name form but belong to this one.
+		// Enter in a text field submits through its form's first submit
+		// button, and in the name form that must stay Save, not a merge.
+		<form method="post" id="gallery-merge-person" hidden>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="source_id" value={ strconv.FormatInt(person.ID, 10) }/>
+		</form>
+	}
+}
+
+// personSuggestions offers the named people who look like the person being
+// named. Each submits the merge form to merge them into that person, so a
+// likely match takes one click.
+templ personSuggestions(people []Person) {
+	if len(people) > 0 {
+		<p class="gallery-suggestions-label">Looks like</p>
+		<div class="gallery-suggestions-list">
+			for _, p := range people {
+				<button
+					type="submit"
+					form="gallery-merge-person"
+					class="gallery-suggestion"
+					formaction={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/merge", p.ID)) }
+					title={ "Merge with " + p.Name }
+				>
+					if p.BestFaceID != nil {
+						<img src={ faceThumbURL(*p.BestFaceID) } alt=""/>
+					}
+					<span class="gallery-suggestion-name">{ p.Name }</span>
+				</button>
+			}
+		</div>
+	}
 }
 
 templ personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) {

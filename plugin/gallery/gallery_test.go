@@ -492,3 +492,37 @@ func TestGallerySetCoverAndRemove(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(media))
 }
+
+func TestPersonSuggestionsAPI(t *testing.T) {
+	env := cogtest.New(t, gallery.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO media (file_id, file_path, file_etag, mime_type, width, height, date_indexed)
+		VALUES (1, '/Photos/a.jpg', 'etag', 'image/jpeg', 100, 100, 1700000000)`)
+	require.NoError(t, err)
+	// Ada's face points the same way as the unnamed person's; Linus's does not.
+	axis := func(i int) []byte {
+		b := make([]byte, 4*512)
+		b[4*i+3] = 0x3f
+		b[4*i+2] = 0x80 // float32 1.0, little-endian
+		return b
+	}
+	for _, p := range []struct {
+		name string
+		emb  []byte
+	}{{"Ada", axis(0)}, {"Linus", axis(1)}, {"", axis(0)}} {
+		res, err := db.Exec(`INSERT INTO people (name, visible) VALUES (?, 1)`, p.name)
+		require.NoError(t, err)
+		id, err := res.LastInsertId()
+		require.NoError(t, err)
+		_, err = db.Exec(`INSERT INTO faces (media_id, person_id, x, y, w, h, confidence, embedding)
+			VALUES (1, ?, 0.1, 0.1, 0.2, 0.2, 0.9, ?)`, id, p.emb)
+		require.NoError(t, err)
+	}
+
+	env.Get(t, "/apps/gallery/api/people/3/suggestions", alice.Auth).Status(200).
+		Contains("Ada").Contains(`formaction="/apps/gallery/people/1/merge"`).NotContains("Linus")
+	env.Get(t, "/apps/gallery/person/3", alice.Auth).Status(200).
+		Contains(`name="source_id" value="3"`).Contains("/apps/gallery/api/people/3/suggestions")
+}

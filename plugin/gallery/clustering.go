@@ -203,11 +203,17 @@ const recencyHalfLife = 5 * 365.25 * 24 * 3600 // seconds
 // each person. Weights combine crop quality (larger faces are better) and
 // recency (newer photos are weighted higher to track aging faces).
 func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
+	return loadCentroidsWhere(db, "1")
+}
+
+// loadCentroidsWhere is loadPersonCentroids for the faces matching filter, a
+// SQL condition on faces f.
+func loadCentroidsWhere(db *sql.DB, filter string, args ...any) (map[int64][]float32, error) {
 	now := float64(time.Now().Unix())
 	rows, err := db.Query(`SELECT f.person_id, f.embedding, f.w * m.width * f.h * m.height,
 		COALESCE(m.date_taken, m.date_indexed)
 		FROM faces f JOIN media m ON m.id = f.media_id
-		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL`)
+		WHERE f.person_id IS NOT NULL AND f.embedding IS NOT NULL AND (`+filter+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +269,60 @@ func loadPersonCentroids(db *sql.DB) (map[int64][]float32, error) {
 		centroids[personID] = centroid
 	}
 	return centroids, nil
+}
+
+// suggestMatchScale widens the clustering threshold for naming suggestions.
+// A person left unmerged was by definition not close enough to join anyone
+// automatically; a looser bar finds who they probably are, and a person
+// still decides.
+const suggestMatchScale = 1.5
+
+// SimilarNamedPeople returns up to limit visible, named people whose faces
+// look most like personID's, nearest first, leaving out anyone further than
+// maxDist (cosine distance between centroids).
+func SimilarNamedPeople(db *sql.DB, personID int64, maxDist float64, limit int) ([]Person, error) {
+	centroids, err := loadCentroidsWhere(db, `f.person_id = ? OR f.person_id IN
+		(SELECT id FROM people WHERE visible = 1 AND name != '' AND id != ?)`, personID, personID)
+	if err != nil {
+		return nil, fmt.Errorf("load centroids: %w", err)
+	}
+	own, ok := centroids[personID]
+	if !ok {
+		return nil, nil
+	}
+	type match struct {
+		id   int64
+		dist float64
+	}
+	var matches []match
+	for id, c := range centroids {
+		if id == personID {
+			continue
+		}
+		if d := cosineDistance(own, c); d <= maxDist {
+			matches = append(matches, match{id, d})
+		}
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	slices.SortFunc(matches, func(a, b match) int { return cmp.Compare(a.dist, b.dist) })
+	matches = matches[:min(limit, len(matches))]
+
+	ids := make([]int64, len(matches))
+	for i, m := range matches {
+		ids[i] = m.id
+	}
+	people, err := peopleByIDs(db, ids)
+	if err != nil {
+		return nil, err
+	}
+	rank := make(map[int64]int, len(ids))
+	for i, id := range ids {
+		rank[id] = i
+	}
+	slices.SortFunc(people, func(a, b Person) int { return cmp.Compare(rank[a.ID], rank[b.ID]) })
+	return people, nil
 }
 
 // loadRecentFaces returns the K most recent face embeddings per person,

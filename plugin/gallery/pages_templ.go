@@ -3831,9 +3831,170 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "\" hx-trigger=\"input changed delay:200ms\" hx-target=\"next .picker-results\" hx-include=\"this\" hx-params=\"name\"><div class=\"picker-results\"></div></div><p class=\"form-help\">Pick someone from the list to merge their photos with this person's, or a contact to link them.</p></div></div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 301, "\" hx-trigger=\"input changed delay:200ms\" hx-target=\"next .picker-results\" hx-include=\"this\" hx-params=\"name\"><div class=\"picker-results\"></div></div><p class=\"form-help\">Pick someone from the list to merge their photos with this person's, or a contact to link them.</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
+		}
+		if person.Name == "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "<div hx-get=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var173 string
+			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/gallery/api/people/%d/suggestions", person.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1033, Col: 79}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "\" hx-trigger=\"click once from:[data-modal-open=gallery-name-person]\" hx-swap=\"innerHTML\"></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "</div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-primary\">Save</button></div></form>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if person.Name == "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "   <form method=\"post\" id=\"gallery-merge-person\" hidden><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var174 string
+			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1049, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "\"> <input type=\"hidden\" name=\"source_id\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var175 string
+			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(person.ID, 10))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1050, Col: 81}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "\"></form>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		return nil
+	})
+}
+
+// personSuggestions offers the named people who look like the person being
+// named. Each submits the merge form to merge them into that person, so a
+// likely match takes one click.
+func personSuggestions(people []Person) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var176 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var176 == nil {
+			templ_7745c5c3_Var176 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		if len(people) > 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "<p class=\"gallery-suggestions-label\">Looks like</p><div class=\"gallery-suggestions-list\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, p := range people {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "<button type=\"submit\" form=\"gallery-merge-person\" class=\"gallery-suggestion\" formaction=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var177 string
+				templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/merge", p.ID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1067, Col: 83}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "\" title=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var178 string
+				templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs("Merge with " + p.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1068, Col: 35}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if p.BestFaceID != nil {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "<img src=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var179 string
+					templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(*p.BestFaceID))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1071, Col: 44}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "\" alt=\"\"> ")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, "<span class=\"gallery-suggestion-name\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var180 string
+				templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1073, Col: 51}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "</span></button>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		return nil
 	})
@@ -3855,121 +4016,121 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var173 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var173 == nil {
-			templ_7745c5c3_Var173 = templ.NopComponent
+		templ_7745c5c3_Var181 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var181 == nil {
+			templ_7745c5c3_Var181 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 302, "<div class=\"gallery-grid\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "<div class=\"gallery-grid\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, f := range faces {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 303, "<div class=\"gallery-tile\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "<div class=\"gallery-tile\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var174 templ.SafeURL
-			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(f.MediaID)))
+			var templ_7745c5c3_Var182 templ.SafeURL
+			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(f.MediaID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1043, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1084, Col: 48}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 304, "\" class=\"gallery-thumb\"><img src=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var175 string
-			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(f.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1044, Col: 34}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "\" class=\"gallery-thumb\"><img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 305, "\" alt=\"\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></a><form class=\"gallery-tile-action\" method=\"post\" action=\"")
+			var templ_7745c5c3_Var183 string
+			templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(f.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1085, Col: 34}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var176 templ.SafeURL
-			templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", person.ID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1049, Col: 90}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, "\" alt=\"\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></a><form class=\"gallery-tile-action\" method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 306, "\" data-confirm=\"")
+			var templ_7745c5c3_Var184 templ.SafeURL
+			templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", person.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1090, Col: 90}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var177 string
-			templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs("This photo is not of " + person.DisplayName() + "? It moves to a new, unnamed person.")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1050, Col: 107}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, "\" data-confirm=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 307, "\" data-confirm-title=\"Not this person\" data-confirm-action=\"Remove\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			var templ_7745c5c3_Var185 string
+			templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs("This photo is not of " + person.DisplayName() + "? It moves to a new, unnamed person.")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1091, Col: 107}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var178 string
-			templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1054, Col: 61}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 322, "\" data-confirm-title=\"Not this person\" data-confirm-action=\"Remove\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 308, "\"> <input type=\"hidden\" name=\"face_id\" value=\"")
+			var templ_7745c5c3_Var186 string
+			templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1095, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var179 string
-			templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1055, Col: 76}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 323, "\"> <input type=\"hidden\" name=\"face_id\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 309, "\"> <button type=\"submit\" class=\"gallery-tile-remove\" aria-label=\"")
+			var templ_7745c5c3_Var187 string
+			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1096, Col: 76}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var180 string
-			templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1056, Col: 97}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 324, "\"> <button type=\"submit\" class=\"gallery-tile-remove\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 310, "\" title=\"")
+			var templ_7745c5c3_Var188 string
+			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1097, Col: 97}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var181 string
-			templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1056, Col: 137}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 325, "\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 311, "\">")
+			var templ_7745c5c3_Var189 string
+			templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1097, Col: 137}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 326, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3977,12 +4138,12 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 312, "</button></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 327, "</button></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 313, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 328, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4007,12 +4168,12 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var182 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var182 == nil {
-			templ_7745c5c3_Var182 = templ.NopComponent
+		templ_7745c5c3_Var190 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var190 == nil {
+			templ_7745c5c3_Var190 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var183 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var191 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4028,12 +4189,12 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 314, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 329, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(tags) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 315, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 330, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4041,68 +4202,68 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 316, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 331, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 317, "<ul class=\"chip-group gallery-tags\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 332, "<ul class=\"chip-group gallery-tags\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, t := range tags {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 318, "<li><a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 333, "<li><a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var184 templ.SafeURL
-					templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)))
+					var templ_7745c5c3_Var192 templ.SafeURL
+					templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1077, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1118, Col: 76}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 319, "\" class=\"chip\">")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var185 string
-					templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1078, Col: 15}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 334, "\" class=\"chip\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 320, " <span class=\"count\">")
+					var templ_7745c5c3_Var193 string
+					templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1119, Col: 15}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var186 string
-					templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(t.Count))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1079, Col: 50}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, " <span class=\"count\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 321, "</span></a></li>")
+					var templ_7745c5c3_Var194 string
+					templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(t.Count))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1120, Col: 50}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 336, "</span></a></li>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 322, "</ul>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 337, "</ul>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var183), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var191), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4126,12 +4287,12 @@ func tagViewPage(activePath string, name string, media []Media) templ.Component 
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var187 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var187 == nil {
-			templ_7745c5c3_Var187 = templ.NopComponent
+		templ_7745c5c3_Var195 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var195 == nil {
+			templ_7745c5c3_Var195 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var188 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var196 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4147,12 +4308,12 @@ func tagViewPage(activePath string, name string, media []Media) templ.Component 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 323, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 338, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(media) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 324, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4160,7 +4321,7 @@ func tagViewPage(activePath string, name string, media []Media) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 325, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4172,7 +4333,7 @@ func tagViewPage(activePath string, name string, media []Media) templ.Component 
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var188), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var196), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4197,12 +4358,12 @@ func videosPage(media []Media) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var189 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var189 == nil {
-			templ_7745c5c3_Var189 = templ.NopComponent
+		templ_7745c5c3_Var197 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var197 == nil {
+			templ_7745c5c3_Var197 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var190 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var198 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4218,12 +4379,12 @@ func videosPage(media []Media) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 326, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(media) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 327, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4231,7 +4392,7 @@ func videosPage(media []Media) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 328, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4243,7 +4404,7 @@ func videosPage(media []Media) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout("/apps/gallery/videos").Render(templ.WithChildren(ctx, templ_7745c5c3_Var190), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout("/apps/gallery/videos").Render(templ.WithChildren(ctx, templ_7745c5c3_Var198), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4267,12 +4428,12 @@ func starredPage(media []Media) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var191 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var191 == nil {
-			templ_7745c5c3_Var191 = templ.NopComponent
+		templ_7745c5c3_Var199 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var199 == nil {
+			templ_7745c5c3_Var199 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var192 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var200 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4288,12 +4449,12 @@ func starredPage(media []Media) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 329, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(media) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 330, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4301,7 +4462,7 @@ func starredPage(media []Media) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 331, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4313,7 +4474,7 @@ func starredPage(media []Media) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout("/apps/gallery/starred").Render(templ.WithChildren(ctx, templ_7745c5c3_Var192), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout("/apps/gallery/starred").Render(templ.WithChildren(ctx, templ_7745c5c3_Var200), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4338,12 +4499,12 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var193 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var193 == nil {
-			templ_7745c5c3_Var193 = templ.NopComponent
+		templ_7745c5c3_Var201 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var201 == nil {
+			templ_7745c5c3_Var201 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var194 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var202 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4355,7 +4516,7 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var195 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var203 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -4368,36 +4529,36 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 				}
 				ctx = templ.InitializeContext(ctx)
 				if len(groups) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 332, "<span class=\"badge badge-neutral\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "<span class=\"badge badge-neutral\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var196 string
-					templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(groups), "group", "groups"))
+					var templ_7745c5c3_Var204 string
+					templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(groups), "group", "groups"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1133, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1174, Col: 78}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 333, "</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.PageHeader("Duplicates", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var195), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.PageHeader("Duplicates", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var203), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 334, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(groups) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4405,68 +4566,68 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 336, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 337, "<div class=\"gallery-albums\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "<div class=\"gallery-albums\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, g := range groups {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 338, "<a href=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "<a href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var197 templ.SafeURL
-					templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)))
+					var templ_7745c5c3_Var205 templ.SafeURL
+					templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1143, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1184, Col: 78}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 339, "\" class=\"gallery-album\"><span class=\"gallery-thumb\"><img src=\"")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var198 string
-					templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(g.CoverMediaID, 256))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1145, Col: 47}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, "\" class=\"gallery-album\"><span class=\"gallery-thumb\"><img src=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 340, "\" alt=\"\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></span> <span class=\"gallery-album-name\">")
+					var templ_7745c5c3_Var206 string
+					templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(g.CoverMediaID, 256))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1186, Col: 47}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var199 string
-					templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(plural(g.MemberCount, "similar photo", "similar photos"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1147, Col: 97}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, "\" alt=\"\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></span> <span class=\"gallery-album-name\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 341, "</span></a>")
+					var templ_7745c5c3_Var207 string
+					templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(plural(g.MemberCount, "similar photo", "similar photos"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1188, Col: 97}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 356, "</span></a>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 342, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 357, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var194), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var202), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -4500,12 +4661,12 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var200 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var200 == nil {
-			templ_7745c5c3_Var200 = templ.NopComponent
+		templ_7745c5c3_Var208 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var208 == nil {
+			templ_7745c5c3_Var208 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var201 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var209 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -4517,7 +4678,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Var202 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var210 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -4529,77 +4690,77 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 343, "<form method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 358, "<form method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var203 templ.SafeURL
-				templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)))
+				var templ_7745c5c3_Var211 templ.SafeURL
+				templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1168, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1209, Col: 106}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 344, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var204 string
-				templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1169, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 359, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 345, "\"> <button type=\"submit\" class=\"btn\">Not duplicates</button></form>")
+				var templ_7745c5c3_Var212 string
+				templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 60}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 360, "\"> <button type=\"submit\" class=\"btn\">Not duplicates</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if othersCount(members) > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 346, "<form method=\"post\" action=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 361, "<form method=\"post\" action=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var205 templ.SafeURL
-					templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)))
+					var templ_7745c5c3_Var213 templ.SafeURL
+					templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1175, Col: 87}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1216, Col: 87}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 347, "\" data-confirm=\"")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var206 string
-					templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs("Move " + plural(othersCount(members), "photo", "photos") + " to the trash and keep the one marked Keep?")
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1176, Col: 125}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 362, "\" data-confirm=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 348, "\" data-confirm-title=\"Delete the others\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+					var templ_7745c5c3_Var214 string
+					templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs("Move " + plural(othersCount(members), "photo", "photos") + " to the trash and keep the one marked Keep?")
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1217, Col: 125}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var207 string
-					templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1179, Col: 61}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 363, "\" data-confirm-title=\"Delete the others\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 349, "\"> <button type=\"submit\" class=\"btn btn-danger\">")
+					var templ_7745c5c3_Var215 string
+					templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1220, Col: 61}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 364, "\"> <button type=\"submit\" class=\"btn btn-danger\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -4607,21 +4768,21 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var208 string
-					templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + plural(othersCount(members), "other", "others"))
+					var templ_7745c5c3_Var216 string
+					templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + plural(othersCount(members), "other", "others"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1182, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1223, Col: 67}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 350, "</button></form>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 365, "</button></form>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 351, " <div class=\"dropdown\"><button type=\"button\" class=\"btn btn-square\" data-dropdown-toggle aria-expanded=\"false\" aria-controls=\"dupe-menu\" aria-label=\"More actions\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 366, " <div class=\"dropdown\"><button type=\"button\" class=\"btn btn-square\" data-dropdown-toggle aria-expanded=\"false\" aria-controls=\"dupe-menu\" aria-label=\"More actions\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4629,7 +4790,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 352, "</button><div class=\"dropdown-menu\" id=\"dupe-menu\"><button type=\"button\" class=\"danger\" data-modal-open=\"gallery-delete-all\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 367, "</button><div class=\"dropdown-menu\" id=\"dupe-menu\"><button type=\"button\" class=\"danger\" data-modal-open=\"gallery-delete-all\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4637,84 +4798,84 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 353, "Delete all, including the kept one…</button></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 368, "Delete all, including the kept one…</button></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.PageHeader("Duplicate group", []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var202), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.PageHeader("Duplicate group", []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates"}}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var210), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 354, " <div class=\"gallery-dupes\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 369, " <div class=\"gallery-dupes\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, m := range members {
-				var templ_7745c5c3_Var209 = []any{"card gallery-dupe", templ.KV("is-keep", m.IsKeep)}
-				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var209...)
+				var templ_7745c5c3_Var217 = []any{"card gallery-dupe", templ.KV("is-keep", m.IsKeep)}
+				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var217...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 355, "<div class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 370, "<div class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var210 string
-				templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var209).String())
+				var templ_7745c5c3_Var218 string
+				templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var217).String())
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1, Col: 0}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 356, "\"><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 371, "\"><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var211 templ.SafeURL
-				templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(m.Media.ID)))
+				var templ_7745c5c3_Var219 templ.SafeURL
+				templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(m.Media.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1201, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1242, Col: 50}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 357, "\" class=\"gallery-thumb\"><img src=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var212 string
-				templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(m.Media.ID, 256))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1202, Col: 42}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 372, "\" class=\"gallery-thumb\"><img src=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 358, "\" alt=\"")
+				var templ_7745c5c3_Var220 string
+				templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(m.Media.ID, 256))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1243, Col: 42}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var213 string
-				templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1202, Col: 69}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 373, "\" alt=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 359, "\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></a><div class=\"gallery-dupe-body\">")
+				var templ_7745c5c3_Var221 string
+				templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1243, Col: 69}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 374, "\" loading=\"lazy\" onerror=\"this.parentElement.classList.add('is-missing')\"></a><div class=\"gallery-dupe-body\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if m.IsKeep {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 360, "<span class=\"badge badge-success\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "<span class=\"badge badge-success\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -4722,227 +4883,227 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 361, "Keep</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "Keep</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 362, "<dl class=\"gallery-meta\"><dt>File</dt><dd>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var214 string
-				templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1213, Col: 31}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 363, "</dd><dt>Size</dt><dd>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var215 string
-				templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Width))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1215, Col: 40}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 364, " × ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var216 string
-				templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Height))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1215, Col: 76}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 365, "</dd>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				if m.Distance > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 366, "<dt>Difference</dt><dd>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var217 string
-					templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f", m.Distance))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1218, Col: 45}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 367, "</dd>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 368, "</dl><div class=\"gallery-dupe-actions\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				if !m.IsKeep {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 369, "<form method=\"post\" action=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var218 templ.SafeURL
-					templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1223, Col: 108}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 370, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var219 string
-					templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1224, Col: 65}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 371, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var220 string
-					templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1225, Col: 87}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 372, "\"> <button type=\"submit\" class=\"btn btn-sm\">Keep this one</button></form>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 373, "<form method=\"post\" action=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var221 templ.SafeURL
-				templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1229, Col: 109}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 374, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "<dl class=\"gallery-meta\"><dt>File</dt><dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var222 string
-				templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1230, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1254, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var222))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "</dd><dt>Size</dt><dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var223 string
-				templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
+				templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Width))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1231, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1256, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "\"> <button type=\"submit\" class=\"btn btn-sm\">Not a duplicate</button></form><form class=\"ml-auto\" method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 379, " × ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var224 templ.SafeURL
-				templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", groupID)))
+				var templ_7745c5c3_Var224 string
+				templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1237, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1256, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "\" data-confirm=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "</dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var225 string
-				templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs("Move “" + m.Media.FileName() + "” to the trash?")
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1238, Col: 76}
+				if m.Distance > 0 {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 381, "<dt>Difference</dt><dd>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var225 string
+					templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f", m.Distance))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1259, Col: 45}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 382, "</dd>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "\" data-confirm-title=\"Delete photo\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var226 string
-				templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1241, Col: 64}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 379, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 383, "</dl><div class=\"gallery-dupe-actions\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var227 string
-				templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1242, Col: 86}
+				if !m.IsKeep {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 384, "<form method=\"post\" action=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var226 templ.SafeURL
+					templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1264, Col: 108}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 385, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var227 string
+					templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1265, Col: 65}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 386, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var228 string
+					templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1266, Col: 87}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 387, "\"> <button type=\"submit\" class=\"btn btn-sm\">Keep this one</button></form>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 388, "<form method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "\"> <button type=\"submit\" class=\"btn-icon btn-icon-sm btn-icon-danger\" aria-label=\"")
+				var templ_7745c5c3_Var229 templ.SafeURL
+				templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1270, Col: 109}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var228 string
-				templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + m.Media.FileName())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1243, Col: 118}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 389, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 381, "\" title=\"Delete\">")
+				var templ_7745c5c3_Var230 string
+				templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1271, Col: 64}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 390, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var231 string
+				templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1272, Col: 86}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 391, "\"> <button type=\"submit\" class=\"btn btn-sm\">Not a duplicate</button></form><form class=\"ml-auto\" method=\"post\" action=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var232 templ.SafeURL
+				templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", groupID)))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1278, Col: 97}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 392, "\" data-confirm=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var233 string
+				templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.JoinStringErrs("Move “" + m.Media.FileName() + "” to the trash?")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1279, Col: 76}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var233))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 393, "\" data-confirm-title=\"Delete photo\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var234 string
+				templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1282, Col: 64}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 394, "\"> <input type=\"hidden\" name=\"media_id\" value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var235 string
+				templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1283, Col: 86}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 395, "\"> <button type=\"submit\" class=\"btn-icon btn-icon-sm btn-icon-danger\" aria-label=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var236 string
+				templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + m.Media.FileName())
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1284, Col: 118}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 396, "\" title=\"Delete\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -4950,16 +5111,16 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 382, "</button></form></div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 397, "</button></form></div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 383, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 398, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var229 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var237 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -4971,58 +5132,58 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 384, "<form method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 399, "<form method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var230 templ.SafeURL
-				templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)))
+				var templ_7745c5c3_Var238 templ.SafeURL
+				templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1253, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1294, Col: 109}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 385, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var231 string
-				templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1254, Col: 60}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 400, "\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 386, "\"><div class=\"modal-body\"><p>")
+				var templ_7745c5c3_Var239 string
+				templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1295, Col: 60}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var232 string
-				templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinStringErrs("This moves all " + plural(len(members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery.")
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1256, Col: 154}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 401, "\"><div class=\"modal-body\"><p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 387, "</p><div class=\"form-group mb-0 mt-2\"><label for=\"gallery-delete-all-confirm\">Type <strong>delete</strong> to confirm</label> <input class=\"form-control\" id=\"gallery-delete-all-confirm\" type=\"text\" required pattern=\"[Dd][Ee][Ll][Ee][Tt][Ee]\" autocomplete=\"off\"></div></div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-danger\">Delete all</button></div></form>")
+				var templ_7745c5c3_Var240 string
+				templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs("This moves all " + plural(len(members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery.")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1297, Col: 154}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 402, "</p><div class=\"form-group mb-0 mt-2\"><label for=\"gallery-delete-all-confirm\">Type <strong>delete</strong> to confirm</label> <input class=\"form-control\" id=\"gallery-delete-all-confirm\" type=\"text\" required pattern=\"[Dd][Ee][Ll][Ee][Tt][Ee]\" autocomplete=\"off\"></div></div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-danger\">Delete all</button></div></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Modal("gallery-delete-all", "Delete every photo in this group").Render(templ.WithChildren(ctx, templ_7745c5c3_Var229), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Modal("gallery-delete-all", "Delete every photo in this group").Render(templ.WithChildren(ctx, templ_7745c5c3_Var237), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var201), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout(activePath).Render(templ.WithChildren(ctx, templ_7745c5c3_Var209), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -5050,12 +5211,12 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var233 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var233 == nil {
-			templ_7745c5c3_Var233 = templ.NopComponent
+		templ_7745c5c3_Var241 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var241 == nil {
+			templ_7745c5c3_Var241 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var234 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var242 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -5071,37 +5232,37 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 388, " <div class=\"card\"><div class=\"card-header\"><h2 class=\"card-title\">Library</h2><form method=\"post\" action=\"/apps/gallery/settings/scan\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 403, " <div class=\"card\"><div class=\"card-header\"><h2 class=\"card-title\">Library</h2><form method=\"post\" action=\"/apps/gallery/settings/scan\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var235 string
-			templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			var templ_7745c5c3_Var243 string
+			templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1282, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1323, Col: 61}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 389, "\"> <button type=\"submit\" class=\"btn\">Scan now</button></form></div><p>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var236 string
-			templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "photo or video", "photos and videos"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1286, Col: 60}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 404, "\"> <button type=\"submit\" class=\"btn\">Scan now</button></form></div><p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 390, " indexed.</p></div>")
+			var templ_7745c5c3_Var244 string
+			templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "photo or video", "photos and videos"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1327, Col: 60}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var237 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 405, " indexed.</p></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Var245 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -5113,47 +5274,47 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 391, "<form method=\"post\" action=\"/apps/gallery/settings/folders\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 406, "<form method=\"post\" action=\"/apps/gallery/settings/folders\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var238 string
-				templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				var templ_7745c5c3_Var246 string
+				templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1290, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1331, Col: 60}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 392, "\"><div class=\"form-group\"><label for=\"gallery-folders\">Folder patterns</label> <textarea id=\"gallery-folders\" name=\"folders\" class=\"form-control mono\" rows=\"4\" required placeholder=\"Photos/\" aria-describedby=\"gallery-folders-help\">")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var239 string
-				templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(SettingScanFolders.MustGet(db))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1293, Col: 189}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 407, "\"><div class=\"form-group\"><label for=\"gallery-folders\">Folder patterns</label> <textarea id=\"gallery-folders\" name=\"folders\" class=\"form-control mono\" rows=\"4\" required placeholder=\"Photos/\" aria-describedby=\"gallery-folders-help\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 393, "</textarea><p class=\"form-help\" id=\"gallery-folders-help\">One pattern per line. A trailing <code>/</code> takes everything in that folder; globs such as <code>Camera/*.jpg</code> work too.</p></div><div class=\"form-actions mt-0\"><button type=\"submit\" class=\"btn btn-primary\">Save</button> <button type=\"button\" class=\"btn\" hx-get=\"/apps/gallery/api/scan-folders-preview\" hx-include=\"closest form\" hx-params=\"folders\" hx-target=\"#folder-preview\">Preview matches</button></div><p class=\"form-error\" data-preview-error hidden role=\"alert\">The preview could not be loaded. Try again.</p><div id=\"folder-preview\" class=\"gallery-folder-preview\" aria-live=\"polite\"></div></form>")
+				var templ_7745c5c3_Var247 string
+				templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.JoinStringErrs(SettingScanFolders.MustGet(db))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1334, Col: 189}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var247))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 408, "</textarea><p class=\"form-help\" id=\"gallery-folders-help\">One pattern per line. A trailing <code>/</code> takes everything in that folder; globs such as <code>Camera/*.jpg</code> work too.</p></div><div class=\"form-actions mt-0\"><button type=\"submit\" class=\"btn btn-primary\">Save</button> <button type=\"button\" class=\"btn\" hx-get=\"/apps/gallery/api/scan-folders-preview\" hx-include=\"closest form\" hx-params=\"folders\" hx-target=\"#folder-preview\">Preview matches</button></div><p class=\"form-error\" data-preview-error hidden role=\"alert\">The preview could not be loaded. Try again.</p><div id=\"folder-preview\" class=\"gallery-folder-preview\" aria-live=\"polite\"></div></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Folders to scan").Render(templ.WithChildren(ctx, templ_7745c5c3_Var237), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Card("Folders to scan").Render(templ.WithChildren(ctx, templ_7745c5c3_Var245), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 394, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 409, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Var240 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var248 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -5165,68 +5326,68 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 395, "<form method=\"get\" action=\"/apps/gallery/rename/preview\"><div class=\"form-group\"><label for=\"gallery-rename-pattern\">Pattern</label> <input type=\"text\" id=\"gallery-rename-pattern\" name=\"pattern\" class=\"form-control mono\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 410, "<form method=\"get\" action=\"/apps/gallery/rename/preview\"><div class=\"form-group\"><label for=\"gallery-rename-pattern\">Pattern</label> <input type=\"text\" id=\"gallery-rename-pattern\" name=\"pattern\" class=\"form-control mono\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var241 string
-				templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "rename_pattern", defaultRenamePattern))
+				var templ_7745c5c3_Var249 string
+				templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "rename_pattern", defaultRenamePattern))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1322, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1363, Col: 68}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var241))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 396, "\" placeholder=\"{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}\" required aria-describedby=\"gallery-rename-help\"><p class=\"form-help\" id=\"gallery-rename-help\">A Go template. Available fields:</p><ul class=\"chip-group gallery-fields\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 411, "\" placeholder=\"{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}\" required aria-describedby=\"gallery-rename-help\"><p class=\"form-help\" id=\"gallery-rename-help\">A Go template. Available fields:</p><ul class=\"chip-group gallery-fields\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, f := range []string{"Year", "Month", "Day", "Hour", "Minute", "Second", "Camera", "Lens", "Original", "Ext", "Place", "Country"} {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 397, "<li><code>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 412, "<li><code>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var242 string
-					templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinStringErrs("{{." + f + "}}")
+					var templ_7745c5c3_Var250 string
+					templ_7745c5c3_Var250, templ_7745c5c3_Err = templ.JoinStringErrs("{{." + f + "}}")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1330, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1371, Col: 35}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var250))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 398, "</code></li>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 413, "</code></li>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 399, "</ul></div><div class=\"form-actions mt-0\"><button type=\"submit\" class=\"btn btn-primary\" data-testid=\"rename-preview\">Preview rename</button></div></form><div class=\"card-subtitle\">Undo</div><form method=\"post\" action=\"/apps/gallery/rename/undo\" class=\"gallery-undo\" data-confirm=\"Put every file the last rename moved back where it was?\" data-confirm-title=\"Undo last rename\" data-confirm-action=\"Undo\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 414, "</ul></div><div class=\"form-actions mt-0\"><button type=\"submit\" class=\"btn btn-primary\" data-testid=\"rename-preview\">Preview rename</button></div></form><div class=\"card-subtitle\">Undo</div><form method=\"post\" action=\"/apps/gallery/rename/undo\" class=\"gallery-undo\" data-confirm=\"Put every file the last rename moved back where it was?\" data-confirm-title=\"Undo last rename\" data-confirm-action=\"Undo\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var243 string
-				templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				var templ_7745c5c3_Var251 string
+				templ_7745c5c3_Var251, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1340, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1381, Col: 60}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var251))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 400, "\"><p class=\"text-sm text-muted\">Puts back the files the last rename moved.</p><button type=\"submit\" class=\"btn\">Undo last rename</button></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 415, "\"><p class=\"text-sm text-muted\">Puts back the files the last rename moved.</p><button type=\"submit\" class=\"btn\">Undo last rename</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Rename files").Render(templ.WithChildren(ctx, templ_7745c5c3_Var240), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Card("Rename files").Render(templ.WithChildren(ctx, templ_7745c5c3_Var248), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout("/apps/gallery/settings").Render(templ.WithChildren(ctx, templ_7745c5c3_Var234), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout("/apps/gallery/settings").Render(templ.WithChildren(ctx, templ_7745c5c3_Var242), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -5251,54 +5412,54 @@ func scanFoldersPreview(folders []string, total int) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var244 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var244 == nil {
-			templ_7745c5c3_Var244 = templ.NopComponent
+		templ_7745c5c3_Var252 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var252 == nil {
+			templ_7745c5c3_Var252 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if total == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 401, "<p class=\"text-sm text-muted\">No photos or videos match these patterns.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 416, "<p class=\"text-sm text-muted\">No photos or videos match these patterns.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 402, "<p class=\"text-sm\"><strong>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 417, "<p class=\"text-sm\"><strong>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var245 string
-			templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "matching file", "matching files"))
+			var templ_7745c5c3_Var253 string
+			templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "matching file", "matching files"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1353, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1394, Col: 79}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 403, "</strong> in:</p><ul class=\"gallery-folder-list\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 418, "</strong> in:</p><ul class=\"gallery-folder-list\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, f := range folders {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 404, "<li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 419, "<li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var246 string
-				templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinStringErrs(f)
+				var templ_7745c5c3_Var254 string
+				templ_7745c5c3_Var254, templ_7745c5c3_Err = templ.JoinStringErrs(f)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1356, Col: 11}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1397, Col: 11}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var254))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 405, "</li>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 420, "</li>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 406, "</ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 421, "</ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -5324,12 +5485,12 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var247 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var247 == nil {
-			templ_7745c5c3_Var247 = templ.NopComponent
+		templ_7745c5c3_Var255 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var255 == nil {
+			templ_7745c5c3_Var255 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 407, "<header class=\"page-header\"><div class=\"page-heading\"><h1>Gallery Settings</h1><p class=\"page-subtitle\">These settings apply to all users.</p></div></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 422, "<header class=\"page-header\"><div class=\"page-heading\"><h1>Gallery Settings</h1><p class=\"page-subtitle\">These settings apply to all users.</p></div></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -5337,7 +5498,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var248 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var256 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -5349,312 +5510,204 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 408, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var249 string
-			templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1373, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 409, "\"> <input type=\"hidden\" name=\"_section\" value=\"tags\"><div class=\"form-group\"><label for=\"tag_backend\">Backend</label> <select id=\"tag_backend\" name=\"tag_backend\" class=\"form-control\" data-tag-backend><option value=\"none\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_backend", "none") == "none" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 410, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 411, ">None (disabled)</option> <option value=\"onnx\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_backend", "none") == "onnx" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 412, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 413, ">ONNX (local)</option> <option value=\"ollama\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_backend", "none") == "ollama" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 414, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 415, ">Ollama</option> <option value=\"openai\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_backend", "none") == "openai" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 416, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 417, ">OpenAI-compatible</option></select></div><div class=\"form-group\" id=\"tag-model-group\"><label for=\"tag_model\">ONNX tag model</label> <select id=\"tag_model\" name=\"tag_model\" class=\"form-control\"><option value=\"joytag\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_model", "joytag") == "joytag" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 418, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 419, ">JoyTag (multi-label, photos)</option> <option value=\"wd14\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_model", "joytag") == "wd14" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 420, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 421, ">WD14 (multi-label, general)</option> <option value=\"mobilenet\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "tag_model", "joytag") == "mobilenet" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 422, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 423, ">MobileNet (ImageNet, legacy)</option></select><p class=\"form-help\">Only used when the backend is ONNX.</p></div><div class=\"form-group\"><label for=\"tag_min_confidence\">Minimum confidence</label> <input type=\"number\" id=\"tag_min_confidence\" name=\"tag_min_confidence\" class=\"form-control w-xs\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var250 string
-			templ_7745c5c3_Var250, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "tag_min_confidence", "0.5"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1395, Col: 152}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var250))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 424, "\" step=\"0.05\" min=\"0\" max=\"1\"><p class=\"form-help\">Tags below this confidence are discarded. Default: 0.5</p></div><button type=\"submit\" class=\"btn btn-primary\">Save</button><script>\n\t\t\t\t(function () {\n\t\t\t\t\tvar sel = document.querySelector(\"[data-tag-backend]\");\n\t\t\t\t\tvar group = document.getElementById(\"tag-model-group\");\n\t\t\t\t\tfunction update() {\n\t\t\t\t\t\tgroup.hidden = sel.value !== \"onnx\";\n\t\t\t\t\t}\n\t\t\t\t\tsel.addEventListener(\"change\", update);\n\t\t\t\t\tupdate();\n\t\t\t\t})();\n\t\t\t</script></form>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = ui.Card("Tag classification").Render(templ.WithChildren(ctx, templ_7745c5c3_Var248), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var251 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 425, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var252 string
-			templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1414, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 426, "\"> <input type=\"hidden\" name=\"_section\" value=\"faces\"><div class=\"form-group\"><label for=\"face_backend\">Backend</label> <select id=\"face_backend\" name=\"face_backend\" class=\"form-control\"><option value=\"none\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "face_backend", "none") == "none" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 427, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 428, ">None (disabled)</option> <option value=\"onnx\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "face_backend", "none") == "onnx" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 429, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 430, ">ONNX (SCRFD + ArcFace)</option> <option value=\"pigo\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "face_backend", "none") == "pigo" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 431, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 432, ">Pigo (detection only, no embeddings)</option></select></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"face_min_confidence\">Minimum confidence</label> <input type=\"number\" id=\"face_min_confidence\" name=\"face_min_confidence\" class=\"form-control\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var253 string
-			templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "face_min_confidence", "0.7"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1427, Col: 151}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 433, "\" step=\"0.05\" min=\"0\" max=\"1\"><p class=\"form-help\">Faces below this confidence are discarded. Default: 0.7</p></div><div class=\"form-group\"><label for=\"cluster_threshold\">Cluster threshold</label> <input type=\"number\" id=\"cluster_threshold\" name=\"cluster_threshold\" class=\"form-control\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var254 string
-			templ_7745c5c3_Var254, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "cluster_threshold", "0.35"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1432, Col: 146}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var254))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 434, "\" step=\"0.01\" min=\"0.01\" max=\"1.0\"><p class=\"form-help\">Cosine distance for grouping faces into people (lower is stricter). Default: 0.35</p></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = ui.Card("Face detection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var251), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var255 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 435, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var256 string
-			templ_7745c5c3_Var256, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1441, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var256))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 436, "\"> <input type=\"hidden\" name=\"_section\" value=\"duplicates\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"duplicate_detection_enabled\" value=\"true\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_detection_enabled", "true") == "true" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 437, " checked")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 438, "> Find duplicate photos</label></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"duplicate_algorithm\">Algorithm</label> <select id=\"duplicate_algorithm\" name=\"duplicate_algorithm\" class=\"form-control\"><option value=\"difference\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_algorithm", "difference") == "difference" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 439, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 440, ">Difference hash</option> <option value=\"average\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_algorithm", "difference") == "average" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 441, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 442, ">Average hash</option> <option value=\"phash\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_algorithm", "difference") == "phash" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 443, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 444, ">Perceptual hash (pHash)</option> <option value=\"median\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_algorithm", "difference") == "median" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 445, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 446, ">Median hash</option> <option value=\"blockmean\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "duplicate_algorithm", "difference") == "blockmean" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 447, " selected")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 448, ">Block mean hash</option></select></div><div class=\"form-group\"><label for=\"duplicate_distance\">Distance threshold</label> <input type=\"number\" id=\"duplicate_distance\" name=\"duplicate_distance\" class=\"form-control\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 423, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var257 string
-			templ_7745c5c3_Var257, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "duplicate_distance", "5"))
+			templ_7745c5c3_Var257, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1462, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1414, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var257))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 449, "\" min=\"0\" max=\"64\"><p class=\"form-help\">Largest Hamming distance still counted as a duplicate (lower is stricter). Default: 5</p></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 424, "\"> <input type=\"hidden\" name=\"_section\" value=\"tags\"><div class=\"form-group\"><label for=\"tag_backend\">Backend</label> <select id=\"tag_backend\" name=\"tag_backend\" class=\"form-control\" data-tag-backend><option value=\"none\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_backend", "none") == "none" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 425, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 426, ">None (disabled)</option> <option value=\"onnx\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_backend", "none") == "onnx" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 427, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 428, ">ONNX (local)</option> <option value=\"ollama\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_backend", "none") == "ollama" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 429, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 430, ">Ollama</option> <option value=\"openai\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_backend", "none") == "openai" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 431, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 432, ">OpenAI-compatible</option></select></div><div class=\"form-group\" id=\"tag-model-group\"><label for=\"tag_model\">ONNX tag model</label> <select id=\"tag_model\" name=\"tag_model\" class=\"form-control\"><option value=\"joytag\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_model", "joytag") == "joytag" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 433, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 434, ">JoyTag (multi-label, photos)</option> <option value=\"wd14\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_model", "joytag") == "wd14" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 435, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 436, ">WD14 (multi-label, general)</option> <option value=\"mobilenet\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "tag_model", "joytag") == "mobilenet" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 437, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 438, ">MobileNet (ImageNet, legacy)</option></select><p class=\"form-help\">Only used when the backend is ONNX.</p></div><div class=\"form-group\"><label for=\"tag_min_confidence\">Minimum confidence</label> <input type=\"number\" id=\"tag_min_confidence\" name=\"tag_min_confidence\" class=\"form-control w-xs\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var258 string
+			templ_7745c5c3_Var258, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "tag_min_confidence", "0.5"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1436, Col: 152}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var258))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 439, "\" step=\"0.05\" min=\"0\" max=\"1\"><p class=\"form-help\">Tags below this confidence are discarded. Default: 0.5</p></div><button type=\"submit\" class=\"btn btn-primary\">Save</button><script>\n\t\t\t\t(function () {\n\t\t\t\t\tvar sel = document.querySelector(\"[data-tag-backend]\");\n\t\t\t\t\tvar group = document.getElementById(\"tag-model-group\");\n\t\t\t\t\tfunction update() {\n\t\t\t\t\t\tgroup.hidden = sel.value !== \"onnx\";\n\t\t\t\t\t}\n\t\t\t\t\tsel.addEventListener(\"change\", update);\n\t\t\t\t\tupdate();\n\t\t\t\t})();\n\t\t\t</script></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Duplicate detection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var255), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Card("Tag classification").Render(templ.WithChildren(ctx, templ_7745c5c3_Var256), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var258 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var259 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 440, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var260 string
+			templ_7745c5c3_Var260, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1455, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var260))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 441, "\"> <input type=\"hidden\" name=\"_section\" value=\"faces\"><div class=\"form-group\"><label for=\"face_backend\">Backend</label> <select id=\"face_backend\" name=\"face_backend\" class=\"form-control\"><option value=\"none\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "face_backend", "none") == "none" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 442, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 443, ">None (disabled)</option> <option value=\"onnx\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "face_backend", "none") == "onnx" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 444, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 445, ">ONNX (SCRFD + ArcFace)</option> <option value=\"pigo\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "face_backend", "none") == "pigo" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 446, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 447, ">Pigo (detection only, no embeddings)</option></select></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"face_min_confidence\">Minimum confidence</label> <input type=\"number\" id=\"face_min_confidence\" name=\"face_min_confidence\" class=\"form-control\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var261 string
+			templ_7745c5c3_Var261, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "face_min_confidence", "0.7"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1468, Col: 151}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var261))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 448, "\" step=\"0.05\" min=\"0\" max=\"1\"><p class=\"form-help\">Faces below this confidence are discarded. Default: 0.7</p></div><div class=\"form-group\"><label for=\"cluster_threshold\">Cluster threshold</label> <input type=\"number\" id=\"cluster_threshold\" name=\"cluster_threshold\" class=\"form-control\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var262 string
+			templ_7745c5c3_Var262, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "cluster_threshold", "0.35"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1473, Col: 146}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var262))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 449, "\" step=\"0.01\" min=\"0.01\" max=\"1.0\"><p class=\"form-help\">Cosine distance for grouping faces into people (lower is stricter). Default: 0.35</p></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = ui.Card("Face detection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var259), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var263 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -5670,187 +5723,295 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csr
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var259 string
-			templ_7745c5c3_Var259, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1471, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var259))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 451, "\"> <input type=\"hidden\" name=\"_section\" value=\"ocr\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"ocr_enabled\" value=\"true\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "ocr_enabled", "true") == "true" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 452, " checked")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 453, "> Extract text from photos</label><p class=\"form-help\">Needs tesseract installed on the server.</p></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = ui.Card("Text recognition (OCR)").Render(templ.WithChildren(ctx, templ_7745c5c3_Var258), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var260 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 454, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var261 string
-			templ_7745c5c3_Var261, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1485, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var261))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 455, "\"> <input type=\"hidden\" name=\"_section\" value=\"processing\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"preview_generation_enabled\" value=\"true\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "preview_generation_enabled", "true") == "true" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 456, " checked")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 457, "> Make thumbnails while scanning</label> <label class=\"form-check\"><input type=\"checkbox\" name=\"quality_scoring_enabled\" value=\"true\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if GetSetting(db, "quality_scoring_enabled", "true") == "true" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 458, " checked")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 459, "> Score image quality (sharpness)</label></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			return nil
-		})
-		templ_7745c5c3_Err = ui.Card("Processing").Render(templ.WithChildren(ctx, templ_7745c5c3_Var260), templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Var262 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-			if !templ_7745c5c3_IsBuffer {
-				defer func() {
-					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err == nil {
-						templ_7745c5c3_Err = templ_7745c5c3_BufErr
-					}
-				}()
-			}
-			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 460, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var263 string
-			templ_7745c5c3_Var263, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1502, Col: 59}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var263))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 461, "\"> <input type=\"hidden\" name=\"_section\" value=\"backend\"><p class=\"card-desc\">Shared by the tag classification and face detection backends.</p><div class=\"form-group\"><label for=\"onnx_library_path\">ONNX Runtime library path</label> <input type=\"text\" id=\"onnx_library_path\" name=\"onnx_library_path\" class=\"form-control mono\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			var templ_7745c5c3_Var264 string
-			templ_7745c5c3_Var264, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_library_path", ""))
+			templ_7745c5c3_Var264, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1507, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1482, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var264))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 462, "\" placeholder=\"/usr/lib/libonnxruntime.so\"><p class=\"form-help\">Leave blank to detect it.</p></div><div class=\"form-group\"><label for=\"onnx_models_dir\">ONNX models directory</label> <input type=\"text\" id=\"onnx_models_dir\" name=\"onnx_models_dir\" class=\"form-control mono\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 451, "\"> <input type=\"hidden\" name=\"_section\" value=\"duplicates\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"duplicate_detection_enabled\" value=\"true\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_detection_enabled", "true") == "true" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 452, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 453, "> Find duplicate photos</label></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"duplicate_algorithm\">Algorithm</label> <select id=\"duplicate_algorithm\" name=\"duplicate_algorithm\" class=\"form-control\"><option value=\"difference\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_algorithm", "difference") == "difference" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 454, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 455, ">Difference hash</option> <option value=\"average\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_algorithm", "difference") == "average" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 456, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 457, ">Average hash</option> <option value=\"phash\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_algorithm", "difference") == "phash" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 458, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 459, ">Perceptual hash (pHash)</option> <option value=\"median\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_algorithm", "difference") == "median" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 460, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 461, ">Median hash</option> <option value=\"blockmean\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "duplicate_algorithm", "difference") == "blockmean" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 462, " selected")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 463, ">Block mean hash</option></select></div><div class=\"form-group\"><label for=\"duplicate_distance\">Distance threshold</label> <input type=\"number\" id=\"duplicate_distance\" name=\"duplicate_distance\" class=\"form-control\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var265 string
-			templ_7745c5c3_Var265, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_models_dir", ""))
+			templ_7745c5c3_Var265, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "duplicate_distance", "5"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1512, Col: 138}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1503, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var265))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 463, "\" placeholder=\"(the data directory)\"></div><div class=\"form-group\"><label for=\"recognition_url\">Ollama / OpenAI URL</label> <input type=\"url\" id=\"recognition_url\" name=\"recognition_url\" class=\"form-control\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var266 string
-			templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_url", ""))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1516, Col: 132}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 464, "\" placeholder=\"http://localhost:11434\"></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"recognition_api_key\">API key</label> <input type=\"password\" id=\"recognition_api_key\" name=\"recognition_api_key\" class=\"form-control\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var267 string
-			templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_api_key", ""))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1521, Col: 150}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var267))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 465, "\" placeholder=\"sk-…\" autocomplete=\"off\"></div><div class=\"form-group\"><label for=\"recognition_model\">Model</label> <input type=\"text\" id=\"recognition_model\" name=\"recognition_model\" class=\"form-control\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var268 string
-			templ_7745c5c3_Var268, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_model", ""))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1525, Col: 140}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var268))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 466, "\" placeholder=\"llava:13b\"></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 464, "\" min=\"0\" max=\"64\"><p class=\"form-help\">Largest Hamming distance still counted as a duplicate (lower is stricter). Default: 5</p></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Backend connection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var262), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Card("Duplicate detection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var263), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var266 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 465, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var267 string
+			templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1512, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var267))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 466, "\"> <input type=\"hidden\" name=\"_section\" value=\"ocr\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"ocr_enabled\" value=\"true\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "ocr_enabled", "true") == "true" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 467, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 468, "> Extract text from photos</label><p class=\"form-help\">Needs tesseract installed on the server.</p></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = ui.Card("Text recognition (OCR)").Render(templ.WithChildren(ctx, templ_7745c5c3_Var266), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var268 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 469, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var269 string
+			templ_7745c5c3_Var269, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1526, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var269))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 470, "\"> <input type=\"hidden\" name=\"_section\" value=\"processing\"><div class=\"form-group\"><label class=\"form-check\"><input type=\"checkbox\" name=\"preview_generation_enabled\" value=\"true\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "preview_generation_enabled", "true") == "true" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 471, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 472, "> Make thumbnails while scanning</label> <label class=\"form-check\"><input type=\"checkbox\" name=\"quality_scoring_enabled\" value=\"true\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if GetSetting(db, "quality_scoring_enabled", "true") == "true" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 473, " checked")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 474, "> Score image quality (sharpness)</label></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = ui.Card("Processing").Render(templ.WithChildren(ctx, templ_7745c5c3_Var268), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Var270 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 475, "<form method=\"post\" action=\"/admin/plugins/gallery\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var271 string
+			templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1543, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 476, "\"> <input type=\"hidden\" name=\"_section\" value=\"backend\"><p class=\"card-desc\">Shared by the tag classification and face detection backends.</p><div class=\"form-group\"><label for=\"onnx_library_path\">ONNX Runtime library path</label> <input type=\"text\" id=\"onnx_library_path\" name=\"onnx_library_path\" class=\"form-control mono\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var272 string
+			templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_library_path", ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1548, Col: 144}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 477, "\" placeholder=\"/usr/lib/libonnxruntime.so\"><p class=\"form-help\">Leave blank to detect it.</p></div><div class=\"form-group\"><label for=\"onnx_models_dir\">ONNX models directory</label> <input type=\"text\" id=\"onnx_models_dir\" name=\"onnx_models_dir\" class=\"form-control mono\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var273 string
+			templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_models_dir", ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1553, Col: 138}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 478, "\" placeholder=\"(the data directory)\"></div><div class=\"form-group\"><label for=\"recognition_url\">Ollama / OpenAI URL</label> <input type=\"url\" id=\"recognition_url\" name=\"recognition_url\" class=\"form-control\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var274 string
+			templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_url", ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1557, Col: 132}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 479, "\" placeholder=\"http://localhost:11434\"></div><div class=\"form-row\"><div class=\"form-group\"><label for=\"recognition_api_key\">API key</label> <input type=\"password\" id=\"recognition_api_key\" name=\"recognition_api_key\" class=\"form-control\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var275 string
+			templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_api_key", ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1562, Col: 150}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var275))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 480, "\" placeholder=\"sk-…\" autocomplete=\"off\"></div><div class=\"form-group\"><label for=\"recognition_model\">Model</label> <input type=\"text\" id=\"recognition_model\" name=\"recognition_model\" class=\"form-control\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var276 string
+			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_model", ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1566, Col: 140}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 481, "\" placeholder=\"llava:13b\"></div></div><button type=\"submit\" class=\"btn btn-primary\">Save</button></form>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = ui.Card("Backend connection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var270), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -5875,26 +6036,26 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var269 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var269 == nil {
-			templ_7745c5c3_Var269 = templ.NopComponent
+		templ_7745c5c3_Var277 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var277 == nil {
+			templ_7745c5c3_Var277 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 467, "<div id=\"scan-status\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 482, "<div id=\"scan-status\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if scan.Running {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 468, " hx-get=\"/apps/gallery/api/scan-status\" hx-trigger=\"every 2s\" hx-swap=\"outerHTML\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 483, " hx-get=\"/apps/gallery/api/scan-status\" hx-trigger=\"every 2s\" hx-swap=\"outerHTML\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 469, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 484, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Var270 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var278 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -5906,348 +6067,348 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 470, "<dl class=\"kv mb-2\"><dt>Status</dt><dd>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 485, "<dl class=\"kv mb-2\"><dt>Status</dt><dd>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if scan.Running {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 471, "<span class=\"badge badge-primary\">Running</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 486, "<span class=\"badge badge-primary\">Running</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 472, "Idle")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 487, "Idle")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 473, "</dd>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 488, "</dd>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if !scan.LastRun.IsZero() {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 474, "<dt>Last run</dt><dd>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 489, "<dt>Last run</dt><dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var271 string
-				templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastRun.Format("Jan 2, 2006 3:04:05 PM"))
+				var templ_7745c5c3_Var279 string
+				templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastRun.Format("Jan 2, 2006 3:04:05 PM"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1555, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1596, Col: 56}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 475, "</dd>")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
-				}
-			}
-			if scan.LastError != nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 476, "<dt>Last error</dt><dd class=\"text-danger\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var272 string
-				templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastError.Error())
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1559, Col: 53}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 477, "</dd>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			if len(scan.Warnings) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 478, "<dt>Warnings</dt><dd class=\"text-warning\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				for _, w := range scan.Warnings {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 479, "<div>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var273 string
-					templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(w)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1565, Col: 15}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 480, "</div>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 481, "</dd>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 482, "<dt>Total images</dt><dd><strong>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var274 string
-			templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.TotalImages))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1570, Col: 49}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 483, "</strong></dd><dt>Recognised</dt><dd>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var275 string
-			templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Done))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1572, Col: 34}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var275))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 484, "</dd><dt>Waiting</dt><dd>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var276 string
-			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Pending))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1574, Col: 37}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 485, "</dd>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if stats.Errored > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 486, "<dt>Failed</dt><dd class=\"text-danger\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var277 string
-				templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Errored))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1578, Col: 35}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 487, " ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				for _, e := range stats.Errors {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 488, "<div class=\"text-sm\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var278 string
-					templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(e)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1580, Col: 31}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var278))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 489, "</div>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
 				}
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 490, "</dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 491, "</dl>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if len(stats.Users) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 492, "<table class=\"table table-sm mb-2\"><thead><tr><th>Waiting for</th><th>Metadata</th><th>Sharpness</th><th>Fingerprint</th><th>OCR</th><th>Recognition</th><th>Failed</th></tr></thead> <tbody>")
+			if scan.LastError != nil {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 491, "<dt>Last error</dt><dd class=\"text-danger\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, u := range stats.Users {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 493, "<tr><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var279 string
-					templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(u.Username)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1601, Col: 24}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 494, "</td><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var280 string
-					templ_7745c5c3_Var280, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Metadata))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1602, Col: 38}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var280))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 495, "</td><td>")
+				var templ_7745c5c3_Var280 string
+				templ_7745c5c3_Var280, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastError.Error())
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1600, Col: 53}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var280))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 492, "</dd>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if len(scan.Warnings) > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 493, "<dt>Warnings</dt><dd class=\"text-warning\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, w := range scan.Warnings {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 494, "<div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var281 string
-					templ_7745c5c3_Var281, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Quality))
+					templ_7745c5c3_Var281, templ_7745c5c3_Err = templ.JoinStringErrs(w)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1603, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1606, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var281))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 496, "</td><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var282 string
-					templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Fingerprint))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1604, Col: 41}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var282))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 497, "</td><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var283 string
-					templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.OCR))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1605, Col: 33}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 498, "</td><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var284 string
-					templ_7745c5c3_Var284, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Recognition))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1606, Col: 41}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var284))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 499, "</td><td>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var285 string
-					templ_7745c5c3_Var285, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Failed))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1607, Col: 36}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var285))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 500, "</td></tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 495, "</div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 501, "</tbody></table>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 496, "</dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 502, " <div class=\"btn-group\"><form method=\"post\" action=\"/admin/plugins/gallery/scan\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 497, "<dt>Total images</dt><dd><strong>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var286 string
-			templ_7745c5c3_Var286, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			var templ_7745c5c3_Var282 string
+			templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.TotalImages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1615, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1611, Col: 49}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var286))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 503, "\"> <button type=\"submit\" class=\"btn btn-primary\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var282))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if scan.Running {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 504, " disabled")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 498, "</strong></dd><dt>Recognised</dt><dd>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var283 string
+			templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Done))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1613, Col: 34}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 499, "</dd><dt>Waiting</dt><dd>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var284 string
+			templ_7745c5c3_Var284, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Pending))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1615, Col: 37}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var284))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 500, "</dd>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if stats.Errored > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 501, "<dt>Failed</dt><dd class=\"text-danger\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var285 string
+				templ_7745c5c3_Var285, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Errored))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1619, Col: 35}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var285))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 502, " ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, e := range stats.Errors {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 503, "<div class=\"text-sm\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var286 string
+					templ_7745c5c3_Var286, templ_7745c5c3_Err = templ.JoinStringErrs(e)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1621, Col: 31}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var286))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 504, "</div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 505, "</dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 505, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 506, "</dl>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(stats.Users) > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 507, "<table class=\"table table-sm mb-2\"><thead><tr><th>Waiting for</th><th>Metadata</th><th>Sharpness</th><th>Fingerprint</th><th>OCR</th><th>Recognition</th><th>Failed</th></tr></thead> <tbody>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, u := range stats.Users {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 508, "<tr><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var287 string
+					templ_7745c5c3_Var287, templ_7745c5c3_Err = templ.JoinStringErrs(u.Username)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1642, Col: 24}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var287))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 509, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var288 string
+					templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Metadata))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1643, Col: 38}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var288))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 510, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var289 string
+					templ_7745c5c3_Var289, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Quality))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1644, Col: 37}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var289))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 511, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var290 string
+					templ_7745c5c3_Var290, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Fingerprint))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1645, Col: 41}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var290))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 512, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var291 string
+					templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.OCR))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1646, Col: 33}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var291))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 513, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var292 string
+					templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Recognition))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1647, Col: 41}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var292))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 514, "</td><td>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var293 string
+					templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Failed))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1648, Col: 36}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var293))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 515, "</td></tr>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 516, "</tbody></table>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 517, " <div class=\"btn-group\"><form method=\"post\" action=\"/admin/plugins/gallery/scan\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var294 string
+			templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1656, Col: 61}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 518, "\"> <button type=\"submit\" class=\"btn btn-primary\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if scan.Running {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 506, "Scanning…")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 519, " disabled")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 520, ">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if scan.Running {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 521, "Scanning…")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 507, "Scan all users")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "Scan all users")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 508, "</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, "</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if (stats.Done > 0 || stats.Errored > 0) && !scan.Running {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 509, "<button type=\"button\" class=\"btn btn-outline-danger\" data-modal-open=\"gallery-purge\">Purge recognitions…</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 524, "<button type=\"button\" class=\"btn btn-outline-danger\" data-modal-open=\"gallery-purge\">Purge recognitions…</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 510, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Background scan").Render(templ.WithChildren(ctx, templ_7745c5c3_Var270), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.Card("Background scan").Render(templ.WithChildren(ctx, templ_7745c5c3_Var278), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if (stats.Done > 0 || stats.Errored > 0) && !scan.Running {
-			templ_7745c5c3_Var287 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_Var295 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 				templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 				templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 				if !templ_7745c5c3_IsBuffer {
@@ -6259,31 +6420,31 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) t
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 511, "<form method=\"post\" action=\"/admin/plugins/gallery/purge-recognitions\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, "<form method=\"post\" action=\"/admin/plugins/gallery/purge-recognitions\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var288 string
-				templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				var templ_7745c5c3_Var296 string
+				templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1632, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1673, Col: 61}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var288))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var296))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 512, "\"><div class=\"modal-body\"><p>Delete every user's tags, faces and people, and queue all images for recognition again?</p></div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-danger\">Purge</button></div></form>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, "\"><div class=\"modal-body\"><p>Delete every user's tags, faces and people, and queue all images for recognition again?</p></div><div class=\"modal-footer\"><button type=\"button\" class=\"btn\" data-modal-close>Cancel</button> <button type=\"submit\" class=\"btn btn-danger\">Purge</button></div></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Modal("gallery-purge", "Purge recognitions").Render(templ.WithChildren(ctx, templ_7745c5c3_Var287), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.Modal("gallery-purge", "Purge recognitions").Render(templ.WithChildren(ctx, templ_7745c5c3_Var295), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 513, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 528, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6308,12 +6469,12 @@ func renamePreviewPage(pattern string, previews []RenamePreview, patternErr stri
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var289 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var289 == nil {
-			templ_7745c5c3_Var289 = templ.NopComponent
+		templ_7745c5c3_Var297 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var297 == nil {
+			templ_7745c5c3_Var297 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var290 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var298 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -6329,33 +6490,33 @@ func renamePreviewPage(pattern string, previews []RenamePreview, patternErr stri
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 514, " <form method=\"get\" action=\"/apps/gallery/rename/preview\" class=\"form-inline mb-2\"><label class=\"sr-only\" for=\"gallery-rename-pattern\">Pattern</label> <input type=\"text\" id=\"gallery-rename-pattern\" name=\"pattern\" class=\"form-control mono\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 529, " <form method=\"get\" action=\"/apps/gallery/rename/preview\" class=\"form-inline mb-2\"><label class=\"sr-only\" for=\"gallery-rename-pattern\">Pattern</label> <input type=\"text\" id=\"gallery-rename-pattern\" name=\"pattern\" class=\"form-control mono\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var291 string
-			templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
+			var templ_7745c5c3_Var299 string
+			templ_7745c5c3_Var299, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1652, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1693, Col: 106}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var291))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 515, "\" required aria-invalid=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var299))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var292 string
-			templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(patternErr != ""))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1652, Col: 169}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var292))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 530, "\" required aria-invalid=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 516, "\"> <button type=\"submit\" class=\"btn\">Preview</button></form>")
+			var templ_7745c5c3_Var300 string
+			templ_7745c5c3_Var300, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(patternErr != ""))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1693, Col: 169}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var300))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 531, "\"> <button type=\"submit\" class=\"btn\">Preview</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6365,7 +6526,7 @@ func renamePreviewPage(pattern string, previews []RenamePreview, patternErr stri
 					return templ_7745c5c3_Err
 				}
 			} else if len(previews) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 517, "<div class=\"card\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 532, "<div class=\"card\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -6373,107 +6534,107 @@ func renamePreviewPage(pattern string, previews []RenamePreview, patternErr stri
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 518, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 533, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 519, "<div class=\"card\"><h2 class=\"card-title\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 534, "<div class=\"card\"><h2 class=\"card-title\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var293 string
-				templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(previews), "file", "files") + " will be renamed")
+				var templ_7745c5c3_Var301 string
+				templ_7745c5c3_Var301, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(previews), "file", "files") + " will be renamed")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1663, Col: 88}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1704, Col: 88}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var293))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var301))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 520, "</h2><table class=\"table table-stack gallery-rename-table\"><thead><tr><th>Now</th><th>After</th></tr></thead> <tbody>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 535, "</h2><table class=\"table table-stack gallery-rename-table\"><thead><tr><th>Now</th><th>After</th></tr></thead> <tbody>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, p := range previews {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 521, "<tr><td data-label=\"Now\" class=\"mono\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 536, "<tr><td data-label=\"Now\" class=\"mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var294 string
-					templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(p.OldPath)
+					var templ_7745c5c3_Var302 string
+					templ_7745c5c3_Var302, templ_7745c5c3_Err = templ.JoinStringErrs(p.OldPath)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1674, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1715, Col: 53}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "</td><td data-label=\"After\" class=\"mono\">")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var302))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var295 string
-					templ_7745c5c3_Var295, templ_7745c5c3_Err = templ.JoinStringErrs(p.NewPath)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1675, Col: 55}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var295))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 537, "</td><td data-label=\"After\" class=\"mono\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, "</td></tr>")
+					var templ_7745c5c3_Var303 string
+					templ_7745c5c3_Var303, templ_7745c5c3_Err = templ.JoinStringErrs(p.NewPath)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1716, Col: 55}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var303))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 538, "</td></tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 524, "</tbody></table></div><form method=\"post\" action=\"/apps/gallery/rename/apply\" class=\"form-actions\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 539, "</tbody></table></div><form method=\"post\" action=\"/apps/gallery/rename/apply\" class=\"form-actions\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var296 string
-				templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
+				var templ_7745c5c3_Var304 string
+				templ_7745c5c3_Var304, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1682, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1723, Col: 60}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var296))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, "\"> <input type=\"hidden\" name=\"pattern\" value=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var304))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var297 string
-				templ_7745c5c3_Var297, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1683, Col: 55}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var297))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 540, "\"> <input type=\"hidden\" name=\"pattern\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, "\"> <button type=\"submit\" class=\"btn btn-primary\">")
+				var templ_7745c5c3_Var305 string
+				templ_7745c5c3_Var305, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1724, Col: 55}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var305))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var298 string
-				templ_7745c5c3_Var298, templ_7745c5c3_Err = templ.JoinStringErrs("Rename " + plural(len(previews), "file", "files"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1684, Col: 102}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var298))
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 541, "\"> <button type=\"submit\" class=\"btn btn-primary\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, "</button> <a href=\"/apps/gallery/settings\" class=\"btn\">Cancel</a></form>")
+				var templ_7745c5c3_Var306 string
+				templ_7745c5c3_Var306, templ_7745c5c3_Err = templ.JoinStringErrs("Rename " + plural(len(previews), "file", "files"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1725, Col: 102}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var306))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 542, "</button> <a href=\"/apps/gallery/settings\" class=\"btn\">Cancel</a></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = galleryLayout("/apps/gallery/settings").Render(templ.WithChildren(ctx, templ_7745c5c3_Var290), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = galleryLayout("/apps/gallery/settings").Render(templ.WithChildren(ctx, templ_7745c5c3_Var298), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

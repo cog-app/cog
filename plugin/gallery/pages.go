@@ -1183,6 +1183,34 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, ui.PickerResults(items))
 }
 
+// PersonSuggestionsAPI renders up to three named people who look like the
+// given one, as buttons that merge it into them. The name dialog loads it
+// when it opens, so a page view does not pay for comparing faces.
+func (h *Pages) PersonSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sysDB, err := h.plugin.SystemDB()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	maxDist := SettingClusterThreshold.MustGet(sysDB) * suggestMatchScale
+	people, err := SimilarNamedPeople(db, id, maxDist, 3)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, personSuggestions(people))
+}
+
 // TriggerScan manually triggers a media scan via the scan worker subprocess.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)

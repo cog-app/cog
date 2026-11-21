@@ -891,6 +891,37 @@ func GetPerson(db *sql.DB, id int64) (*Person, error) {
 	return &p, err
 }
 
+// peopleByIDs returns the people with the given IDs, in no particular order,
+// with face counts and best face ID.
+func peopleByIDs(db *sql.DB, ids []int64) ([]Person, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at, p.contact_uid,
+		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count,
+		(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+			WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
+		FROM people p WHERE p.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("people by id: %w", err)
+	}
+	defer rows.Close()
+	var people []Person
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ID, &p.Name, &p.RepresentativeFaceID, &p.Visible, &p.CreatedAt,
+			&p.ContactUID, &p.FaceCount, &p.BestFaceID); err != nil {
+			return nil, err
+		}
+		people = append(people, p)
+	}
+	return people, rows.Err()
+}
+
 // MediaByPerson returns media items containing a specific person.
 func MediaByPerson(db *sql.DB, personID int64, limit, offset int) ([]Media, error) {
 	rows, err := db.Query(`SELECT DISTINCT `+mediaCols+` FROM media m

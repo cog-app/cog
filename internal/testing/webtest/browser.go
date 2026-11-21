@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/input"
 	"github.com/go-rod/rod/lib/proto"
 )
 
@@ -207,6 +208,20 @@ func (b *Browser) Type(t testing.TB, sel, text string) {
 	_ = el.SelectAllText()
 	if err := el.Input(text); err != nil {
 		t.Fatalf("webtest: type %s: %v", sel, err)
+	}
+}
+
+// Press sends a real key press to the element, so the browser does what it
+// does for a person — Enter in a text field submits its form through the
+// form's default button, which Submit bypasses.
+func (b *Browser) Press(t testing.TB, sel string, key input.Key) {
+	t.Helper()
+	el, err := b.el(sel)
+	if err != nil {
+		t.Fatalf("webtest: press %s: %v", sel, err)
+	}
+	if err := el.Type(key); err != nil {
+		t.Fatalf("webtest: press %s: %v", sel, err)
 	}
 }
 
