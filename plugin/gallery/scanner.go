@@ -211,24 +211,33 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	}
 
 	// Thumbnails come first, ahead of the slower analysis, so the grid fills
-	// in soon after photos arrive.
+	// in soon after photos arrive. They share the round's budget with it: a
+	// new library's thumbnails take hours, and the users scanned after this
+	// one would wait for all of them.
+	deadline := time.Now().Add(analysisBudget)
 	if sysDB == nil || SettingPreviewGenerationEnabled.MustGet(sysDB) {
-		if err := report.time("thumbnails", func() error { return p.preGenerateThumbnails(ctx, galleryDB, username) }); err != nil {
+		if err := report.time("thumbnails", func() error {
+			var err error
+			remaining, err = p.preGenerateThumbnails(ctx, galleryDB, username, deadline)
+			return err
+		}); err != nil {
 			warn("thumbnails", err)
 		}
 	}
 
-	cfg, release, err := p.analysisConfig(sysDB, galleryDB)
-	if err != nil {
-		warn("analysis", err)
-	} else {
-		remaining, err = p.analyzePhotos(ctx, galleryDB, username, cfg, time.Now().Add(analysisBudget), &report)
-		release()
+	if !remaining {
+		cfg, release, err := p.analysisConfig(sysDB, galleryDB)
 		if err != nil {
-			// Left to the next timed scan: going round again at once would
-			// spin on an error that persists.
-			remaining = false
 			warn("analysis", err)
+		} else {
+			remaining, err = p.analyzePhotos(ctx, galleryDB, username, cfg, deadline, &report)
+			release()
+			if err != nil {
+				// Left to the next timed scan: going round again at once would
+				// spin on an error that persists.
+				remaining = false
+				warn("analysis", err)
+			}
 		}
 	}
 
@@ -826,23 +835,33 @@ func loadAutoAlbums(db *sql.DB) (map[autoAlbumKey]*autoAlbum, error) {
 	return have, nil
 }
 
-// preGenerateThumbnails generates 256px thumbnails for all media that don't have one cached yet.
-func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username string) error {
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width > 0 AND m.shared_from = ''`)
+// preGenerateThumbnails generates 256px thumbnails for media that don't have
+// one cached yet, until done or the deadline passes, and reports whether
+// some were left for the next round.
+func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username string, deadline time.Time) (remaining bool, err error) {
+	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m WHERE m.width > 0 AND m.shared_from = ''
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC, m.id DESC`)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer rows.Close()
-
 	items, err := scanMediaRows(rows)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	var generated, failed int
+	defer func() {
+		if generated > 0 || failed > 0 {
+			p.log.Info("thumbnails done", "user", username, "generated", generated, "failed", failed, "remaining", remaining)
+		}
+	}()
 	for i := range items {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return true, ctx.Err()
+		}
+		if time.Now().After(deadline) {
+			return true, nil
 		}
 		m := &items[i]
 		made, err := p.ensureThumbnail(username, m, 256)
@@ -861,10 +880,7 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 			p.log.Info("thumbnails", "user", username, "generated", generated)
 		}
 	}
-	if generated > 0 || failed > 0 {
-		p.log.Info("thumbnails done", "user", username, "generated", generated, "failed", failed)
-	}
-	return nil
+	return false, nil
 }
 
 // ensureThumbnail caches a thumbnail of m if there is none yet, and reports

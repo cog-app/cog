@@ -225,3 +225,22 @@ func TestUndatedPhotoTakesFileTime(t *testing.T) {
 	require.False(t, taken.Valid)
 	require.Equal(t, mtime.Unix(), dated)
 }
+
+// A new library's thumbnails take hours; a round making them stops at the
+// deadline so the users after it get their turn.
+func TestThumbnailsStopAtDeadline(t *testing.T) {
+	e := newScanEnv(t)
+	sysDB, err := e.g.SystemDB()
+	require.NoError(t, err)
+	require.NoError(t, gallery.SettingPreviewGenerationEnabled.Set(sysDB, false))
+	e.upload(t, "/Photos/a.jpg", photoJPEG(t, 1, 64, 64))
+	e.scan(t)
+
+	remaining, err := e.g.PreGenerateThumbnails(context.Background(), e.db, e.alice.Username, time.Now().Add(-time.Second))
+	require.NoError(t, err)
+	require.True(t, remaining)
+
+	remaining, err = e.g.PreGenerateThumbnails(context.Background(), e.db, e.alice.Username, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.False(t, remaining)
+}
