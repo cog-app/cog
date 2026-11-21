@@ -446,9 +446,8 @@ func (p *Plugin) workerPprof(w http.ResponseWriter, r *http.Request) {
 }
 
 // logPipe implements io.Writer and forwards each line to a slog.Logger.
-// The subprocess is launched with COG_LOG_FORMAT=json so each line is a JSON
-// object with "level", "msg", and "source" fields. Lines that fail to parse
-// are logged as-is at INFO level.
+// The subprocess is launched with COG_LOG_FORMAT=json, so each line is one
+// JSON record; lines that do not parse are logged as-is at INFO level.
 type logPipe struct {
 	logger *slog.Logger
 	buf    []byte
@@ -466,33 +465,60 @@ func (lp *logPipe) Write(p []byte) (int, error) {
 		if len(line) == 0 {
 			continue
 		}
-		var rec struct {
-			Level  string `json:"level"`
-			Msg    string `json:"msg"`
-			Source string `json:"source"`
-		}
-		if json.Unmarshal(line, &rec) != nil || rec.Msg == "" {
+		level, msg, attrs, err := parseLogRecord(line)
+		if err != nil || msg == "" {
 			lp.logger.Info(string(line), "source", "scan-worker")
 			continue
 		}
-		var level slog.Level
-		switch rec.Level {
-		case "DEBUG":
-			level = slog.LevelDebug
-		case "WARN":
-			level = slog.LevelWarn
-		case "ERROR":
-			level = slog.LevelError
-		default:
-			level = slog.LevelInfo
-		}
-		attrs := []any{"source", "scan-worker"}
-		if rec.Source != "" {
-			attrs = append(attrs, "subsource", rec.Source)
-		}
-		lp.logger.Log(context.Background(), level, rec.Msg, attrs...)
+		lp.logger.Log(context.Background(), level, msg, append([]any{"source", "scan-worker"}, attrs...)...)
 	}
 	return len(p), nil
+}
+
+// workerOwnAttrs are attributes the server's logger adds itself, so
+// forwarding the worker's copies would print them twice.
+var workerOwnAttrs = map[string]bool{"time": true, "level": true, "msg": true, "plugin": true}
+
+// parseLogRecord splits a JSON log line into its level, message and the
+// remaining attributes, in the order the worker wrote them.
+func parseLogRecord(line []byte) (slog.Level, string, []any, error) {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	dec.UseNumber()
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return 0, "", nil, fmt.Errorf("not a JSON object")
+	}
+	var (
+		level = slog.LevelInfo
+		msg   string
+		attrs []any
+	)
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return 0, "", nil, err
+		}
+		key, _ := tok.(string)
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return 0, "", nil, err
+		}
+		switch key {
+		case "level":
+			s, _ := v.(string)
+			if err := level.UnmarshalText([]byte(s)); err != nil {
+				level = slog.LevelInfo
+			}
+		case "msg":
+			msg, _ = v.(string)
+		case "source":
+			attrs = append(attrs, "subsource", v)
+		default:
+			if !workerOwnAttrs[key] {
+				attrs = append(attrs, key, v)
+			}
+		}
+	}
+	return level, msg, attrs, nil
 }
 
 func formatBytes(b uint64) string {

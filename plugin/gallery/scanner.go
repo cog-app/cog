@@ -610,10 +610,7 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 			return ctx.Err()
 		}
 		m := &items[i]
-		if m.IsVideo() && !FFmpegAvailable() {
-			continue
-		}
-		f, err := p.PreviewPath(username, m, 256)
+		made, err := p.ensureThumbnail(username, m, 256)
 		if err != nil {
 			// Formats with no previewer fail here every scan; one summary
 			// line below says how many, this says which.
@@ -621,7 +618,9 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 			failed++
 			continue
 		}
-		f.Close()
+		if !made {
+			continue
+		}
 		generated++
 		if generated%100 == 0 {
 			p.log.Info("thumbnails", "user", username, "generated", generated)
@@ -631,6 +630,33 @@ func (p *Plugin) preGenerateThumbnails(ctx context.Context, db *sql.DB, username
 		p.log.Info("thumbnails done", "user", username, "generated", generated, "failed", failed)
 	}
 	return nil
+}
+
+// ensureThumbnail caches a thumbnail of m if there is none yet, and reports
+// whether it made one.
+func (p *Plugin) ensureThumbnail(username string, m *Media, size int) (bool, error) {
+	if !m.IsVideo() {
+		fp, err := p.filesPlugin()
+		if err != nil {
+			return false, err
+		}
+		return fp.EnsurePreview(username, m.FilePath, size)
+	}
+	if !FFmpegAvailable() {
+		return false, nil
+	}
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		return false, err
+	}
+	if _, err := cache.Stat(videoThumbName(m, size)); err == nil {
+		return false, nil
+	}
+	f, err := p.videoThumbnail(username, m, size)
+	if err != nil {
+		return false, err
+	}
+	return true, f.Close()
 }
 
 // computeQualityScores calculates Laplacian sharpness scores for unscored images.
@@ -705,7 +731,7 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.
 		return nil, err
 	}
 	size = cogplugin.ThumbnailSize(size)
-	name := fmt.Sprintf("video_thumbs/%s_%d.jpg", path.Base(m.FileETag), size)
+	name := videoThumbName(m, size)
 	if f, err := cache.Open(name); err == nil {
 		return f, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -729,4 +755,8 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.
 	}
 
 	return cache.Open(name)
+}
+
+func videoThumbName(m *Media, size int) string {
+	return fmt.Sprintf("video_thumbs/%s_%d.jpg", path.Base(m.FileETag), cogplugin.ThumbnailSize(size))
 }

@@ -284,9 +284,10 @@ type scannerClient interface {
 
 // --- RPC client (runs in server process, talks to subprocess) ---
 
-// rpcScanClient wraps an *rpc.Client for type-safe scan operations.
+// rpcScanClient wraps an *rpc.Client for type-safe scan operations. The
+// client multiplexes concurrent calls itself, so a 30-second CPU profile
+// does not hold up a status poll.
 type rpcScanClient struct {
-	mu     sync.Mutex
 	client *rpc.Client
 }
 
@@ -295,8 +296,6 @@ func newRPCScanClient(rwc io.ReadWriteCloser) *rpcScanClient {
 }
 
 func (c *rpcScanClient) ScanUser(username string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var result ScanResult
 	if err := c.client.Call("ScanRPC.ScanUser", &ScanUserArgs{Username: username}, &result); err != nil {
 		return err
@@ -305,8 +304,6 @@ func (c *rpcScanClient) ScanUser(username string) error {
 }
 
 func (c *rpcScanClient) ScanAllUsers() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var result ScanResult
 	if err := c.client.Call("ScanRPC.ScanAllUsers", &ScanAllArgs{}, &result); err != nil {
 		return err
@@ -315,8 +312,6 @@ func (c *rpcScanClient) ScanAllUsers() error {
 }
 
 func (c *rpcScanClient) GetStatus() (ScanStatus, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var result ScanStatusResult
 	if err := c.client.Call("ScanRPC.GetStatus", &ScanStatusArgs{}, &result); err != nil {
 		return ScanStatus{}, err
@@ -332,8 +327,6 @@ func (c *rpcScanClient) GetStatus() (ScanStatus, error) {
 }
 
 func (c *rpcScanClient) Profile(name string, debug, seconds int) ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var result ProfileResult
 	if err := c.client.Call("ScanRPC.Profile", &ProfileArgs{Name: name, Debug: debug, Seconds: seconds}, &result); err != nil {
 		return nil, err
@@ -342,14 +335,10 @@ func (c *rpcScanClient) Profile(name string, debug, seconds int) ([]byte, error)
 }
 
 func (c *rpcScanClient) ReleaseMemory() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.client.Call("ScanRPC.ReleaseMemory", &struct{}{}, &struct{}{})
 }
 
 func (c *rpcScanClient) MemStats() (*MemStatsResult, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	var result MemStatsResult
 	if err := c.client.Call("ScanRPC.MemStats", &struct{}{}, &result); err != nil {
 		return nil, err
@@ -358,8 +347,6 @@ func (c *rpcScanClient) MemStats() (*MemStatsResult, error) {
 }
 
 func (c *rpcScanClient) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.client.Close()
 }
 
