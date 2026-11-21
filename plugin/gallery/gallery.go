@@ -102,6 +102,12 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 					},
 				},
 				{
+					Name: "analyze", Short: "run one image file through the scan's stages and show what each finds", Args: []string{"file"},
+					Run: func(cmdCtx context.Context, args []string) error {
+						return p.analyzeFile(cmdCtx, os.Stdout, args[0])
+					},
+				},
+				{
 					Name: "worker", Short: "run scan loop as background worker (launched by server)",
 					Run: func(cmdCtx context.Context, args []string) error {
 						return p.runScanWorker(cmdCtx)
