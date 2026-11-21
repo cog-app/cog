@@ -302,3 +302,39 @@ func TestNewsAPI_VideoLinksToCog(t *testing.T) {
 		"A":     "https://example.com/A",
 	}, links)
 }
+
+// A muted episode's enclosure is Cog's media route, which plays only its
+// clean audio; an unfiltered one keeps the original.
+func TestNewsAPI_MutedEnclosureIsCog(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	alice := env.CreateUser(t, "alice", "pass")
+	db, err := feedPlugin(t, env).DB(alice.Username)
+	require.NoError(t, err)
+
+	subID := createSub(t, db, "https://pod.example/feed.xml", sql.NullInt64{})
+	var muted, cleaned int64
+	require.NoError(t, db.QueryRow(`INSERT INTO items (subscription_id, guid, type, title, media_url, media_mime)
+		VALUES (?, 'ep1', 'audio', 'Muted', 'https://pod.example/ep1.mp3', 'audio/mpeg') RETURNING id`, subID).Scan(&muted))
+	require.NoError(t, db.QueryRow(`INSERT INTO items (subscription_id, guid, type, title, media_url, media_mime)
+		VALUES (?, 'ep2', 'audio', 'Cleaned', 'https://pod.example/ep2.mp3', 'audio/mpeg') RETURNING id`, subID).Scan(&cleaned))
+	_, err = db.Exec(`INSERT INTO items (subscription_id, guid, type, title, media_url, media_mime)
+		VALUES (?, 'ep3', 'audio', 'Plain', 'https://pod.example/ep3.mp3', 'audio/mpeg')`, subID)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO downloads (item_id, state, needs_profanity) VALUES (?, 'queued', 1)`, muted)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO downloads (item_id, state, local_path, clean_audio_path) VALUES (?, 'ready', 'media/2.mp3', 'media/2.clean.mp3')`, cleaned)
+	require.NoError(t, err)
+
+	var resp apiItems
+	env.Get(t, newsAPI+"/items?batchSize=-1&getRead=true", alice.Auth).Status(200).JSON(&resp)
+	links := map[string]any{}
+	for _, it := range resp.Items {
+		links[it["title"].(string)] = it["enclosureLink"]
+	}
+	base := strings.TrimSuffix(env.Providers.Config.BaseURL, "/")
+	require.Equal(t, map[string]any{
+		"Muted":   base + "/apps/feed/items/" + fmtID(float64(muted)) + "/media",
+		"Cleaned": base + "/apps/feed/items/" + fmtID(float64(cleaned)) + "/media",
+		"Plain":   "https://pod.example/ep3.mp3",
+	}, links)
+}

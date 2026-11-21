@@ -11,7 +11,20 @@ CREATE TABLE IF NOT EXISTS downloads (
     needs_profanity INTEGER NOT NULL DEFAULT 0,
     needs_transcribe INTEGER NOT NULL DEFAULT 0,
     silence_ranges TEXT NOT NULL DEFAULT '',
-    silence_state TEXT NOT NULL DEFAULT ''
+    silence_state TEXT NOT NULL DEFAULT '',
+    video_path TEXT NOT NULL DEFAULT '',
+    package_state TEXT NOT NULL DEFAULT '',
+    package_error TEXT NOT NULL DEFAULT '',
+    clean_track_path TEXT NOT NULL DEFAULT '',
+    clean_track_error TEXT NOT NULL DEFAULT '',
+    edges_wanted INTEGER NOT NULL DEFAULT 0,
+    edges_edit TEXT NOT NULL DEFAULT '',
+    edges_error TEXT NOT NULL DEFAULT '',
+    edges_index TEXT NOT NULL DEFAULT '',
+    edges_wanted_at INTEGER NOT NULL DEFAULT 0,
+    edges_failed_at INTEGER NOT NULL DEFAULT 0,
+    profanity_error TEXT NOT NULL DEFAULT '',
+    transcribe_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS feed_settings (
@@ -50,6 +63,15 @@ CREATE TABLE IF NOT EXISTS gpodder_episode_actions (
 CREATE TABLE IF NOT EXISTS gpodder_removed_subscriptions (
     url TEXT PRIMARY KEY,
     removed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS hls_edits (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    cuts TEXT NOT NULL,
+    duration REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, id)
 );
 
 CREATE TABLE IF NOT EXISTS item_tags (
@@ -123,6 +145,15 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS youtube_streams (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('audio','video')),
+    format_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    expires_at INTEGER NOT NULL, available_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, kind)
 );
 
 CREATE INDEX IF NOT EXISTS idx_downloads_state ON downloads(state);

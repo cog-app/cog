@@ -2065,12 +2065,15 @@ func (x *SetTagsRequest) GetRemove() []string {
 }
 
 type ReportProgressRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ItemId        int64                  `protobuf:"varint,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
-	ProgressSec   float64                `protobuf:"fixed64,2,opt,name=progress_sec,json=progressSec,proto3" json:"progress_sec,omitempty"`
-	Completed     bool                   `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
-	At            *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=at,proto3" json:"at,omitempty"` // client clock
-	Device        string                 `protobuf:"bytes,5,opt,name=device,proto3" json:"device,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ItemId      int64                  `protobuf:"varint,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ProgressSec float64                `protobuf:"fixed64,2,opt,name=progress_sec,json=progressSec,proto3" json:"progress_sec,omitempty"`
+	Completed   bool                   `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
+	At          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=at,proto3" json:"at,omitempty"` // client clock
+	Device      string                 `protobuf:"bytes,5,opt,name=device,proto3" json:"device,omitempty"`
+	// When set, progress_sec is in that skip presentation's time and the
+	// server stores the item time it maps to.
+	EditList      string `protobuf:"bytes,6,opt,name=edit_list,json=editList,proto3" json:"edit_list,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2136,6 +2139,13 @@ func (x *ReportProgressRequest) GetAt() *timestamppb.Timestamp {
 func (x *ReportProgressRequest) GetDevice() string {
 	if x != nil {
 		return x.Device
+	}
+	return ""
+}
+
+func (x *ReportProgressRequest) GetEditList() string {
+	if x != nil {
+		return x.EditList
 	}
 	return ""
 }
@@ -2599,16 +2609,18 @@ func (*GetPlayerPrefsRequest) Descriptor() ([]byte, []int) {
 }
 
 type PlayerPrefs struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Speed         float64                `protobuf:"fixed64,1,opt,name=speed,proto3" json:"speed,omitempty"`
-	SkipBackSec   int32                  `protobuf:"varint,2,opt,name=skip_back_sec,json=skipBackSec,proto3" json:"skip_back_sec,omitempty"`
-	SkipFwdSec    int32                  `protobuf:"varint,3,opt,name=skip_fwd_sec,json=skipFwdSec,proto3" json:"skip_fwd_sec,omitempty"`
-	Volume        float64                `protobuf:"fixed64,4,opt,name=volume,proto3" json:"volume,omitempty"`
-	AutoplayNext  bool                   `protobuf:"varint,5,opt,name=autoplay_next,json=autoplayNext,proto3" json:"autoplay_next,omitempty"`
-	SkipSilence   bool                   `protobuf:"varint,6,opt,name=skip_silence,json=skipSilence,proto3" json:"skip_silence,omitempty"`
-	HideEmpty     bool                   `protobuf:"varint,7,opt,name=hide_empty,json=hideEmpty,proto3" json:"hide_empty,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Speed        float64                `protobuf:"fixed64,1,opt,name=speed,proto3" json:"speed,omitempty"`
+	SkipBackSec  int32                  `protobuf:"varint,2,opt,name=skip_back_sec,json=skipBackSec,proto3" json:"skip_back_sec,omitempty"`
+	SkipFwdSec   int32                  `protobuf:"varint,3,opt,name=skip_fwd_sec,json=skipFwdSec,proto3" json:"skip_fwd_sec,omitempty"`
+	Volume       float64                `protobuf:"fixed64,4,opt,name=volume,proto3" json:"volume,omitempty"`
+	AutoplayNext bool                   `protobuf:"varint,5,opt,name=autoplay_next,json=autoplayNext,proto3" json:"autoplay_next,omitempty"`
+	SkipSilence  bool                   `protobuf:"varint,6,opt,name=skip_silence,json=skipSilence,proto3" json:"skip_silence,omitempty"`
+	HideEmpty    bool                   `protobuf:"varint,7,opt,name=hide_empty,json=hideEmpty,proto3" json:"hide_empty,omitempty"`
+	// Shortest silence skipped, in seconds. 0 means unchanged on a set.
+	SkipSilenceMinSec float64 `protobuf:"fixed64,8,opt,name=skip_silence_min_sec,json=skipSilenceMinSec,proto3" json:"skip_silence_min_sec,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PlayerPrefs) Reset() {
@@ -2688,6 +2700,13 @@ func (x *PlayerPrefs) GetHideEmpty() bool {
 		return x.HideEmpty
 	}
 	return false
+}
+
+func (x *PlayerPrefs) GetSkipSilenceMinSec() float64 {
+	if x != nil {
+		return x.SkipSilenceMinSec
+	}
+	return 0
 }
 
 type ChangesRequest struct {
@@ -3839,13 +3858,14 @@ const file_feed_proto_rawDesc = "" +
 	"\x0eSetTagsRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x10\n" +
 	"\x03add\x18\x02 \x03(\tR\x03add\x12\x16\n" +
-	"\x06remove\x18\x03 \x03(\tR\x06remove\"\xb5\x01\n" +
+	"\x06remove\x18\x03 \x03(\tR\x06remove\"\xd2\x01\n" +
 	"\x15ReportProgressRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\x03R\x06itemId\x12!\n" +
 	"\fprogress_sec\x18\x02 \x01(\x01R\vprogressSec\x12\x1c\n" +
 	"\tcompleted\x18\x03 \x01(\bR\tcompleted\x12*\n" +
 	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
-	"\x06device\x18\x05 \x01(\tR\x06device\"|\n" +
+	"\x06device\x18\x05 \x01(\tR\x06device\x12\x1b\n" +
+	"\tedit_list\x18\x06 \x01(\tR\beditList\"|\n" +
 	"\x13ResolveMediaRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\x03R\x06itemId\x12-\n" +
 	"\avariant\x18\x02 \x01(\x0e2\x13.cogfeed.v1.VariantR\avariant\x12\x1d\n" +
@@ -3891,7 +3911,7 @@ const file_feed_proto_rawDesc = "" +
 	"\x11STATE_DOWNLOADING\x10\x03\x12\x0f\n" +
 	"\vSTATE_READY\x10\x04\x12\x0f\n" +
 	"\vSTATE_ERROR\x10\x05\"\x17\n" +
-	"\x15GetPlayerPrefsRequest\"\xe8\x01\n" +
+	"\x15GetPlayerPrefsRequest\"\x99\x02\n" +
 	"\vPlayerPrefs\x12\x14\n" +
 	"\x05speed\x18\x01 \x01(\x01R\x05speed\x12\"\n" +
 	"\rskip_back_sec\x18\x02 \x01(\x05R\vskipBackSec\x12 \n" +
@@ -3901,7 +3921,8 @@ const file_feed_proto_rawDesc = "" +
 	"\rautoplay_next\x18\x05 \x01(\bR\fautoplayNext\x12!\n" +
 	"\fskip_silence\x18\x06 \x01(\bR\vskipSilence\x12\x1d\n" +
 	"\n" +
-	"hide_empty\x18\a \x01(\bR\thideEmpty\"<\n" +
+	"hide_empty\x18\a \x01(\bR\thideEmpty\x12/\n" +
+	"\x14skip_silence_min_sec\x18\b \x01(\x01R\x11skipSilenceMinSec\"<\n" +
 	"\x0eChangesRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xfa\x03\n" +

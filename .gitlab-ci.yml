@@ -6,17 +6,23 @@ stages:
 # interruptible below only takes effect if pipelines are actually
 # auto-cancelled. Declared in-file rather than relying on the project's
 # "Auto-cancel redundant pipelines" toggle, so it is version controlled.
+#
+# Pipelines run for merge requests and on master, and not for a push to a
+# branch: a branch with a merge request would otherwise run two per push.
 workflow:
   auto_cancel:
     on_new_commit: interruptible
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 default:
   interruptible: true
 
 variables:
   # The test and pages jobs run in $CI_REGISTRY_IMAGE/ci, built from the
-  # Dockerfile's ci stage. master's is tagged latest; a branch that changes
-  # what goes into it builds its own, tagged with the branch
+  # Dockerfile's ci stage. master's is tagged latest; a merge request that
+  # changes what goes into it builds its own, tagged with its source branch
   # (.ci-image-changes).
   CI_IMAGE_TAG: latest
   # Inside the project directory, which is the only place GitLab caches.
@@ -25,15 +31,16 @@ variables:
   CACHE_COMPRESSION_LEVEL: fastest
 
 # When the CI image has to be rebuilt: on master when a push changed its
-# inputs, and on a branch whose inputs differ from master's at all, so every
-# pipeline on that branch, not only the push that changed them, uses its own.
+# inputs, and in a merge request whose inputs differ from master's at all, so
+# every pipeline of that merge request, not only the push that changed them,
+# uses its own, tagged with the source branch (CI_COMMIT_REF_SLUG).
 .ci-image-changes:
   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     changes: &ci-image-inputs
       - Dockerfile
       - go.mod
       - go.sum
-  - if: $CI_COMMIT_BRANCH
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     changes:
       paths: *ci-image-inputs
       compare_to: refs/heads/master

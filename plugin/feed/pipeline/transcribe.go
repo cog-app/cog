@@ -26,14 +26,16 @@ import (
 // needs_transcribe flag, and continues. The profanity worker will skip items
 // without a captions_path.
 type Transcribe struct {
-	store *feed.Store
-	space feed.Space
+	store   *feed.Store
+	space   feed.Space
+	whisper func() (feed.WhisperSettings, error)
 }
 
 // NewTranscribe creates a Transcribe worker backed by the given store,
-// keeping captions in space.
-func NewTranscribe(s *feed.Store, space feed.Space) *Transcribe {
-	return &Transcribe{store: s, space: space}
+// keeping captions in space. whisper reads the server's whisper settings
+// (Plugin.WhisperSettings), when an item needs them.
+func NewTranscribe(s *feed.Store, space feed.Space, whisper func() (feed.WhisperSettings, error)) *Transcribe {
+	return &Transcribe{store: s, space: space, whisper: whisper}
 }
 
 // RunOnce processes all pending transcribe items whose download is ready.
@@ -48,6 +50,14 @@ func (w *Transcribe) RunOnce(ctx context.Context) error {
 		}
 		if err := w.processOne(ctx, id); err != nil {
 			slog.Warn("feed transcribe: process failed", "item_id", id, "err", err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Recorded so edges stop waiting for captions muting needs; the
+			// flag stays and the next tick tries again.
+			if err := w.store.MarkTranscribeError(id, err.Error()); err != nil {
+				slog.Error("feed transcribe: record error", "item_id", id, "err", err)
+			}
 		}
 	}
 	return nil
@@ -91,17 +101,21 @@ func (w *Transcribe) processOne(ctx context.Context, itemID int64) error {
 		return fmt.Errorf("no local file to transcribe")
 	}
 
-	model := feed.SettingWhisperModel.MustGet(w.store.DB())
+	ws, err := w.whisper()
+	if err != nil {
+		return fmt.Errorf("whisper settings: %w", err)
+	}
+	model := ws.Model
 	if model == feed.WhisperNone {
 		slog.Warn("feed transcribe: whisper disabled, skipping", "item_id", itemID)
 		return w.store.ClearNeedsTranscribe(itemID)
 	}
 
-	cliPath := feed.SettingWhisperCLIPath.MustGet(w.store.DB())
+	cliPath := ws.CLIPath
 	if cliPath == "" {
 		cliPath = "whisper-cli"
 	}
-	modelsDir := feed.SettingWhisperModelsDir.MustGet(w.store.DB())
+	modelsDir := ws.ModelsDir
 	if modelsDir == "" {
 		if modelsDir, err = w.space.Cache.LocalPath("whisper-models"); err != nil {
 			return fmt.Errorf("whisper models: %w", err)

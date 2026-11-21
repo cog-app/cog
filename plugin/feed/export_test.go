@@ -1,6 +1,16 @@
 package feed
 
-import "context"
+import (
+	"context"
+	"encoding/hex"
+	"fmt"
+	"time"
+
+	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
+
+	"connectrpc.com/connect"
+)
 
 // SetStreamResolver makes ResolveMedia resolve YouTube streams with f, and
 // returns what puts the real one back.
@@ -9,3 +19,57 @@ func SetStreamResolver(f func(ctx context.Context, watchURL string, audio bool) 
 	resolveStream = f
 	return func() { resolveStream = old }
 }
+
+// HLSOptions is the signed options of a media link, for the external tests.
+type HLSOptions = hlsOptions
+
+// SetTrackResolver makes youtubeTracks resolve with f, and returns what puts
+// the real one back.
+func SetTrackResolver(f func(ctx context.Context, watchURL, format string) (YouTubeTrack, YouTubeTrack, error)) func() {
+	old := resolveTracks
+	resolveTracks = f
+	return func() { resolveTracks = old }
+}
+
+// SetAvailableSleep makes AwaitAvailable wait with f, and returns what puts
+// the real wait back.
+func SetAvailableSleep(f func(ctx context.Context, d time.Duration) error) func() {
+	old := sleepFor
+	sleepFor = f
+	return func() { sleepFor = old }
+}
+
+// YouTubeModeOf is how p serves remote segments.
+func YouTubeModeOf(p *Plugin) (YouTubeMode, error) { return p.youtubeMode() }
+
+// ResolveMediaAs calls ResolveMedia in process as username, with ctx, so a
+// test can cancel ctx as a client that goes away would.
+func ResolveMediaAs(ctx context.Context, p *Plugin, username string, req *feedpb.ResolveMediaRequest) (*feedpb.MediaSource, error) {
+	ctx = plugin.WithUserInfo(ctx, &plugin.UserInfo{Username: username})
+	res, err := (&FeedService{plugin: p}).ResolveMedia(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
+}
+
+// HLSMasterPath is hlsMasterPath, for the external tests.
+var HLSMasterPath = hlsMasterPath
+
+// M3UList, M3USignature and ViewTag are the M3U signing surface, for the external tests.
+type M3UList = m3uList
+
+var M3USignature = m3uSignature
+
+// SetHLSKey stores key as the user's media link key, as HLSKey would have
+// made it, so a test's signed links are the same on every run.
+func SetHLSKey(s *Store, key []byte) error {
+	if _, err := s.db.Exec(`INSERT INTO feed_settings(key, value) VALUES(?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, hlsKeySetting, hex.EncodeToString(key)); err != nil {
+		return fmt.Errorf("set hls key: %w", err)
+	}
+	return nil
+}
+
+// YouTubeAvailableSkew is the margin added to every available_at.
+const YouTubeAvailableSkew = youtubeAvailableSkew

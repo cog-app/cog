@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -137,17 +139,48 @@ func TestDownloadYouTube(t *testing.T) {
 	if _, err := space.Own.Stat(d.LocalPath); err != nil {
 		t.Fatalf("downloaded file missing: %v", err)
 	}
-	// YouTube serves video and audio apart: the download merges H.264 and
-	// AAC into an mp4, which phones and browsers play.
-	if !strings.HasSuffix(d.LocalPath, ".mp4") {
-		t.Errorf("local path %q, want an .mp4", d.LocalPath)
+	// YouTube serves video and audio apart, and the download keeps them so:
+	// fragmented MP4 tracks the packager uses as they are.
+	prefix := "media/" + strconv.FormatInt(id, 10)
+	assert.Equal(t, prefix+".m4a", d.LocalPath)
+	assert.Equal(t, prefix+".video.mp4", d.VideoPath)
+	assert.Equal(t, "", d.PackageState)
+	video := ytdlpArgs(t, space, d.VideoPath)
+	assert.True(t, strings.Contains(video, "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]"), video)
+	audio := ytdlpArgs(t, space, d.LocalPath)
+	assert.True(t, strings.Contains(audio, "ba[ext=m4a]/ba"), audio)
+	for _, args := range []string{video, audio} {
+		assert.False(t, strings.Contains(args, "merge-output-format"), args)
+		assert.True(t, strings.Contains(args, "--fixup never"), args) // keep YouTube's fMP4 and its sidx
 	}
-	args := ytdlpArgs(t, space, d.LocalPath)
-	for _, want := range []string{"--merge-output-format mp4", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]"} {
-		if !strings.Contains(args, want) {
-			t.Errorf("yt-dlp args %q lack %q", args, want)
-		}
-	}
+	assert.Equal(t, int64(len(video)+len(audio)), d.Bytes)
+}
+
+// A failed second fetch fails the download and leaves nothing in storage or cache.
+func TestDownloadYouTubeAudioFails(t *testing.T) {
+	abs, err := filepath.Abs("testdata")
+	require.NoError(t, err)
+	t.Setenv("PATH", abs+":"+os.Getenv("PATH"))
+
+	s, space := newPipeline(t)
+	subID, _ := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/channel"})
+	id, _, _ := s.UpsertItem(feed.Item{
+		SubscriptionID: subID, GUID: "failaudio", Type: "video",
+		MediaURL: "https://www.youtube.com/watch?v=failaudio",
+	})
+	require.NoError(t, s.EnqueueDownload(id))
+	require.NoError(t, pipeline.NewDownloader(s, space).RunOnce(context.Background()))
+
+	d, err := s.GetDownload(id)
+	require.NoError(t, err)
+	assert.Equal(t, "error", d.State)
+	assert.True(t, strings.Contains(d.Error, "no audio"), d.Error)
+	media, err := space.Own.ReadDir("media")
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(media), "media left behind")
+	cached, err := space.Cache.ReadDir("downloads")
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(cached), "download left in the cache")
 }
 
 // An audio-only YouTube item downloads its m4a audio.
@@ -186,4 +219,22 @@ func ytdlpArgs(t *testing.T, space feed.Space, name string) string {
 	b, err := io.ReadAll(f)
 	require.NoError(t, err)
 	return string(b)
+}
+
+// Collect keeps the video a row names.
+func TestCollectKeepsVideoPath(t *testing.T) {
+	s, space := newPipeline(t)
+	subID, err := s.CreateSubscription(feed.Subscription{Kind: "youtube", URL: "https://yt/channel"})
+	require.NoError(t, err)
+	id, _, err := s.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "v", Type: "video", MediaURL: "https://www.youtube.com/watch?v=v"})
+	require.NoError(t, err)
+	require.NoError(t, s.EnqueueDownload(id))
+	for _, name := range []string{"media/7.hls-audio.m4a", "media/7.hls-video.mp4"} {
+		_, err = space.Own.Put(name, strings.NewReader("x"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, s.MarkVideoDownloadReady(id, "media/7.hls-audio.m4a", "media/7.hls-video.mp4", 2))
+	require.NoError(t, pipeline.Collect(s, space))
+	_, err = space.Own.Stat("media/7.hls-video.mp4")
+	require.NoError(t, err)
 }

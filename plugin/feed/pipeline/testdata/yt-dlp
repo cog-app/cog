@@ -28,5 +28,10 @@ fi
 
 # Otherwise: download mode (T14 behavior).
 [ -z "$out" ] && exit 1
+# A video whose ID is failaudio fails to fetch its audio track. (The
+# sandbox clears the environment, so the URL carries the switch.)
+case "$all" in
+  *'ba[ext=m4a]'*failaudio*) echo "ERROR: no audio" >&2; exit 1 ;;
+esac
 printf 'dummy youtube payload\nargs: %s\n' "$all" > "$out"
 exit 0

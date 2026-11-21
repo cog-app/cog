@@ -212,12 +212,13 @@ templ markReadButton(action string, csrfToken string) {
 	</form>
 }
 
-templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q, qErr string, csrfToken string, o rowOpts) {
+templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q, qErr string, csrfToken string, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
 		@ui.PageHeader("All articles", nil) {
 			if sb.TotalUnread > 0 {
 				@markReadButton("/apps/feed/items/read-all", csrfToken)
 			}
+			@feedPlayElsewhere(pe)
 		}
 		<form method="get" action="/apps/feed/" class="feed-search" role="search">
 			<div class="form-inline">
@@ -278,7 +279,7 @@ templ feedIndexPage(sb sidebarData, items []ItemWithSubscription, q, qErr string
 	}
 }
 
-templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSubscription, csrfToken string, o rowOpts) {
+templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSubscription, csrfToken string, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
 		<header class="page-header">
 			<div class="page-heading">
@@ -290,6 +291,7 @@ templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSu
 				<p class="page-subtitle break-anywhere">{ sub.URL }</p>
 			</div>
 			<div class="page-actions">
+				@feedPlayElsewhere(pe)
 				if sb.UnreadCounts[sub.ID] > 0 {
 					@markReadButton(fmt.Sprintf("/apps/feed/subscriptions/%d/read-all", sub.ID), csrfToken)
 				}
@@ -330,12 +332,13 @@ templ feedSubscriptionPage(sb sidebarData, sub *Subscription, items []ItemWithSu
 	}
 }
 
-templ feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription, csrfToken string, o rowOpts) {
+templ feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscription, csrfToken string, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
 		@ui.PageHeader(folder.Name, []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}}) {
 			if sb.FolderUnread[folder.ID] > 0 {
 				@markReadButton(fmt.Sprintf("/apps/feed/folders/%d/read-all", folder.ID), csrfToken)
 			}
+			@feedPlayElsewhere(pe)
 		}
 		if len(items) == 0 {
 			<div class="list">
@@ -347,9 +350,11 @@ templ feedFolderPage(sb sidebarData, folder *Folder, items []ItemWithSubscriptio
 	}
 }
 
-templ feedStarredPage(sb sidebarData, items []ItemWithSubscription, o rowOpts) {
+templ feedStarredPage(sb sidebarData, items []ItemWithSubscription, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
-		@ui.PageHeader("Starred", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}})
+		@ui.PageHeader("Starred", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}}) {
+			@feedPlayElsewhere(pe)
+		}
 		if len(items) == 0 {
 			<div class="list">
 				@ui.EmptyState("No starred articles", "Star an article to keep it here.")
@@ -360,9 +365,11 @@ templ feedStarredPage(sb sidebarData, items []ItemWithSubscription, o rowOpts) {
 	}
 }
 
-templ feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, o rowOpts) {
+templ feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
-		@ui.PageHeader("Tagged “"+tag+"”", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}})
+		@ui.PageHeader("Tagged “"+tag+"”", []ui.Crumb{{Label: "Feed", URL: "/apps/feed/"}}) {
+			@feedPlayElsewhere(pe)
+		}
 		if len(items) == 0 {
 			<div class="list">
 				@ui.EmptyState("No articles with this tag", "")
@@ -373,7 +380,7 @@ templ feedTagPage(sb sidebarData, tag string, items []ItemWithSubscription, o ro
 	}
 }
 
-templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription, o rowOpts) {
+templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription, o rowOpts, pe playElsewhere) {
 	@feedLayout(sb) {
 		<header class="page-header">
 			<div class="page-heading">
@@ -383,6 +390,9 @@ templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription
 					<p class="page-subtitle"><code class="break-anywhere">{ pl.Query }</code></p>
 				}
 			</div>
+			<div class="page-actions">
+				@feedPlayElsewhere(pe)
+			</div>
 		</header>
 		if len(items) == 0 {
 			<div class="list">
@@ -391,6 +401,29 @@ templ feedPlaylistPage(sb sidebarData, pl Playlist, items []ItemWithSubscription
 		} else {
 			@feedItemList(items, o)
 		}
+	}
+}
+
+script copyText(text string) {
+	cogCopy(event.currentTarget, text);
+}
+
+// feedPlayElsewhere offers a list's signed M3U links to external players.
+templ feedPlayElsewhere(p playElsewhere) {
+	if p.M3U != "" {
+		<details>
+			<summary>{ p.Label }</summary>
+			<div class="secret-box">
+				<code class="break-anywhere">{ p.M3U }</code>
+				<button type="button" class="btn" onclick={ copyText(p.M3U) }>Copy link</button>
+			</div>
+			<div class="secret-box">
+				<code class="break-anywhere">{ p.M3USkip }</code>
+				<button type="button" class="btn" onclick={ copyText(p.M3USkip) }>Copy link (skip silence)</button>
+			</div>
+			<p><a href={ templ.SafeURL(p.Launcher) } download>Download launcher</a></p>
+			<p class="text-sm">Plays in mpv or any player that opens .m3u links. Revoke media links in Sync settings to stop every link.</p>
+		</details>
 	}
 }
 
@@ -1076,6 +1109,14 @@ templ feedSettingsSyncPage(sb sidebarData, settings map[syncprefs.Protocol]syncS
 				<button class="btn btn-primary" type="submit">Save</button>
 			</div>
 		</form>
+		<section class="card">
+			<h2 class="card-title">Media links</h2>
+			<p class="card-desc">Players that cannot log in, such as mpv and the app, play from links that carry their own permission. A link lasts until you revoke them all here; then every link handed out stops working.</p>
+			<form method="post" action="/apps/feed/settings/media-links/revoke">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<button class="btn btn-danger" type="submit">Revoke media links</button>
+			</form>
+		</section>
 	}
 }
 
@@ -1243,6 +1284,12 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 		data-item-id={ strconv.FormatInt(ip.ID, 10) }
 		data-media-type={ playerType(ip, nav) }
 		data-source-kind={ ip.SourceKind }
+		if ip.HLSURL != "" && playerType(ip, nav) == "video" {
+			data-hls={ ip.HLSURL }
+		}
+		if ip.Waiting != "" {
+			data-waiting={ ip.Waiting }
+		}
 		if nav.ListenOnly {
 			data-variant="audio"
 		}
@@ -1426,6 +1473,10 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 				flex-wrap: wrap;
 				margin-bottom: 0.5rem;
 			}
+			.feed-player .player-gear-speeds button[aria-pressed="true"] {
+				background: var(--color-primary);
+				color: #fff;
+			}
 			.feed-player .player-gear-toggle {
 				display: block;
 				width: 100%;
@@ -1457,7 +1508,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 					id="player-el"
 					preload="metadata"
 					playsinline
-					if ip.SourceKind != "youtube" {
+					if ip.SourceKind != "youtube" && ip.HLSURL == "" && ip.Waiting == "" {
 						src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 					}
 				></video>
@@ -1476,7 +1527,7 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			<audio
 				id="player-el"
 				preload="metadata"
-				if ip.SourceKind != "youtube" {
+				if ip.SourceKind != "youtube" && ip.Waiting == "" {
 					src={ "/apps/feed/items/" + strconv.FormatInt(ip.ID, 10) + "/media" }
 				}
 			></audio>
@@ -1503,6 +1554,9 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			<button id="player-fwd" class="btn btn-outline btn-sm" title="Skip forward" type="button">&#8631;</button>
 			<span id="player-time" class="text-muted" style="font-size:0.85rem;font-variant-numeric:tabular-nums">0:00 / 0:00</span>
 			<span style="margin-left:auto"></span>
+			if playerType(ip, nav) == "video" {
+				<button id="player-cc" class="btn btn-outline btn-sm" title="Captions" type="button" aria-pressed="false" hidden>CC</button>
+			}
 			<button id="player-speed" class="btn btn-outline btn-sm" title="Speed" type="button">1&times;</button>
 			<button id="player-mute" class="btn btn-outline btn-sm" title="Mute" type="button">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
@@ -1521,6 +1575,12 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 						<button class="btn btn-outline btn-sm" data-speed="1.5" type="button">1.5&times;</button>
 						<button class="btn btn-outline btn-sm" data-speed="2" type="button">2&times;</button>
 					</div>
+					<div class="player-gear-label">Shortest silence skipped</div>
+					<div class="player-gear-speeds">
+						for _, m := range []string{"0.5", "1", "2", "3", "5"} {
+							<button class="btn btn-outline btn-sm" data-min-silence={ m } type="button" aria-pressed={ strconv.FormatBool(m == strconv.FormatFloat(prefs.SkipSilenceMinSec, 'f', -1, 64)) }>{ m } s</button>
+						}
+					</div>
 					<button class="player-gear-toggle" data-toggle="skip_silence" type="button" aria-pressed={ strconv.FormatBool(prefs.SkipSilence) }>Skip silence</button>
 					<button class="player-gear-toggle" data-toggle="autoplay_next" type="button" aria-pressed={ strconv.FormatBool(prefs.AutoplayNext) }>Autoplay next</button>
 				</div>
@@ -1530,29 +1590,47 @@ templ feedPlayer(ip ItemPlayback, prefs PlayerPrefs, artwork string, csrfToken s
 			</button>
 		</div>
 		<div id="player-upnext" class="text-muted" style="display:none;font-size:0.8rem;margin-top:0.5rem">Up next&hellip;</div>
+		<script src={ ui.Static.URL("vendor/hls.min.js") } data-hls-js defer></script>
 		<script src={ playerAssetURL() } defer></script>
 	</div>
 }
 
-templ feedSystemSettingsPage(model string, modelsDir string, cliPath string) {
-	@ui.Card("Transcription (whisper.cpp)") {
-		<form method="post" action="">
+templ feedSystemSettingsPage(ws WhisperSettings, mode YouTubeMode, csrfToken string) {
+	<form method="post" action="">
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		@ui.Card("Transcription (whisper.cpp)") {
 			<div class="form-group">
 				<label for="whisper_model">Model</label>
 				<select name="whisper_model" id="whisper_model" class="form-control">
-					<option value="none" selected?={ model == "none" }>None (disable transcription)</option>
-					<option value="tiny.en" selected?={ model == "tiny.en" }>tiny.en (~75 MB)</option>
-					<option value="base.en" selected?={ model == "base.en" }>base.en (~140 MB) — default</option>
-					<option value="small.en" selected?={ model == "small.en" }>small.en (~470 MB)</option>
-					<option value="medium.en" selected?={ model == "medium.en" }>medium.en (~1.5 GB)</option>
-					<option value="large-v3" selected?={ model == "large-v3" }>large-v3 (~3 GB)</option>
+					<option value="none" selected?={ ws.Model == WhisperNone }>None (disable transcription)</option>
+					<option value="tiny.en" selected?={ ws.Model == WhisperTinyEn }>tiny.en (~75 MB)</option>
+					<option value="base.en" selected?={ ws.Model == WhisperBaseEn }>base.en (~140 MB) — default</option>
+					<option value="small.en" selected?={ ws.Model == WhisperSmallEn }>small.en (~470 MB)</option>
+					<option value="medium.en" selected?={ ws.Model == WhisperMediumEn }>medium.en (~1.5 GB)</option>
+					<option value="large-v3" selected?={ ws.Model == WhisperLargeV3 }>large-v3 (~3 GB)</option>
 				</select>
 			</div>
-			@ui.FormField("Models directory", "whisper_models_dir", "text", modelsDir, "(auto: plugin data dir)")
-			@ui.FormField("whisper-cli binary", "whisper_cli_path", "text", cliPath, "(auto: search PATH)")
-			@ui.Button("primary", "Save")
-		</form>
-	}
+			@ui.FormField("Models directory", "whisper_models_dir", "text", ws.ModelsDir, "(auto: plugin data dir)")
+			@ui.FormField("whisper-cli binary", "whisper_cli_path", "text", ws.CLIPath, "(auto: search PATH)")
+		}
+		@ui.Card("YouTube playback") {
+			<fieldset>
+				<legend>Video that hasn't been downloaded plays</legend>
+				<div class="chip-group">
+					<label class="chip">
+						<input type="radio" name="youtube_mode" value={ string(YouTubeDirect) } checked?={ mode == YouTubeDirect }/>
+						Straight from YouTube
+					</label>
+					<label class="chip">
+						<input type="radio" name="youtube_mode" value={ string(YouTubeProxy) } checked?={ mode == YouTubeProxy }/>
+						Through this server
+					</label>
+				</div>
+				<p class="form-help">Through this server helps when players can't reach YouTube directly, or googlevideo refuses them.</p>
+			</fieldset>
+		}
+		@ui.Button("primary", "Save")
+	</form>
 }
 
 // feedHistoryPage renders the playback history list.

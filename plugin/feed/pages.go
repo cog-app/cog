@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/internal/query"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 	"git.duckfam.us/jj-software/cog/plugin/feed/ncapi"
 	"git.duckfam.us/jj-software/cog/plugin/feed/syncprefs"
 	"git.duckfam.us/jj-software/cog/plugin/profanity"
@@ -370,6 +372,22 @@ func (h *Pages) SettingsSync(w http.ResponseWriter, r *http.Request) {
 	}
 	plugin.SetTitle(w, "Sync")
 	ui.Render(w, r, feedSettingsSyncPage(sb, settings, folders, plugin.CSRFToken(r)))
+}
+
+// RevokeMediaLinks handles POST /settings/media-links/revoke: every signed
+// media link handed out so far stops working.
+func (h *Pages) RevokeMediaLinks(w http.ResponseWriter, r *http.Request) {
+	store, err := h.userStore(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if err := store.RotateHLSKey(); err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	h.setFlash(w, "success", "Media links revoked.")
+	http.Redirect(w, r, "/apps/feed/settings/sync", http.StatusSeeOther)
 }
 
 // syncSetting is one protocol's settings as the Sync page shows them.
@@ -837,6 +855,31 @@ func (h *Pages) rows(c viewCtx) rowOpts {
 	return rowOpts{Ctx: c.encode(), HideSub: c.Kind == "sub", Now: h.plugin.ctx.Now()}
 }
 
+// playElsewhere is what a view page offers external players.
+type playElsewhere struct {
+	Label        string // the box's summary: what the links play
+	M3U, M3USkip string // absolute signed M3U URLs; empty offers nothing
+	Launcher     string // /apps/feed/launchers/<path>
+}
+
+// playElsewhere signs l's M3U links for the signed-in user. The first view
+// creates the user's media-link key, as an item page does for its HLS link.
+func (h *Pages) playElsewhere(r *http.Request, store *Store, l m3uList) (playElsewhere, error) {
+	user := plugin.Username(r)
+	key, err := store.HLSKey()
+	if err != nil {
+		return playElsewhere{}, fmt.Errorf("sign %s M3U links: %w", l.Kind, err)
+	}
+	plain := m3uPath(key, user, l, hlsOptions{})
+	skip := m3uPath(key, user, l, hlsOptions{Skip: true})
+	return playElsewhere{
+		Label:    "Play in mpv",
+		M3U:      h.plugin.absoluteURL(r, plain),
+		M3USkip:  h.plugin.absoluteURL(r, skip),
+		Launcher: "/apps/feed/launchers/" + l.path(),
+	}, nil
+}
+
 // PlaylistView renders items matching a saved playlist's query.
 func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	store, err := h.userStore(r)
@@ -869,7 +912,12 @@ func (h *Pages) PlaylistView(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "playlist", ID: id}
 	plugin.SetTitle(w, "Feed — "+pl.Name)
-	ui.Render(w, r, feedPlaylistPage(sb, pl, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewPlaylist, strconv.FormatInt(id, 10)})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedPlaylistPage(sb, pl, items, h.rows(c), pe))
 }
 
 // resolveViewItems returns the same ordered item slice the originating view
@@ -929,7 +977,18 @@ func (h *Pages) Index(w http.ResponseWriter, r *http.Request) {
 	}
 	c := viewCtx{Kind: "all", Q: q}
 	plugin.SetTitle(w, "Feed")
-	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c)))
+	// The links play the unread list, which is not what a search shows,
+	// and an M3U cannot carry a search: beside one there are none.
+	var pe playElsewhere
+	if q == "" {
+		pe, err = h.playElsewhere(r, store, m3uList{ViewUnread, "all"})
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		pe.Label = "Play unread in mpv"
+	}
+	ui.Render(w, r, feedIndexPage(sb, items, q, qErr, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // searchItems lists the items the all-articles page shows for the search q.
@@ -986,7 +1045,12 @@ func (h *Pages) SubscriptionView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "sub", ID: id}
 	plugin.SetTitle(w, subscriptionDisplayTitle(sub))
-	ui.Render(w, r, feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewSubscription, idStr})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedSubscriptionPage(sb, &sub, items, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // FolderView shows items for all subscriptions in a folder.
@@ -1023,7 +1087,12 @@ func (h *Pages) FolderView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "folder", ID: id}
 	plugin.SetTitle(w, folder.Name)
-	ui.Render(w, r, feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewFolder, idStr})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedFolderPage(sb, &folder, items, plugin.CSRFToken(r), h.rows(c), pe))
 }
 
 // StarredView shows all starred items.
@@ -1045,7 +1114,12 @@ func (h *Pages) StarredView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "starred"}
 	plugin.SetTitle(w, "Starred")
-	ui.Render(w, r, feedStarredPage(sb, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewStarred, "all"})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedStarredPage(sb, items, h.rows(c), pe))
 }
 
 // TagView shows items with a specific tag.
@@ -1072,7 +1146,12 @@ func (h *Pages) TagView(w http.ResponseWriter, r *http.Request) {
 
 	c := viewCtx{Kind: "tag", Name: tagName}
 	plugin.SetTitle(w, "Tag: "+tagName)
-	ui.Render(w, r, feedTagPage(sb, tagName, items, h.rows(c)))
+	pe, err := h.playElsewhere(r, store, m3uList{ViewTag, tagName})
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, feedTagPage(sb, tagName, items, h.rows(c), pe))
 }
 
 // RefreshSubscription sets next_check_at=1 on a subscription to trigger immediate re-poll.
@@ -1177,6 +1256,10 @@ func (h *Pages) ItemDetail(w http.ResponseWriter, r *http.Request) {
 	ip, err := store.GetItemPlayback(id)
 	if err != nil {
 		lookupError(w, r, err)
+		return
+	}
+	if err := h.setHLSURL(r, store, &ip); err != nil {
+		httperr.Internal(w, r, err)
 		return
 	}
 	// Text items are "read" once viewed. Audio/video are only considered
@@ -1407,6 +1490,32 @@ func (h *Pages) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// setHLSURL gives a packaged video its signed master playlist, which the
+// player plays in place of the media route; an item that cannot play
+// until it is clean (Download.uncleanOnly) gets why it waits instead.
+func (h *Pages) setHLSURL(r *http.Request, store *Store, ip *ItemPlayback) error {
+	if ip.Type == "text" {
+		return nil
+	}
+	dl, err := store.FindDownload(ip.ID)
+	if err != nil {
+		return err
+	}
+	if dl.uncleanOnly() {
+		ip.Waiting = h.plugin.waitWhy(dl)
+		return nil
+	}
+	if !ip.Packaged || !ip.HasVideo || ip.CleanPending {
+		return nil
+	}
+	master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), ip.ID, hlsOptions{})
+	if err != nil {
+		return err
+	}
+	ip.HLSURL = master
+	return nil
+}
+
 // renderPlayerFragment renders the feedPlayer fragment for itemID, returning
 // true on success. On any error it writes nothing and returns false, leaving
 // the caller to send a fallback (empty body / 204).
@@ -1414,6 +1523,10 @@ func renderPlayerFragment(w http.ResponseWriter, r *http.Request, h *Pages, stor
 	ip, err := store.GetItemPlayback(itemID)
 	if err != nil {
 		slog.Error("feed: player fragment playback", "item_id", itemID, "err", err)
+		return false
+	}
+	if err := h.setHLSURL(r, store, &ip); err != nil {
+		slog.Error("feed: player fragment hls", "item_id", itemID, "err", err)
 		return false
 	}
 	prefs, perr := store.LoadPlayerPrefs()
@@ -1472,8 +1585,13 @@ func (h *Pages) AdjacentPlayer(w http.ResponseWriter, r *http.Request) {
 
 // StreamURL answers where the player plays a YouTube item from: with
 // ?variant=audio, or for an audio item, its best audio-only stream; a video
-// from its download, which it queues, answering {"downloading": true} with
-// why until the download is ready.
+// from its download once ready, and until then from googlevideo over HLS
+// (remoteMaster). When that cannot be, it queues the download, answering
+// {"downloading": true} with why until the download is ready. An item to
+// be muted (Download.muted) plays only its clean audio, and until it has
+// some answers {"downloading": true} with why (waitClean), and
+// "failed": true when cleaning failed; any item not
+// from YouTube plays its audio from the media route.
 func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1485,32 +1603,91 @@ func (h *Pages) StreamURL(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	it, err := store.GetItem(id)
+	it, err := store.GetItemPlayback(id)
 	if err != nil {
 		lookupError(w, r, err)
 		return
 	}
-	// A video plays from its download: YouTube serves picture and sound
-	// apart (ResolveMedia).
-	if r.URL.Query().Get("variant") != "audio" && it.Type != "audio" {
-		dl, err := store.FindDownload(id)
-		if err != nil {
-			httperr.Internal(w, r, err)
-			return
-		}
-		if dl.State == "ready" && dl.LocalPath != "" {
-			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
-			return
-		}
-		why, err := queueVideo(store, h.plugin, plugin.Username(r), id, dl)
-		if err != nil {
-			httperr.Internal(w, r, err)
-			return
-		}
-		plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": why})
+	dl, err := store.FindDownload(id)
+	if err != nil {
+		httperr.Internal(w, r, err)
 		return
 	}
-	streamURL, err := ResolveYouTubeStreamURL(r.Context(), it.MediaURL, true)
+	audio := r.URL.Query().Get("variant") == "audio" || it.Type == "audio"
+	if dl.uncleanOnly() {
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, audio)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
+		return
+	}
+	// A video plays from its download: YouTube serves picture and sound
+	// apart (ResolveMedia).
+	if !audio {
+		if dl.State == "ready" && dl.LocalPath != "" {
+			switch videoPlayOf(dl) {
+			case playHLS:
+				master, err := h.plugin.HLSMasterURL(store, plugin.Username(r), id, hlsOptions{})
+				if err != nil {
+					httperr.Internal(w, r, err)
+					return
+				}
+				plugin.WriteJSON(w, http.StatusOK, map[string]string{"hls": master})
+			case playPreparing:
+				plugin.WriteJSON(w, http.StatusOK, map[string]any{"downloading": true, "message": preparingVideo})
+			case playPackageFailed:
+				why, err := queueDownload(store, h.plugin, plugin.Username(r), id, dl, "video")
+				if err != nil {
+					httperr.Internal(w, r, err)
+					return
+				}
+				plugin.WriteJSON(w, http.StatusOK, waiting(why))
+			default:
+				plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"})
+			}
+			return
+		}
+		master, ok, err := h.plugin.remoteMaster(r.Context(), store, plugin.Username(r), it)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if ok {
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"hls": master})
+			return
+		}
+		why, err := queueDownload(store, h.plugin, plugin.Username(r), id, dl, "video")
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
+		return
+	}
+	media := "/apps/feed/items/" + strconv.FormatInt(id, 10) + "/media"
+	if dl.muted() {
+		// Only its clean audio may play, and that is made from a download.
+		if dl.State == "ready" && dl.CleanAudioPath != "" {
+			plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": media})
+			return
+		}
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, true)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		plugin.WriteJSON(w, http.StatusOK, waiting(why))
+		return
+	}
+	if it.SourceKind != "youtube" {
+		// An enclosure is not a stream to resolve: the media route serves
+		// the download, or else redirects to it.
+		plugin.WriteJSON(w, http.StatusOK, map[string]string{"url": media})
+		return
+	}
+	streamURL, err := resolveStream(r.Context(), it.MediaURL, true)
 	if err != nil {
 		httperr.Log(r, err)
 		plugin.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": httperr.Message})
@@ -1580,7 +1757,40 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 				httperr.Internal(w, r, err)
 				return
 			}
-			ranges = append(ranges, skips...)
+			prefs, err := store.LoadPlayerPrefs()
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			// The end of the item bounds the cuts when it is known; the
+			// package knows it, and silencedetect never reports a range
+			// that runs to the end of the file.
+			duration := math.Inf(1)
+			if d.PackageState == "done" {
+				audio, _, err := space.Track(d.LocalPath)
+				if err != nil {
+					// The ranges stay useful unclamped; failing here would
+					// cost the player its mute ranges too. The player polls,
+					// so this is logged once per item.
+					if _, seen := h.plugin.rangesWarned.LoadOrStore(rangesWarning{u.Username, id}, true); !seen {
+						slog.Warn("feed: ranges without the track's duration", "id", id, "path", d.LocalPath, "err", err)
+					}
+				} else if n := len(audio.Fragments); n > 0 {
+					last := audio.Fragments[n-1]
+					duration = last.Start + last.Duration
+				}
+			}
+			var silences []hls.Cut
+			for _, sk := range skips {
+				if sk.Action == "skip" {
+					silences = append(silences, hls.Cut{Start: sk.Start, End: sk.End})
+				} else {
+					ranges = append(ranges, sk)
+				}
+			}
+			for _, c := range hls.EffectiveCuts(silences, prefs.SkipSilenceMinSec, duration) {
+				ranges = append(ranges, Range{Start: c.Start, End: c.End, Action: "skip"})
+			}
 		} else {
 			pending = true
 		}
@@ -1590,6 +1800,9 @@ func (h *Pages) Ranges(w http.ResponseWriter, r *http.Request) {
 }
 
 // ItemMedia serves item media: prefers clean_audio_path, then local_path, then 302 to media_url.
+// A missing clean file is an error, never a reason to serve the unclean one,
+// and an item to be muted (Download.muted) plays nothing until it has clean
+// audio: it answers 503 with why (waitClean), queueing its download.
 func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -1611,6 +1824,16 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	if dl.uncleanOnly() {
+		why, err := h.plugin.waitClean(store, plugin.Username(r), id, dl, true)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		httperr.Log(r, fmt.Errorf("item %d is to be muted and has no clean audio: %s", id, why))
+		http.Error(w, why, http.StatusServiceUnavailable)
+		return
+	}
 	for _, stored := range []string{dl.CleanAudioPath, dl.LocalPath} {
 		if stored == "" {
 			continue
@@ -1622,6 +1845,12 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		f, err := space.Own.Open(Name(stored))
 		if errors.Is(err, fs.ErrNotExist) {
+			if stored == dl.CleanAudioPath {
+				// Never fall back to the unclean audio of a cleaned item.
+				httperr.Log(r, fmt.Errorf("item %d: clean file %s is missing: %w", id, stored, err))
+				http.Error(w, "clean audio is not available", http.StatusServiceUnavailable)
+				return
+			}
 			continue
 		}
 		if err != nil {
@@ -1635,6 +1864,11 @@ func (h *Pages) ItemMedia(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+		return
+	}
+	if dl.muted() {
+		// Nothing clean to serve until it is downloaded.
+		http.Error(w, "clean audio is not available", http.StatusServiceUnavailable)
 		return
 	}
 	if it.MediaURL != "" {
@@ -1793,50 +2027,68 @@ func (h *Pages) FilterPreview(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, feedFilterPreviewResults(matched))
 }
 
-// SystemSettings renders the admin-only feed system settings page.
+// SystemSettings renders the admin-only feed system settings page: the
+// server-wide settings in feed's root database.
 func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
+	ws, err := h.plugin.WhisperSettings()
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	db := store.DB()
-	model := string(SettingWhisperModel.MustGet(db))
-	modelsDir := SettingWhisperModelsDir.MustGet(db)
-	cliPath := SettingWhisperCLIPath.MustGet(db)
+	db, err := h.plugin.RootDB()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	mode, err := SettingYouTubeMode.Get(db)
+	if err != nil {
+		httperr.Internal(w, r, fmt.Errorf("feed: read youtube mode: %w", err))
+		return
+	}
+	if !mode.valid() {
+		// The page still renders, with neither choice made, so that saving
+		// it is how the admin repairs the setting.
+		h.plugin.log.Error("feed: unknown youtube mode", "mode", mode)
+	}
 	plugin.SetTitle(w, "Feed System Settings")
-	ui.Render(w, r, feedSystemSettingsPage(model, modelsDir, cliPath))
+	ui.Render(w, r, feedSystemSettingsPage(ws, mode, plugin.CSRFToken(r)))
 }
 
-// SaveSystemSettings persists model selection + paths.
+// SaveSystemSettings saves the whisper settings and the YouTube playback
+// mode for the whole server. It checks the whole form before it writes any
+// of it.
 func (h *Pages) SaveSystemSettings(w http.ResponseWriter, r *http.Request) {
-	store, err := h.userStore(r)
-	if err != nil {
-		h.setFlash(w, "error", "Failed to open DB: "+err.Error())
+	fail := func(msg string) {
+		h.setFlash(w, "error", msg)
 		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
 	}
-	db := store.DB()
 	model := WhisperModel(r.FormValue("whisper_model"))
 	if model != WhisperNone && WhisperModelFile(model) == "" {
-		h.setFlash(w, "error", "Unknown whisper model: "+string(model))
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		fail("Unknown whisper model: " + string(model))
 		return
 	}
-	if err := SettingWhisperModel.Set(db, model); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	mode := YouTubeMode(r.FormValue("youtube_mode"))
+	if !mode.valid() {
+		fail("Unknown YouTube playback mode: " + string(mode))
 		return
 	}
-	if err := SettingWhisperModelsDir.Set(db, r.FormValue("whisper_models_dir")); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	db, err := h.plugin.RootDB()
+	if err != nil {
+		h.plugin.log.Error("feed: save system settings", "err", err)
+		fail("The settings were not saved: " + err.Error())
 		return
 	}
-	if err := SettingWhisperCLIPath.Set(db, r.FormValue("whisper_cli_path")); err != nil {
-		h.setFlash(w, "error", err.Error())
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
+	for _, set := range []func() error{
+		func() error { return SettingWhisperModel.Set(db, model) },
+		func() error { return SettingWhisperModelsDir.Set(db, r.FormValue("whisper_models_dir")) },
+		func() error { return SettingWhisperCLIPath.Set(db, r.FormValue("whisper_cli_path")) },
+		func() error { return SettingYouTubeMode.Set(db, mode) },
+	} {
+		if err := set(); err != nil {
+			h.plugin.log.Error("feed: save system settings", "err", err)
+			fail("The settings were not saved: " + err.Error())
+			return
+		}
 	}
 	h.setFlash(w, "success", "Saved.")
 	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
@@ -2097,6 +2349,7 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	oldMinSilence := cur.SkipSilenceMinSec
 	// Only overwrite fields actually present in the form (partial updates).
 	if v := r.FormValue("speed"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
@@ -2127,10 +2380,20 @@ func (h *Pages) SavePlayerPrefs(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("hide_empty"); v != "" {
 		cur.HideEmpty = v == "true" || v == "1" || v == "on"
 	}
+	if v := r.FormValue("skip_silence_min_sec"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			cur.SkipSilenceMinSec = min(max(f, MinSkipSilenceSec), MaxSkipSilenceSec)
+		}
+	}
 	if err := store.SavePlayerPrefs(cur); err != nil {
 		slog.Error("feed: save player prefs", "err", err)
 		httperr.Internal(w, r, err)
 		return
+	}
+	if cur.SkipSilenceMinSec != oldMinSilence {
+		// SavePlayerPrefs forgot every item's edges: the worker makes the
+		// wanted ones again.
+		h.plugin.TriggerFetch(plugin.Username(r), 0)
 	}
 	if r.Header.Get("HX-Target") == "feed-sidebar" {
 		sb, ok := h.sidebar(w, r, store, sidebarPath(currentPath(r)))

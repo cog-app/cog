@@ -43,12 +43,17 @@ func Bootstrap(dataDir string, users *user.Store, volumes *volume.Store, mounts 
 }
 
 // ensureRoot returns u's root mount, making one on the volume volumeID if
-// they have none: every account has its files somewhere.
+// they have none: every account has its files somewhere. Requests that
+// find none at once all try to make it; those that lose to another use the
+// one it made.
 func ensureRoot(mounts *Store, volumeID string, u *user.User) (*Mount, error) {
 	m, err := mounts.GetUserRoot(u.ID)
 	if errors.Is(err, ErrNotFound) {
-		if _, err := mounts.Create(u.ID, "/", volumeID, u.Username+"/files", false); err != nil {
-			return nil, fmt.Errorf("create root mount for %q: %w", u.Username, err)
+		if _, cerr := mounts.Create(u.ID, "/", volumeID, u.Username+"/files", false); cerr != nil {
+			if m, err := mounts.GetUserRoot(u.ID); err == nil {
+				return m, nil
+			}
+			return nil, fmt.Errorf("create root mount for %q: %w", u.Username, cerr)
 		}
 		m, err = mounts.GetUserRoot(u.ID)
 	}
