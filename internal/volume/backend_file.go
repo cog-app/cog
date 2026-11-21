@@ -21,6 +21,7 @@ var (
 	_ vfs.AttrSetter  = (*fileBackend)(nil)
 	_ vfs.DirReader   = (*fileBackend)(nil)
 	_ vfs.LocalRooter = (*fileBackend)(nil)
+	_ vfs.NoReplacer  = (*fileBackend)(nil)
 )
 
 // fileBackend serves a local directory. Every operation goes through an
@@ -142,6 +143,51 @@ func (b *fileBackend) Delete(p string) error {
 
 func (b *fileBackend) Rename(oldPath, newPath string) error {
 	return b.with(func(r *os.Root) error { return r.Rename(rel(oldPath), rel(newPath)) })
+}
+
+// RenameNoReplace moves oldPath to newPath unless something is there. Unlike
+// rename(2), which replaces its target, each way of moving here claims the
+// name with a call that fails when it is taken.
+func (b *fileBackend) RenameNoReplace(oldPath, newPath string) error {
+	return b.with(func(r *os.Root) error {
+		from, to := rel(oldPath), rel(newPath)
+		fi, err := r.Lstat(from)
+		if err != nil {
+			return err
+		}
+		if fi.IsDir() {
+			// A folder cannot replace a file or a folder with anything in
+			// it, and Go refuses to put one over an empty folder too, so
+			// renaming a folder never loses data.
+			return r.Rename(from, to)
+		}
+		// A second name for the file, made only if the name is free, then
+		// the first one taken away. Link keeps the file itself, so its
+		// times, mode and owner stay as they were.
+		err = r.Link(from, to)
+		switch {
+		case err == nil:
+			if err := r.Remove(from); err != nil {
+				return errors.Join(fmt.Errorf("remove old name: %w", err), r.Remove(to))
+			}
+			return nil
+		case errors.Is(err, fs.ErrExist), errors.Is(err, fs.ErrNotExist):
+			return err
+		}
+		// No hard links here (FAT, some network and FUSE file systems):
+		// claim the name with an empty file and rename over it.
+		f, cerr := r.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if cerr != nil {
+			return cerr
+		}
+		if err := f.Close(); err != nil {
+			return errors.Join(err, r.Remove(to))
+		}
+		if err := r.Rename(from, to); err != nil {
+			return errors.Join(err, r.Remove(to))
+		}
+		return nil
+	})
 }
 
 func (b *fileBackend) ReadFile(p string) ([]byte, error) {

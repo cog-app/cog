@@ -322,6 +322,16 @@ func (m *MountFS) Delete(p string) error {
 }
 
 func (m *MountFS) Rename(oldPath, newPath string) error {
+	return m.rename(oldPath, newPath, vfs.FS.Rename)
+}
+
+// RenameNoReplace is Rename that leaves a file already at newPath alone.
+func (m *MountFS) RenameNoReplace(oldPath, newPath string) error {
+	return m.rename(oldPath, newPath, vfs.RenameNoReplace)
+}
+
+// rename is Rename or RenameNoReplace, moving with move.
+func (m *MountFS) rename(oldPath, newPath string, move func(vfs.FS, string, string) error) error {
 	if m.isMountPoint(oldPath) || m.isMountPoint(newPath) {
 		return ErrMountPoint
 	}
@@ -339,7 +349,7 @@ func (m *MountFS) Rename(oldPath, newPath string) error {
 	if oldRO || newRO {
 		return vfs.ErrReadOnly
 	}
-	return oldBackend.Rename(oldSub, newSub)
+	return move(oldBackend, oldSub, newSub)
 }
 
 func (m *MountFS) ReadFile(p string) ([]byte, error) {

@@ -1178,6 +1178,22 @@ func stringSetting[T ~string](key string, defaultValue T) setting[T] {
 
 // Enum types.
 
+// ConflictPolicy says what a rename does when a file's new name is taken.
+type ConflictPolicy string
+
+const (
+	ConflictNumber ConflictPolicy = "number" // add _1, _2, … before the extension
+	ConflictSkip   ConflictPolicy = "skip"   // leave the file where it is
+)
+
+// ParseConflictPolicy is the policy named s, or ConflictNumber.
+func ParseConflictPolicy(s string) ConflictPolicy {
+	if p := ConflictPolicy(s); p == ConflictSkip {
+		return p
+	}
+	return ConflictNumber
+}
+
 // RecognitionBackendType identifies which recognition backend to use.
 type RecognitionBackendType string
 
@@ -1251,9 +1267,11 @@ var (
 	SettingScanLastRun   = intSetting("scan_last_run", 0)
 	SettingScanLastError = stringSetting[string]("scan_last_error", "")
 
-	// File rename
-	SettingRenamePattern = stringSetting[string]("rename_pattern",
-		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
+	// File rename: the pattern and conflict policy last applied (per-user).
+	// An unset pattern means DefaultRenamePattern, which depends on the
+	// scan folders.
+	SettingRenamePattern   = stringSetting[string]("rename_pattern", "")
+	SettingRenameConflicts = stringSetting("rename_conflicts", ConflictNumber)
 
 	// Scan folders (per-user)
 	SettingScanFolders = stringSetting[string]("scan_folders", "Photos/")
