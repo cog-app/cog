@@ -137,6 +137,10 @@ Mutating commands (`cp`, `mv`, `rm`, `mkdir`) route through the files plugin API
 
 Dispatched via ExecHandler when `args[0]` matches a plugin ID. Namespaced as `<plugin> <subcommand> [args...]`.
 
+### su
+
+An admin's shell (embedded daemon or `cog shell`) has `su [-] <user>`: it acts as that user, in the filesystem their own session would have, starting in their files. `exit` or Ctrl-D returns to the admin and the directory they were in; `exit N` is su's status. Anyone else's shell has no `su` — it is not registered, so it is absent from `help` and completion and reports `command not found`. Admin rights are checked again at every `su`, so a session that outlives them cannot use it. Each switch is logged.
+
 ### Non-Interactive Exec
 
 `ssh user@host 'ls | grep foo'` parses and runs through the same interpreter, just with plain I/O instead of the TUI.
@@ -148,7 +152,7 @@ Initial environment for each session:
 | Variable | Value |
 | -------- | ----- |
 | `HOME`   | `/`   |
-| `USER`   | `<username>` |
+| `USER`   | `<username>` (follows `su`) |
 | `SHELL`  | `cog` |
 | `PWD`    | `/` (managed by interpreter, virtual path) |
 | `PATH`   | empty (no OS path search) |
