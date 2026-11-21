@@ -36,7 +36,7 @@ func TestCompleteCommandEmpty(t *testing.T) {
 		t.Fatalf("expected length 0, got %d", length)
 	}
 	// Completions include all visible commands + cobra's auto-generated "help".
-	root := sh.newRootCmd()
+	root := sh.newRootCmd("")
 	visible := 0
 	for _, cmd := range root.Commands() {
 		if !cmd.Hidden {
@@ -127,18 +127,17 @@ func TestCompletePluginSub(t *testing.T) {
 func TestCompletePluginName(t *testing.T) {
 	sh, _ := newTestShell(t)
 	sh.pluginCmds = map[string][]plugin.CommandDef{
-		"files": {{Name: "scan"}},
+		"photos": {{Name: "scan"}},
 	}
 	c := &completer{shell: sh, dir: func() string { return home }}
 
-	// "fi" should complete to "files".
-	line := []rune("fi")
+	line := []rune("pho")
 	candidates, length := c.Do(line, len(line))
-	if length != 2 {
-		t.Fatalf("expected length 2, got %d", length)
+	if length != 3 {
+		t.Fatalf("expected length 3, got %d", length)
 	}
-	if len(candidates) != 1 || string(candidates[0]) != "les " {
-		t.Fatalf("expected [\"les \"], got %v", runeSliceStrings(candidates))
+	if len(candidates) != 1 || string(candidates[0]) != "tos " {
+		t.Fatalf("expected [\"tos \"], got %v", runeSliceStrings(candidates))
 	}
 }
 
@@ -339,4 +338,19 @@ func runeSliceStrings(rs [][]rune) []string {
 		out[i] = string(r)
 	}
 	return out
+}
+
+// A command line builds only the command it names, found by name in
+// commandIndex; two commands claiming a name would hide one of them.
+func TestBuiltinCommandNamesUnique(t *testing.T) {
+	seen := map[string]string{}
+	for _, build := range builtinCommands {
+		c := build(&Shell{})
+		for _, name := range append([]string{c.Name()}, c.Aliases...) {
+			if other, ok := seen[name]; ok {
+				t.Errorf("%s is claimed by both %s and %s", name, other, c.Use)
+			}
+			seen[name] = c.Use
+		}
+	}
 }

@@ -16,6 +16,7 @@ const (
 	ansiMagenta   = "\033[35m"
 	ansiCyan      = "\033[36m"
 	ansiUnderline = "\033[4m"
+	ansiBoldRed   = "\033[1;31m"
 	ansiBoldGreen = "\033[1;32m"
 	ansiBoldBlue  = "\033[1;34m"
 )

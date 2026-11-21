@@ -131,6 +131,15 @@ func (s *Server) newShell(username string, userFS vfs.FS, hasPTY bool, termWidth
 // cog shell runs it. An admin's offers su.
 func NewShell(p *services.Providers, ks *keys.Store, log *slog.Logger, username string, userFS vfs.FS) (*shell.Shell, error) {
 	sh := shell.New(username, userFS, p.Plugins.UserCommands(), p.Users.Usernames, p.Search, log)
+	if qc := p.QuotaChecker; qc != nil {
+		sh.SetSpace(func(username, p string) (int64, int64, error) {
+			rel, ok := strings.CutPrefix(p, "/files")
+			if !ok || (rel != "" && rel[0] != '/') {
+				return 0, 0, fmt.Errorf("%s is not in your files", p)
+			}
+			return qc.SpaceAt(username, path.Clean("/"+rel))
+		})
+	}
 	u, err := p.Users.GetByUsername(username)
 	if err != nil {
 		return nil, fmt.Errorf("look up %s: %w", username, err)

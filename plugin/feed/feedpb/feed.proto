@@ -139,6 +139,9 @@ message Subscription {
   string last_error = 11;
   google.protobuf.Timestamp last_success_at = 12;
   int64 unread = 13;
+  // The site's icon: the feed's own, else the site's /favicon.ico. Empty
+  // when unknown; image_url is the artwork to fall back to.
+  string favicon_url = 14;
 }
 
 // How a playlist plays, the same on every device. What a device downloads

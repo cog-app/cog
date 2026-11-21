@@ -40,7 +40,7 @@ func (c *completer) Do(line []rune, pos int) ([][]rune, int) {
 		compArgs = append(compArgs, "")
 	}
 
-	root := c.shell.newRootCmd()
+	root := c.shell.newRootCmd("")
 	partial := ""
 	if !atNewWord && len(words) > 0 {
 		partial = words[len(words)-1]
@@ -99,8 +99,7 @@ func completable(root *cobra.Command, args []string, partial string) error {
 	cmd.InitDefaultHelpFlag()
 	if err := cmd.ParseFlags(rest); err != nil {
 		// "head -n <TAB>" is completing the flag's value.
-		var needsValue *pflag.ValueRequiredError
-		if !errors.As(err, &needsValue) {
+		if _, ok := errors.AsType[*pflag.ValueRequiredError](err); !ok {
 			return fmt.Errorf("%s: %w", cmd.Name(), err)
 		}
 	}

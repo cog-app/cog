@@ -80,7 +80,7 @@ func newHighlighter(s *Shell, dir func() string) *highlighter {
 // the files or, by su, which commands there are.
 func (h *highlighter) reset() {
 	commands := map[string]bool{"cd": true, "pwd": true, "exit": true, "help": true, "umask": true, "command": true}
-	for _, c := range h.shell.newRootCmd().Commands() {
+	for _, c := range h.shell.newRootCmd("").Commands() {
 		commands[c.Name()] = true
 		for _, a := range c.Aliases {
 			commands[a] = true

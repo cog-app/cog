@@ -722,8 +722,11 @@ type Subscription struct {
 	LastError       string                 `protobuf:"bytes,11,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	LastSuccessAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=last_success_at,json=lastSuccessAt,proto3" json:"last_success_at,omitempty"`
 	Unread          int64                  `protobuf:"varint,13,opt,name=unread,proto3" json:"unread,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The site's icon: the feed's own, else the site's /favicon.ico. Empty
+	// when unknown; image_url is the artwork to fall back to.
+	FaviconUrl    string `protobuf:"bytes,14,opt,name=favicon_url,json=faviconUrl,proto3" json:"favicon_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Subscription) Reset() {
@@ -845,6 +848,13 @@ func (x *Subscription) GetUnread() int64 {
 		return x.Unread
 	}
 	return 0
+}
+
+func (x *Subscription) GetFaviconUrl() string {
+	if x != nil {
+		return x.FaviconUrl
+	}
+	return ""
 }
 
 type Playlist struct {
@@ -3716,7 +3726,7 @@ const file_feed_proto_rawDesc = "" +
 	"\x06Folder\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06unread\x18\x03 \x01(\x03R\x06unread\"\xc1\x03\n" +
+	"\x06unread\x18\x03 \x01(\x03R\x06unread\"\xe2\x03\n" +
 	"\fSubscription\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12 \n" +
 	"\tfolder_id\x18\x02 \x01(\x03H\x00R\bfolderId\x88\x01\x01\x120\n" +
@@ -3732,7 +3742,9 @@ const file_feed_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\v \x01(\tR\tlastError\x12B\n" +
 	"\x0flast_success_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\rlastSuccessAt\x12\x16\n" +
-	"\x06unread\x18\r \x01(\x03R\x06unreadB\f\n" +
+	"\x06unread\x18\r \x01(\x03R\x06unread\x12\x1f\n" +
+	"\vfavicon_url\x18\x0e \x01(\tR\n" +
+	"faviconUrlB\f\n" +
 	"\n" +
 	"_folder_id\"\xcd\x02\n" +
 	"\bPlaylist\x12\x0e\n" +
