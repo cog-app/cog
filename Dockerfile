@@ -52,19 +52,26 @@ RUN set -eux; \
 	unzip -q /tmp/deno.zip -d /usr/local/bin && \
 	rm /tmp/deno.zip && \
 	yt-dlp --version && deno --version
-# ONNX Runtime for image recognition
+# ONNX Runtime for image recognition. From Microsoft's NuGet package: the
+# GitHub repository and its release downloads return 404, and a NuGet
+# version cannot be deleted. Bump the checksum with the version.
 ARG ONNXRUNTIME_VERSION=1.24.3
+ARG ONNXRUNTIME_SHA256=e4ab3b236c1b803e1e7167fe9a75caa1b82a2fd4ae82abbd130937c07517bcdb
 RUN set -eux; \
 	case "$(uname -m)" in \
 		x86_64) ORT_ARCH=x64 ;; \
-		aarch64) ORT_ARCH=aarch64 ;; \
+		aarch64) ORT_ARCH=arm64 ;; \
 		*) echo "unsupported arch"; exit 1 ;; \
 	esac; \
-	wget -q "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}.tgz" -O /tmp/ort.tgz && \
-	tar -xzf /tmp/ort.tgz -C /tmp && \
-	cp -a /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so* /usr/lib/ && \
+	wget -q "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/${ONNXRUNTIME_VERSION}" -O /tmp/ort.zip && \
+	echo "${ONNXRUNTIME_SHA256}  /tmp/ort.zip" | sha256sum -c - && \
+	unzip -q -j /tmp/ort.zip "runtimes/linux-${ORT_ARCH}/native/*" -d /tmp/ort && \
+	cp /tmp/ort/libonnxruntime.so "/usr/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION}" && \
+	cp /tmp/ort/libonnxruntime_providers_shared.so /usr/lib/ && \
+	ln -s "libonnxruntime.so.${ONNXRUNTIME_VERSION}" /usr/lib/libonnxruntime.so.1 && \
+	ln -s libonnxruntime.so.1 /usr/lib/libonnxruntime.so && \
 	ldconfig && \
-	rm -rf /tmp/ort.tgz /tmp/onnxruntime-*
+	rm -rf /tmp/ort.zip /tmp/ort
 # LibreOffice is on its own line to minimize the size of the layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	libreoffice-writer \
