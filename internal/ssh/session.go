@@ -107,11 +107,25 @@ func (s *Server) handleSession(channel gossh.Channel, requests <-chan *gossh.Req
 	}
 }
 
-func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
+func (s *Server) newShell(username string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) *shell.Shell {
 	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
 	if hasPTY {
 		sh.SetSSHMode(termWidth, termHeight)
 	}
+	if qc := s.providers.QuotaChecker; qc != nil {
+		sh.SetSpace(func(p string) (int64, int64, error) {
+			rel, ok := strings.CutPrefix(p, "/files")
+			if !ok || (rel != "" && rel[0] != '/') {
+				return 0, 0, fmt.Errorf("%s is not in your files", p)
+			}
+			return qc.SpaceAt(username, path.Clean("/"+rel))
+		})
+	}
+	return sh
+}
+
+func (s *Server) execShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, command string, hasPTY bool, termWidth, termHeight int) int {
+	sh := s.newShell(username, userFS, hasPTY, termWidth, termHeight)
 	return s.exitCode(channel, username, sh.Run(ctx, command, channel, channel, channel.Stderr()))
 }
 
@@ -131,10 +145,7 @@ func (s *Server) exitCode(channel gossh.Channel, username string, err error) int
 }
 
 func (s *Server) interactiveShell(ctx context.Context, channel gossh.Channel, username string, userFS vfs.FS, hasPTY bool, termWidth, termHeight int) int {
-	sh := shell.New(username, userFS, s.providers.Plugins.UserCommands(), s.providers.Users.Usernames, s.providers.Search, s.log)
-	if hasPTY {
-		sh.SetSSHMode(termWidth, termHeight)
-	}
+	sh := s.newShell(username, userFS, hasPTY, termWidth, termHeight)
 	return s.exitCode(channel, username, sh.RunInteractive(ctx, channel, channel, channel.Stderr()))
 }
 

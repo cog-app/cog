@@ -2,6 +2,7 @@ package shell
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/spf13/cobra"
@@ -38,49 +40,109 @@ func shellDir(ctx context.Context) string {
 	return ""
 }
 
-// newRootCmd builds a fresh cobra command tree for a single invocation.
-func (s *Shell) newRootCmd() *cobra.Command {
-	root := &cobra.Command{
-		SilenceUsage:      true,
-		SilenceErrors:     true,
-		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+// builtinCommands builds each of the shell's own commands. It is filled in
+// init: sh runs commands, so a command's builder reaches this table.
+var builtinCommands []func(*Shell) *cobra.Command
+
+func init() {
+	builtinCommands = []func(*Shell) *cobra.Command{
+		(*Shell).newLsCmd,
+		(*Shell).newCatCmd,
+		(*Shell).newCpCmd,
+		(*Shell).newMvCmd,
+		(*Shell).newRmCmd,
+		(*Shell).newMkdirCmd,
+		(*Shell).newRmdirCmd,
+		(*Shell).newFindCmd,
+		(*Shell).newGrepCmd,
+		(*Shell).newDuCmd,
+		(*Shell).newDfCmd,
+		(*Shell).newTouchCmd,
+		(*Shell).newHeadCmd,
+		(*Shell).newTailCmd,
+		(*Shell).newTreeCmd,
+		(*Shell).newEchoCmd,
+		(*Shell).newWhoamiCmd,
+		(*Shell).newUnameCmd,
+		(*Shell).newClearCmd,
+		(*Shell).newDirnameCmd,
+		(*Shell).newShCmd,
+		(*Shell).newTrueCmd,
+		(*Shell).newFalseCmd,
+		(*Shell).newCdCmd,
+		(*Shell).newPwdCmd,
+		(*Shell).newExitCmd,
+		(*Shell).newSearchCmd,
+		(*Shell).newLnCmd,
+		(*Shell).newUnlinkCmd,
+		(*Shell).newDiffCmd,
+		(*Shell).newSha256sumCmd,
+		(*Shell).newSha1sumCmd,
+		(*Shell).newMd5sumCmd,
+		(*Shell).newWcCmd,
+		(*Shell).newStatCmd,
+		(*Shell).newBasenameCmd,
+		(*Shell).newFileCmd,
+		(*Shell).newZipCmd,
+		(*Shell).newUnzipCmd,
+		(*Shell).newTarCmd,
+		(*Shell).newSortCmd,
+		(*Shell).newUniqCmd,
+		(*Shell).newTeeCmd,
+		(*Shell).newSeqCmd,
+		(*Shell).newDateCmd,
+		(*Shell).newSleepCmd,
+		(*Shell).newEnvCmd,
+		(*Shell).newWhichCmd,
+		(*Shell).newXargsCmd,
 	}
-	// Override the default usage template to remove the empty root command
-	// name from Usage lines (e.g. "cat [file...]" instead of " cat [file...]").
-	defaultTmpl := root.UsageTemplate()
-	root.SetUsageTemplate(strings.Replace(defaultTmpl, "{{.UseLine}}", "{{trimUseLine .}}", 1))
+}
+
+// commandIndex maps each command's name and aliases to its builder, so a
+// command line builds only the command it runs: a whole tree costs hundreds
+// of allocations, more than most commands do.
+var commandIndex = sync.OnceValue(func() map[string]int {
+	m := make(map[string]int, len(builtinCommands))
+	for i, build := range builtinCommands {
+		c := build(&Shell{})
+		m[c.Name()] = i
+		for _, a := range c.Aliases {
+			m[a] = i
+		}
+	}
+	return m
+})
+
+// usageTemplate is cobra's, without the empty root command name in Usage
+// lines ("cat [file...]", not " cat [file...]"). Template functions are
+// global to cobra, so they are registered once rather than per command,
+// which pipeline stages run concurrently.
+var usageTemplate = sync.OnceValue(func() string {
 	cobra.AddTemplateFuncs(template.FuncMap{
 		"trimUseLine": func(cmd *cobra.Command) string {
 			return strings.TrimSpace(cmd.UseLine())
 		},
 	})
+	return strings.Replace((&cobra.Command{}).UsageTemplate(), "{{.UseLine}}", "{{trimUseLine .}}", 1)
+})
 
-	root.AddCommand(
-		s.newLsCmd(),
-		s.newCatCmd(),
-		s.newCpCmd(),
-		s.newMvCmd(),
-		s.newRmCmd(),
-		s.newMkdirCmd(),
-		s.newTouchCmd(),
-		s.newHeadCmd(),
-		s.newTailCmd(),
-		s.newTreeCmd(),
-		s.newEchoCmd(),
-		s.newWhoamiCmd(),
-		s.newUnameCmd(),
-		s.newClearCmd(),
-		s.newDirnameCmd(),
-		s.newShCmd(),
-		s.newTrueCmd(),
-		s.newFalseCmd(),
-		s.newCdCmd(),
-		s.newPwdCmd(),
-		s.newExitCmd(),
-		s.newSearchCmd(),
-		s.newLnCmd(),
-		s.newUnlinkCmd(),
-	)
+// newRootCmd builds a command tree for one invocation of name, or the whole
+// tree when name is not one of the shell's commands (a plugin, help,
+// completion, or a name to report as not found).
+func (s *Shell) newRootCmd(name string) *cobra.Command {
+	root := &cobra.Command{
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+	}
+	root.SetUsageTemplate(usageTemplate())
+	if i, ok := commandIndex()[name]; ok {
+		root.AddCommand(builtinCommands[i](s))
+		return root
+	}
+	for _, build := range builtinCommands {
+		root.AddCommand(build(s))
+	}
 
 	// _help is the renamed "help" (via callHandler) since the interpreter
 	// intercepts "help" as a builtin. Delegates to cobra's help system.
@@ -137,7 +199,7 @@ func getHC(cmd *cobra.Command) (stdout, stderr io.Writer, stdin io.Reader, dir s
 }
 
 func (s *Shell) newLsCmd() *cobra.Command {
-	var showAll, showLong, dirOnly, classify, onePerLine, deref bool
+	var showAll, showLong, dirOnly, classify, onePerLine, deref, human bool
 	cmd := &cobra.Command{
 		Use:               "ls [path...]",
 		Short:             "List directory contents",
@@ -162,7 +224,7 @@ func (s *Shell) newLsCmd() *cobra.Command {
 				if showLong {
 					fmt.Fprintf(w, "%s %8s %s %s\n",
 						s.colorize(ansiYellow, info.Mode().String()),
-						s.colorize(ansiGreen, fmt.Sprintf("%d", info.Size())),
+						s.colorize(ansiGreen, sizeFormat{human: human, bytes: !human}.format(info.Size())),
 						info.ModTime().Format("Jan _2 15:04"),
 						formatName(name, isDir))
 				} else {
@@ -229,6 +291,8 @@ func (s *Shell) newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&classify, "classify", "F", false, "Append / to directories")
 	cmd.Flags().BoolVarP(&onePerLine, "one", "1", false, "One entry per line")
 	cmd.Flags().BoolVarP(&deref, "dereference", "L", false, "Follow symbolic links")
+	cmd.Flags().BoolVarP(&human, "human-readable", "h", false, "With -l, print sizes like 1K 234M 2G")
+	cmd.Flags().BoolP("help", "", false, "Help for ls")
 	return cmd
 }
 
@@ -264,13 +328,15 @@ func (s *Shell) newCatCmd() *cobra.Command {
 
 func (s *Shell) newCpCmd() *cobra.Command {
 	var recursive bool
+	var opt copyOpts
 	cmd := &cobra.Command{
 		Use:               "cp [flags] <src...> <dst>",
 		Short:             "Copy files and directories",
 		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, stderr, _, dir := getHC(cmd)
+			stdout, stderr, _, dir := getHC(cmd)
+			opt.out = stdout
 			return s.eachTarget(stderr, "cp", dir, args, func(src, dst string) error {
 				fi, err := s.fs.Stat(src)
 				if err != nil {
@@ -283,18 +349,37 @@ func (s *Shell) newCpCmd() *cobra.Command {
 					if dst == src || strings.HasPrefix(dst, src+"/") {
 						return fmt.Errorf("cannot copy %s into itself", src)
 					}
+				} else if opt.noClobber {
+					if _, err := s.fs.Stat(dst); err == nil {
+						return nil
+					} else if !isNotExist(err) {
+						return err
+					}
 				}
-				return s.copyTree(src, dst, fi)
+				return s.copyTree(src, dst, fi, &opt)
 			})
 		},
 	}
 	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Copy directories recursively")
 	cmd.Flags().BoolVarP(&recursive, "R", "R", false, "Same as -r")
 	_ = cmd.Flags().MarkHidden("R")
+	cmd.Flags().BoolVarP(&opt.noClobber, "no-clobber", "n", false, "Do not overwrite an existing file")
+	cmd.Flags().BoolVarP(&opt.verbose, "verbose", "v", false, "Explain what is being done")
 	return cmd
 }
 
-func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo) error {
+type copyOpts struct {
+	noClobber, verbose bool
+	out                io.Writer
+}
+
+// copyTree copies src to dst. With noClobber the caller has already checked
+// a file at the top; below it, each directory's existing names come from one
+// List rather than a Stat per file.
+func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo, opt *copyOpts) error {
+	if opt.verbose {
+		fmt.Fprintf(opt.out, "'%s' -> '%s'\n", src, dst)
+	}
 	if !fi.IsDir {
 		rc, err := s.fs.Get(src)
 		if err != nil {
@@ -302,6 +387,19 @@ func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo) error {
 		}
 		defer rc.Close()
 		return s.fs.Put(dst, rc)
+	}
+	var existing map[string]bool
+	if opt.noClobber {
+		entries, err := s.fs.List(dst)
+		if err != nil && !isNotExist(err) {
+			return err
+		}
+		existing = make(map[string]bool, len(entries))
+		for _, e := range entries {
+			if !e.IsDir {
+				existing[e.Name] = true
+			}
+		}
 	}
 	if err := s.fs.Mkdir(dst); err != nil {
 		return err
@@ -312,7 +410,10 @@ func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo) error {
 	}
 	for i := range entries {
 		e := &entries[i]
-		if err := s.copyTree(path.Join(src, e.Name), path.Join(dst, e.Name), e); err != nil {
+		if existing[e.Name] && !e.IsDir {
+			continue
+		}
+		if err := s.copyTree(path.Join(src, e.Name), path.Join(dst, e.Name), e, opt); err != nil {
 			return err
 		}
 	}
@@ -320,16 +421,35 @@ func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo) error {
 }
 
 func (s *Shell) newMvCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "mv <src...> <dst>",
+	var noClobber, verbose bool
+	cmd := &cobra.Command{
+		Use:               "mv [flags] <src...> <dst>",
 		Short:             "Move or rename files",
 		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, stderr, _, dir := getHC(cmd)
-			return s.eachTarget(stderr, "mv", dir, args, s.fs.Rename)
+			stdout, stderr, _, dir := getHC(cmd)
+			return s.eachTarget(stderr, "mv", dir, args, func(src, dst string) error {
+				if noClobber {
+					if _, err := s.fs.Stat(dst); err == nil {
+						return nil
+					} else if !isNotExist(err) {
+						return err
+					}
+				}
+				if err := s.fs.Rename(src, dst); err != nil {
+					return err
+				}
+				if verbose {
+					fmt.Fprintf(stdout, "renamed '%s' -> '%s'\n", src, dst)
+				}
+				return nil
+			})
 		},
 	}
+	cmd.Flags().BoolVarP(&noClobber, "no-clobber", "n", false, "Do not overwrite an existing file")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Explain what is being done")
+	return cmd
 }
 
 // eachTarget applies op to each source in args and its destination, the last
@@ -457,6 +577,72 @@ func (s *Shell) newMkdirCmd() *cobra.Command {
 	return cmd
 }
 
+func (s *Shell) newRmdirCmd() *cobra.Command {
+	var parents bool
+	cmd := &cobra.Command{
+		Use:               "rmdir [flags] <dir...>",
+		Short:             "Remove empty directories",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: s.completeDirs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, stderr, _, dir := getHC(cmd)
+			failed := false
+			for _, d := range args {
+				vp := s.toVirtualPath(dir, d)
+				for {
+					if err := s.removeEmptyDir(vp); err != nil {
+						s.errorf(stderr, "rmdir: %s: %v\n", d, err)
+						failed = true
+						break
+					}
+					if !parents || !strings.Contains(strings.TrimRight(d, "/"), "/") {
+						break
+					}
+					d = path.Dir(strings.TrimRight(d, "/"))
+					vp = path.Dir(vp)
+					if vp == home || vp == "/" || d == "." || d == "/" {
+						break
+					}
+				}
+			}
+			if failed {
+				return exitErr(1)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&parents, "parents", "p", false, "Remove DIR and its ancestors")
+	return cmd
+}
+
+// removeEmptyDir deletes vp only if it is an empty directory: the VFS's
+// Delete takes a directory with everything in it.
+func (s *Shell) removeEmptyDir(vp string) error {
+	if vp == home || vp == "/" {
+		return errors.New("cannot remove")
+	}
+	if mounted, err := s.isLink(vp); err != nil {
+		return err
+	} else if mounted {
+		return errors.New("is a link; use unlink")
+	}
+	fi, err := s.fs.Stat(vp)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir {
+		return errors.New("not a directory")
+	}
+	entries, err := s.fs.List(vp)
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		return errors.New("directory not empty")
+	}
+	return s.fs.Delete(vp)
+}
+
 func (s *Shell) newTouchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "touch <file...>",
@@ -515,55 +701,170 @@ func (s *Shell) newTailCmd() *cobra.Command {
 
 func (s *Shell) headTailRun(cmd *cobra.Command, args []string, n int, isHead bool) error {
 	stdout, stderr, stdin, dir := getHC(cmd)
-
-	readLines := func(r io.Reader) ([]string, error) {
-		var lines []string
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		return lines, scanner.Err()
-	}
-
-	printLines := func(lines []string) {
+	out := bufio.NewWriter(stdout)
+	run := func(r io.Reader) error {
 		if isHead {
-			if n > len(lines) {
-				n = len(lines)
-			}
-			for _, l := range lines[:n] {
-				fmt.Fprintln(stdout, l)
-			}
-		} else {
-			start := max(len(lines)-n, 0)
-			for _, l := range lines[start:] {
-				fmt.Fprintln(stdout, l)
-			}
+			return headLines(out, r, n)
 		}
+		return tailLines(out, r, n)
 	}
-
 	if len(args) == 0 {
-		lines, err := readLines(stdin)
-		if err != nil {
-			return err
-		}
-		printLines(lines)
-		return nil
+		args = []string{"-"}
 	}
-
-	for _, name := range args {
-		rc, err := s.fs.Get(s.toVirtualPath(dir, name))
-		if err != nil {
-			s.errorf(stderr, "%s: %v\n", name, err)
-			return exitErr(1)
+	for i, name := range args {
+		if len(args) > 1 {
+			if i > 0 {
+				out.WriteByte('\n')
+			}
+			fmt.Fprintf(out, "==> %s <==\n", name)
 		}
-		lines, err := readLines(rc)
-		if cerr := rc.Close(); err == nil {
-			err = cerr
+		var err error
+		if name == "-" {
+			err = run(stdin)
+		} else if done, terr := s.tailFromEnd(out, s.toVirtualPath(dir, name), n, isHead); done || terr != nil {
+			err = terr
+		} else {
+			rc, gerr := s.fs.Get(s.toVirtualPath(dir, name))
+			if gerr != nil {
+				if ferr := out.Flush(); ferr != nil {
+					return ferr
+				}
+				s.errorf(stderr, "%s: %v\n", name, gerr)
+				return exitErr(1)
+			}
+			err = run(rc)
+			if cerr := rc.Close(); err == nil {
+				err = cerr
+			}
 		}
 		if err != nil {
 			return err
 		}
-		printLines(lines)
+	}
+	return out.Flush()
+}
+
+// headLines copies r's first n lines and stops reading there.
+func headLines(w *bufio.Writer, r io.Reader, n int) error {
+	br := bufio.NewReaderSize(r, 32<<10)
+	for ; n > 0; n-- {
+		line, err := br.ReadSlice('\n')
+		for errors.Is(err, bufio.ErrBufferFull) {
+			w.Write(line)
+			line, err = br.ReadSlice('\n')
+		}
+		w.Write(line)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// tailFromEnd writes the last n lines of the file at vp by reading back
+// from its end, so tail of a large log reads a block or two rather than the
+// whole file. done is false when the file system cannot seek, and the caller
+// reads from the start instead.
+func (s *Shell) tailFromEnd(w *bufio.Writer, vp string, n int, isHead bool) (done bool, err error) {
+	opener, ok := s.fs.(vfs.FileOpener)
+	if isHead || !ok {
+		return false, nil
+	}
+	f, err := opener.OpenFile(vp, os.O_RDONLY, 0)
+	if err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			return false, nil
+		}
+		return true, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return true, err
+	}
+	if fi.IsDir() {
+		return true, fmt.Errorf("%s: is a directory", vp)
+	}
+	start, err := lastLinesOffset(f, fi.Size(), n)
+	if err != nil {
+		return true, err
+	}
+	_, err = io.Copy(w, io.NewSectionReader(f, start, fi.Size()-start))
+	return true, err
+}
+
+// lastLinesOffset returns where the last n lines of the size bytes in r
+// begin. A final newline ends the last line rather than starting another.
+func lastLinesOffset(r io.ReaderAt, size int64, n int) (int64, error) {
+	if n <= 0 {
+		return size, nil
+	}
+	const block = 64 << 10
+	buf := make([]byte, block)
+	end := size
+	skipFinal := true
+	for end > 0 {
+		off := max(end-block, 0)
+		chunk := buf[:end-off]
+		if _, err := r.ReadAt(chunk, off); err != nil && err != io.EOF {
+			return 0, err
+		}
+		if skipFinal {
+			skipFinal = false
+			if chunk[len(chunk)-1] == '\n' {
+				chunk = chunk[:len(chunk)-1]
+			}
+		}
+		for {
+			i := bytes.LastIndexByte(chunk, '\n')
+			if i < 0 {
+				break
+			}
+			n--
+			if n == 0 {
+				return off + int64(i) + 1, nil
+			}
+			chunk = chunk[:i]
+		}
+		end = off
+	}
+	return 0, nil
+}
+
+// tailLines keeps the last n lines of r in a ring and writes them at EOF.
+func tailLines(w *bufio.Writer, r io.Reader, n int) error {
+	if n <= 0 {
+		_, err := io.Copy(io.Discard, r)
+		return err
+	}
+	ring := make([][]byte, n)
+	next, filled := 0, 0
+	br := bufio.NewReaderSize(r, 32<<10)
+	for {
+		line, err := br.ReadSlice('\n')
+		if len(line) > 0 || errors.Is(err, bufio.ErrBufferFull) {
+			// Reuse the slot's storage: the ring settles at n lines' worth.
+			slot := append(ring[next][:0], line...)
+			for errors.Is(err, bufio.ErrBufferFull) {
+				line, err = br.ReadSlice('\n')
+				slot = append(slot, line...)
+			}
+			ring[next] = slot
+			next = (next + 1) % n
+			filled = min(filled+1, n)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	for i := range filled {
+		w.Write(ring[(next-filled+i+n)%n])
 	}
 	return nil
 }
@@ -741,22 +1042,6 @@ func (s *Shell) newDirnameCmd() *cobra.Command {
 	}
 }
 
-func (s *Shell) newShCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:                "sh <script>",
-		Short:              "Execute a shell script",
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				fmt.Fprintln(cmd.ErrOrStderr(), "sh: missing operand")
-				return exitErr(1)
-			}
-			stdout, stderr, stdin, _ := getHC(cmd)
-			return s.Run(cmd.Context(), args[0], stdin, stdout, stderr)
-		},
-	}
-}
-
 func (s *Shell) newTrueCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "true",
@@ -799,6 +1084,8 @@ func (s *Shell) newCdCmd() *cobra.Command {
 				s.errorf(stderr, "cd: not a directory: %s\n", vp)
 				return exitErr(1)
 			}
+			// Not the interpreter's cd: it checks access on the host
+			// filesystem. So a cd in a subshell moves the session too.
 			s.runner.Dir = vp
 			return nil
 		},

@@ -120,6 +120,29 @@ func (c *Checker) QuotaCheckAt(username, path string, additionalBytes int64) err
 	return c.QuotaCheckFor(a, additionalBytes)
 }
 
+// SpaceAt returns what the account path in username's files is charged to
+// holds, including writes in progress, and its quota, or -1 when nothing
+// limits it.
+func (c *Checker) SpaceAt(username, path string) (used, quota int64, err error) {
+	a, err := c.Account(username, path)
+	if err != nil {
+		return 0, 0, fmt.Errorf("quota account of %s: %w", path, err)
+	}
+	quota, used, limited, err := c.limit(a)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !limited {
+		quota = -1
+		if c.Usage != nil {
+			if used, err = c.Usage(a); err != nil {
+				return 0, 0, fmt.Errorf("storage usage: %w", err)
+			}
+		}
+	}
+	return used + c.Writes.Pending(a.key()), quota, nil
+}
+
 // QuotaCheck checks if a user has enough quota for additionalBytes.
 func (c *Checker) QuotaCheck(username string, additionalBytes int64) error {
 	return c.QuotaCheckFor(Root(username), additionalBytes)

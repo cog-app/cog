@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ergochat/readline"
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
@@ -31,6 +32,7 @@ type Shell struct {
 	pluginCmds map[string][]plugin.CommandDef
 	usernames  func() ([]string, error) // lists all usernames for completion
 	search     *search.Manager          // may be nil
+	space      SpaceFunc                // may be nil
 	log        *slog.Logger
 	runner     *interp.Runner // current interpreter runner (set after newRunner)
 	termWidth  int            // terminal width for SSH pty sessions (0 = unknown)
@@ -66,6 +68,18 @@ func New(username string, userFS vfs.FS, pluginCmds map[string][]plugin.CommandD
 
 // newRunner creates an interp.Runner configured with sandboxed handlers.
 func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Runner, error) {
+	return s.runnerAt(home, s.environ(), stdin, stdout, stderr)
+}
+
+// subRunner creates an interpreter for a command that runs others (sh, xargs,
+// env). It works on a copy of the shell, so a cd it runs moves that
+// interpreter rather than the session's.
+func (s *Shell) subRunner(dir string, env expand.Environ, stdin io.Reader, stdout, stderr io.Writer) (*interp.Runner, error) {
+	child := *s
+	return child.runnerAt(dir, env, stdin, stdout, stderr)
+}
+
+func (s *Shell) runnerAt(dir string, env expand.Environ, stdin io.Reader, stdout, stderr io.Writer) (*interp.Runner, error) {
 	r, err := interp.New(
 		interp.StdIO(stdin, stdout, stderr),
 		interp.CallHandler(s.callHandler),
@@ -75,9 +89,9 @@ func (s *Shell) newRunner(stdin io.Reader, stdout, stderr io.Writer) (*interp.Ru
 		interp.OpenHandler(s.openHandler),
 		interp.StatHandler(s.statHandler),
 		interp.ReadDirHandler2(s.readDirHandler),
-		interp.Env(s.environ()),
+		interp.Env(env),
 		// Not interp.Dir: it stats the directory on the real filesystem.
-		func(r *interp.Runner) error { r.Dir = home; return nil },
+		func(r *interp.Runner) error { r.Dir = dir; return nil },
 	)
 	if err != nil {
 		return nil, err
@@ -124,7 +138,7 @@ func (s *Shell) callHandler(ctx context.Context, args []string) ([]string, error
 
 // Run parses and executes a single command string.
 func (s *Shell) Run(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
-	parser := syntax.NewParser(syntax.Variant(syntax.LangPOSIX))
+	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
 	prog, err := parser.Parse(strings.NewReader(command), "")
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
@@ -144,7 +158,7 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 	s.color = true
 	defer func() { s.color = false }()
 
-	parser := syntax.NewParser(syntax.Variant(syntax.LangPOSIX))
+	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
 
 	// In SSH mode, wrap writers to translate \n → \r\n for proper pty display.
 	shellStdout, shellStderr := stdout, stderr
