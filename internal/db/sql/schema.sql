@@ -149,8 +149,9 @@ CREATE TABLE IF NOT EXISTS volumes (
 -- A mount puts something at user_path in a user's tree:
 --   volume: volume_subpath of a volume, as its share allows;
 --   area:   the user's own area of a storage volume, at volume_subpath;
---   share:  a folder someone shared with them, the directory share_resource_id
---           of share_owner_id's files.
+--   share:  something someone shared with them: share_resource_id of type
+--           share_resource_type, a directory of share_owner_id's files or a
+--           plugin's collection of them.
 CREATE TABLE IF NOT EXISTS mounts (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id),
@@ -160,6 +161,7 @@ CREATE TABLE IF NOT EXISTS mounts (
 	volume_subpath TEXT NOT NULL DEFAULT '',
 	share_owner_id TEXT,
 	share_resource_id TEXT,
+	share_resource_type TEXT NOT NULL DEFAULT 'files:directory',
 	read_only INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL,
 	UNIQUE(user_id, user_path),

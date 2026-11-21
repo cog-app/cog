@@ -514,9 +514,10 @@ func NewFromDB(log *slog.Logger, cfg config.Config, sysDB *sql.DB, c clock.Clock
 	if plug, ok := registry.Plugin(files.PluginID); ok {
 		if fp, ok := plug.(*files.Plugin); ok {
 			resolver.DirPath = fp.DirPath
+			resolver.Collection = registry.Collection
 			resolver.InvalidateAll() // trees built before could not follow one
 			fp.Shared = &files.Shared{Files: fp, Shares: shares, Users: users, Volumes: volumes, Access: access, Mounts: mounts,
-				Server: volume.ServerFiles{DataDir: cfg.DataDir, DBPath: cfg.DBPath}}
+				Server: volume.ServerFiles{DataDir: cfg.DataDir, DBPath: cfg.DBPath}, Collection: registry.Collection}
 			p.Shared = fp.Shared
 		}
 	}

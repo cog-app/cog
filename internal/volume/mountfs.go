@@ -100,10 +100,19 @@ func (m *MountFS) Entry(p string) (MountEntry, error) {
 	e := me.info
 	e.UserPath = path.Clean("/" + p)
 	e.VolumeSubpath = path.Join(me.volumeSubpath, sub)
-	if e.ShareOwner != "" {
+	if op, ok := me.backend.(ownerPather); ok {
+		e.ShareOwnerPath, _ = op.OwnerPath(sub)
+	} else if e.ShareOwner != "" {
 		e.ShareOwnerPath = path.Join(e.ShareOwnerPath, sub)
 	}
 	return e, nil
+}
+
+// ownerPather is a backend whose files are scattered through their owner's
+// tree, so where one is there is the backend's to say: a CollectionFS.
+type ownerPather interface {
+	OwnerPath(p string) (string, bool)
+	vfs.Unwrapper
 }
 
 // ShareTarget reports whether p is in a folder shared with the user, and if
@@ -112,6 +121,10 @@ func (m *MountFS) ShareTarget(p string) (owner, ownerPath string, ok bool) {
 	me, sub, err := m.match(p)
 	if err != nil || me.info.ShareOwner == "" {
 		return "", "", false
+	}
+	if op, ok := me.backend.(ownerPather); ok {
+		ownerPath, ok := op.OwnerPath(sub)
+		return me.info.ShareOwner, ownerPath, ok
 	}
 	return me.info.ShareOwner, path.Join(me.info.ShareOwnerPath, sub), true
 }
@@ -174,7 +187,13 @@ func (m *MountFS) MountRoot(p string) (vfs.FS, string, string, bool, error) {
 // Unwrap resolves a path to the underlying FS and the subpath within it.
 func (m *MountFS) Unwrap(p string) (vfs.FS, string, error) {
 	backend, subpath, _, err := m.resolve(p)
-	return backend, subpath, err
+	if err != nil {
+		return nil, "", err
+	}
+	if op, ok := backend.(ownerPather); ok {
+		return op.Unwrap(subpath)
+	}
+	return backend, subpath, nil
 }
 
 func (m *MountFS) checkWrite(p string) (vfs.FS, string, error) {

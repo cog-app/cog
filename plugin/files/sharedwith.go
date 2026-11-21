@@ -32,6 +32,9 @@ type Shared struct {
 	// Server is where the server keeps its own files, which no volume
 	// shows or mounts.
 	Server volume.ServerFiles
+	// Collection returns how to list a plugin resource type that can be
+	// added to someone's files as a folder of its owner's.
+	Collection func(resourceType string) (mount.CollectionFunc, bool)
 }
 
 // SharedKind is what a shared entry is.
@@ -41,12 +44,17 @@ const (
 	SharedFolder SharedKind = "folder"
 	SharedFile   SharedKind = "file"
 	SharedVolume SharedKind = "volume"
+	// SharedCollection is a plugin's resource that is a set of the owner's
+	// files, such as an album: read-only, a flat folder when mounted.
+	SharedCollection SharedKind = "collection"
 )
 
 // SharedEntry is one thing shared with a user.
 type SharedEntry struct {
 	Kind  SharedKind
 	Owner *user.User
+	// ResourceType is the share's resource type.
+	ResourceType string
 	// Name is unique among what Owner shared with the user: the entry's
 	// place is /shared/<owner username>/<name>.
 	Name  string
@@ -95,7 +103,7 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 		return nil, fmt.Errorf("owners of shares: %w", err)
 	}
 
-	type key struct{ owner, kind, id string }
+	type key struct{ owner, resType, id string }
 	merged := map[key]*SharedEntry{}
 	var order []key
 	fileIDs := map[string][]int64{} // owner username -> shared file IDs
@@ -113,16 +121,19 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 		case volume.ShareResourceType:
 			kind = SharedVolume
 		default:
-			continue
+			if _, ok := s.collection(rec.ResourceType); !ok {
+				continue
+			}
+			kind = SharedCollection
 		}
-		k := key{owner.ID, string(kind), rec.ResourceID}
+		k := key{owner.ID, rec.ResourceType, rec.ResourceID}
 		if e := merged[k]; e != nil {
 			e.Perms |= rec.Permissions
 			continue
 		}
-		merged[k] = &SharedEntry{Kind: kind, Owner: owner, ResourceID: rec.ResourceID, Perms: rec.Permissions}
+		merged[k] = &SharedEntry{Kind: kind, Owner: owner, ResourceType: rec.ResourceType, ResourceID: rec.ResourceID, Perms: rec.Permissions}
 		order = append(order, k)
-		if kind != SharedVolume {
+		if kind == SharedFolder || kind == SharedFile {
 			if id, err := strconv.ParseInt(rec.ResourceID, 10, 64); err == nil {
 				fileIDs[owner.Username] = append(fileIDs[owner.Username], id)
 			}
@@ -171,6 +182,23 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 					e.MountedAt = append(e.MountedAt, m.UserPath)
 				}
 			}
+		case SharedCollection:
+			list, _ := s.collection(e.ResourceType)
+			name, _, err := list(e.Owner.Username, e.ResourceID)
+			if errors.Is(err, plugin.ErrResourceGone) {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("%s %s of %s: %w", e.ResourceType, e.ResourceID, e.Owner.Username, err)
+			}
+			e.Name = name
+			e.Perms &^= plugin.PermWrite | plugin.PermReshare
+			for _, m := range mounts {
+				if m.Kind == mount.Share && m.ShareOwnerID == e.Owner.ID &&
+					m.ShareResourceType == e.ResourceType && m.ShareResourceID == e.ResourceID {
+					e.MountedAt = append(e.MountedAt, m.UserPath)
+				}
+			}
 		default:
 			id, err := strconv.ParseInt(e.ResourceID, 10, 64)
 			if err != nil {
@@ -185,7 +213,8 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 				e.Name = e.Owner.Username
 			}
 			for _, m := range mounts {
-				if m.Kind == mount.Share && m.ShareOwnerID == e.Owner.ID && m.ShareResourceID == e.ResourceID {
+				if m.Kind == mount.Share && m.ShareOwnerID == e.Owner.ID &&
+					m.ShareResourceType == mount.SharedDirType && m.ShareResourceID == e.ResourceID {
 					e.MountedAt = append(e.MountedAt, m.UserPath)
 				}
 			}
@@ -206,6 +235,30 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 	}
 	slices.SortFunc(out, func(a, b SharedOwner) int { return strings.Compare(a.User.Username, b.User.Username) })
 	return out, nil
+}
+
+func (s *Shared) collection(resourceType string) (mount.CollectionFunc, bool) {
+	if s.Collection == nil {
+		return nil, false
+	}
+	return s.Collection(resourceType)
+}
+
+// CollectionEntries returns the files of a shared collection: their names in it
+// and where they are in its owner's files.
+func (s *Shared) CollectionEntries(e *SharedEntry) ([]volume.CollectionEntry, error) {
+	list, ok := s.collection(e.ResourceType)
+	if e.Kind != SharedCollection || !ok {
+		return nil, fmt.Errorf("%s is not a collection: %w", e.Name, ErrNotShared)
+	}
+	_, paths, err := list(e.Owner.Username, e.ResourceID)
+	if errors.Is(err, plugin.ErrResourceGone) {
+		return nil, ErrNotShared
+	}
+	if err != nil {
+		return nil, err
+	}
+	return volume.CollectionEntries(paths), nil
 }
 
 // uniqueNames sorts entries by name and gives each a name of its own: the
@@ -279,6 +332,20 @@ func (e *SharedEntry) Within(rel string) string {
 // FS returns a shared folder as a filesystem: the owner's files beneath it,
 // kept as the plugin keeps them, read-only unless the share allows writing.
 func (s *Shared) FS(e *SharedEntry) (vfs.FS, error) {
+	if e.Kind == SharedCollection {
+		fsys, err := s.Files.FS(e.Owner.Username)
+		if err != nil {
+			return nil, err
+		}
+		return volume.NewCollectionFS(fsys, func() ([]string, error) {
+			entries, err := s.CollectionEntries(e)
+			paths := make([]string, len(entries))
+			for i, c := range entries {
+				paths[i] = c.Path
+			}
+			return paths, err
+		}), nil
+	}
 	if e.Kind != SharedFolder {
 		return nil, fmt.Errorf("%s is not a folder: %w", e.Name, ErrNotShared)
 	}
@@ -310,9 +377,9 @@ func (s *Shared) MountPoint(u *user.User, userPath string) (string, error) {
 		return "", err
 	}
 	if st, ok := fsys.(interface {
-		ShareTarget(string) (string, string, bool)
+		Entry(string) (volume.MountEntry, error)
 	}); ok {
-		if _, _, shared := st.ShareTarget(path.Dir(userPath)); shared {
+		if e, err := st.Entry(path.Dir(userPath)); err == nil && e.ShareOwner != "" {
 			return "", fmt.Errorf("%w: %s is in a shared folder", ErrMountPoint, path.Dir(userPath))
 		}
 	}
@@ -321,14 +388,14 @@ func (s *Shared) MountPoint(u *user.User, userPath string) (string, error) {
 
 // MountFolder mounts a folder shared with u at userPath in their files.
 func (s *Shared) MountFolder(u *user.User, e *SharedEntry, userPath string) (*mount.Mount, error) {
-	if e.Kind != SharedFolder {
+	if e.Kind != SharedFolder && e.Kind != SharedCollection {
 		return nil, fmt.Errorf("%w: only a shared folder can be mounted", ErrMountPoint)
 	}
 	userPath, err := s.MountPoint(u, userPath)
 	if err != nil {
 		return nil, err
 	}
-	return s.Mounts.CreateShare(u.ID, userPath, e.Owner.ID, e.ResourceID)
+	return s.Mounts.CreateShareOf(u.ID, userPath, e.Owner.ID, e.ResourceType, e.ResourceID)
 }
 
 // AddArea makes (or finds again) an area of u's in the storage volume vol and

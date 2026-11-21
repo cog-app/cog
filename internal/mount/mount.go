@@ -26,8 +26,8 @@ const (
 	Volume Kind = "volume"
 	// Area mounts the user's own area of a storage volume, at VolumeSubpath.
 	Area Kind = "area"
-	// Share mounts a folder someone shared with the user: the directory
-	// ShareResourceID of ShareOwnerID's files.
+	// Share mounts what someone shared with the user: a directory of their
+	// files, or a plugin's collection of them.
 	Share Kind = "share"
 )
 
@@ -38,16 +38,18 @@ type Mount struct {
 	Kind          Kind
 	VolumeID      string // empty for a Share
 	VolumeSubpath string
-	// ShareOwnerID and ShareResourceID name the shared directory of a Share.
-	ShareOwnerID    string
-	ShareResourceID string
-	ReadOnly        bool
-	CreatedAt       time.Time
+	// ShareOwnerID, ShareResourceType and ShareResourceID name what a Share
+	// mounts: a directory of the owner's files, or a plugin's collection.
+	ShareOwnerID      string
+	ShareResourceType string
+	ShareResourceID   string
+	ReadOnly          bool
+	CreatedAt         time.Time
 }
 
 // mountColumns are the columns scanMount reads, in order.
 const mountColumns = `id, user_id, user_path, kind, coalesce(volume_id, ''), volume_subpath,
-	coalesce(share_owner_id, ''), coalesce(share_resource_id, ''), read_only, created_at`
+	coalesce(share_owner_id, ''), share_resource_type, coalesce(share_resource_id, ''), read_only, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -55,7 +57,7 @@ func scanMount(row scanner) (Mount, error) {
 	var m Mount
 	var createdAt int64
 	if err := row.Scan(&m.ID, &m.UserID, &m.UserPath, &m.Kind, &m.VolumeID, &m.VolumeSubpath,
-		&m.ShareOwnerID, &m.ShareResourceID, &m.ReadOnly, &createdAt); err != nil {
+		&m.ShareOwnerID, &m.ShareResourceType, &m.ShareResourceID, &m.ReadOnly, &createdAt); err != nil {
 		return Mount{}, err
 	}
 	m.CreatedAt = time.Unix(createdAt, 0)
@@ -90,8 +92,14 @@ func (s *Store) Create(userID, userPath, volumeID, volumeSubpath string, readOnl
 // with userID, at userPath. What it may do is decided by the shares each
 // time it is used.
 func (s *Store) CreateShare(userID, userPath, ownerID, resourceID string) (*Mount, error) {
+	return s.CreateShareOf(userID, userPath, ownerID, SharedDirType, resourceID)
+}
+
+// CreateShareOf mounts resourceID, of resourceType, shared by ownerID at
+// userPath.
+func (s *Store) CreateShareOf(userID, userPath, ownerID, resourceType, resourceID string) (*Mount, error) {
 	return s.insert(Mount{UserID: userID, UserPath: userPath, Kind: Share,
-		ShareOwnerID: ownerID, ShareResourceID: resourceID})
+		ShareOwnerID: ownerID, ShareResourceType: resourceType, ShareResourceID: resourceID})
 }
 
 // CreateArea mounts an area of the storage volume volumeID at userPath,
@@ -141,9 +149,9 @@ func (s *Store) insert(m Mount) (*Mount, error) {
 	}
 	now := s.clock().Unix()
 	_, err = s.db.Exec(
-		`INSERT INTO mounts (id, user_id, user_path, kind, volume_id, volume_subpath, share_owner_id, share_resource_id, read_only, created_at)
-		VALUES (?, ?, ?, ?, nullif(?, ''), ?, nullif(?, ''), nullif(?, ''), ?, ?)`,
-		id, m.UserID, m.UserPath, m.Kind, m.VolumeID, m.VolumeSubpath, m.ShareOwnerID, m.ShareResourceID, m.ReadOnly, now,
+		`INSERT INTO mounts (id, user_id, user_path, kind, volume_id, volume_subpath, share_owner_id, share_resource_type, share_resource_id, read_only, created_at)
+		VALUES (?, ?, ?, ?, nullif(?, ''), ?, nullif(?, ''), coalesce(nullif(?, ''), 'files:directory'), nullif(?, ''), ?, ?)`,
+		id, m.UserID, m.UserPath, m.Kind, m.VolumeID, m.VolumeSubpath, m.ShareOwnerID, m.ShareResourceType, m.ShareResourceID, m.ReadOnly, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert mount: %w", err)

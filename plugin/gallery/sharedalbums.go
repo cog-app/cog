@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 )
 
@@ -80,6 +81,39 @@ func albumsByID(db *sql.DB, ids []int64) ([]Album, error) {
 	}
 	defer rows.Close()
 	return scanAlbumRows(rows)
+}
+
+// albumCollection is an album as a folder of its owner's files.
+func (p *Plugin) albumCollection(owner, resourceID string) (string, []string, error) {
+	id, err := strconv.ParseInt(resourceID, 10, 64)
+	if err != nil {
+		return "", nil, cogplugin.ErrResourceGone
+	}
+	db, err := p.DB(owner)
+	if err != nil {
+		return "", nil, err
+	}
+	var name string
+	if err := db.QueryRow(`SELECT name FROM albums WHERE id = ?`, id).Scan(&name); errors.Is(err, sql.ErrNoRows) {
+		return "", nil, cogplugin.ErrResourceGone
+	} else if err != nil {
+		return "", nil, err
+	}
+	rows, err := db.Query(`SELECT m.file_path FROM media m JOIN album_media am ON am.media_id = m.id
+		WHERE am.album_id = ?`, id)
+	if err != nil {
+		return "", nil, err
+	}
+	defer rows.Close()
+	var paths []string
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return "", nil, err
+		}
+		paths = append(paths, fp)
+	}
+	return name, paths, rows.Err()
 }
 
 // errNotShared hides whether an album exists from someone it was not shared

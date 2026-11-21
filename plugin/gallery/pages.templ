@@ -502,6 +502,7 @@ templ sharedAlbumPage(activePath string, album SharedAlbum, media []Media) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader(album.Name, []ui.Crumb{{Label: "Albums", URL: "/apps/gallery/albums"}}) {
 			<span class="badge badge-outline">{ "Shared by " + album.Owner }</span>
+			<a class="btn" href={ templ.SafeURL("/apps/files/shared/" + url.PathEscape(album.Owner) + "/" + url.PathEscape(album.Name)) }>Add to my files</a>
 		}
 		if album.Description != "" {
 			<p class="gallery-description">{ album.Description }</p>

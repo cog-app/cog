@@ -5,6 +5,7 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -146,7 +147,15 @@ type ResourceDef struct {
 	// PermissionLevels defines the named permission presets available for sharing.
 	// If empty, defaults to Read-only and Read/Write.
 	PermissionLevels []PermissionLevel
+	// Collection, when set, lets a share of the resource be added to its
+	// audience's files as a read-only folder of the owner's files: it
+	// returns the resource's name and where those files are in the owner's
+	// files, or ErrResourceGone. In-process plugins only.
+	Collection func(owner, resourceID string) (name string, paths []string, err error)
 }
+
+// ErrResourceGone is a shared resource that is no longer there.
+var ErrResourceGone = errors.New("resource gone")
 
 // ResourceHandler serves requests for a specific resource instance.
 type ResourceHandler interface {

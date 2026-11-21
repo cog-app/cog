@@ -84,6 +84,9 @@ func (h *Pages) ServeSharedItem(w http.ResponseWriter, r *http.Request) {
 		}
 		h.serveDownload(w, r, e.Owner.Username, e.Path, e.File)
 		return
+	case SharedCollection:
+		h.serveCollection(w, r, e, rel)
+		return
 	}
 
 	owner := e.Owner.Username
@@ -272,4 +275,63 @@ func sharedAccess(e *SharedEntry) string {
 		return "can edit"
 	}
 	return "view only"
+}
+
+// serveCollection lists a shared collection, or serves a file in it.
+func (h *Pages) serveCollection(w http.ResponseWriter, r *http.Request, e *SharedEntry, rel string) {
+	entries, err := h.plugin.Shared.CollectionEntries(e)
+	if errors.Is(err, ErrNotShared) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	owner := e.Owner.Username
+	if rel == "/" {
+		items := make([]FileMeta, 0, len(entries))
+		for _, c := range entries {
+			meta, err := h.plugin.GetByPath(owner, c.Path)
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				httperr.Internal(w, r, err)
+				return
+			}
+			if meta.IsDir {
+				continue
+			}
+			item := *meta
+			item.Name, item.Path = c.Name, "/"+c.Name
+			items = append(items, item)
+		}
+		pd := h.pageData(w, r, e.Name)
+		ui.Render(w, r, sharedFolderPage(pd, e, rel, items, h.plugin.ctx.Now()))
+		return
+	}
+	for _, c := range entries {
+		if "/"+c.Name != rel {
+			continue
+		}
+		meta, err := h.plugin.GetByPath(owner, c.Path)
+		if errors.Is(err, ErrNotFound) {
+			break
+		}
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		if meta.IsDir {
+			break
+		}
+		if r.URL.Query().Get("dl") == "1" {
+			h.serveDownload(w, r, owner, c.Path, meta)
+		} else {
+			h.serveRaw(w, r, owner, c.Path, meta)
+		}
+		return
+	}
+	http.NotFound(w, r)
 }
