@@ -1429,7 +1429,7 @@ templ scanFoldersPreview(folders []string, total int) {
 }
 
 // --- System Settings Page (admin, rendered via RegisterSettingsPage) ---
-templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, csrfToken string) {
+templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, workers workersView, csrfToken string) {
 	<header class="page-header">
 		<div class="page-heading">
 			<h1>Gallery Settings</h1>
@@ -1437,6 +1437,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 		</div>
 	</header>
 	@scanStatusCard(stats, scan, csrfToken)
+	@workersCard(workers, csrfToken)
 	@ui.Card("Tag classification") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
@@ -1597,6 +1598,91 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, cs
 			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
+}
+
+templ workersCard(v workersView, csrfToken string) {
+	<div id="workers">
+		@ui.Card("Workers") {
+			<p class="card-desc">Other machines can analyse photos for this server: faces, tags, fingerprints and text. Each signs in with its own token and takes photos when it is up; the server goes on analysing without them.</p>
+			if len(v.Workers) > 0 {
+				<table class="table table-sm mb-2">
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Status</th>
+							<th>Machine</th>
+							<th>Speed</th>
+							<th>Photos</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, w := range v.Workers {
+							<tr>
+								<td>{ w.Name }</td>
+								<td>
+									if w.Online(v.Now) {
+										<span class="badge badge-success">Online</span>
+									} else if w.LastSeen.IsZero() {
+										Never seen
+									} else {
+										Last seen { w.LastSeen.Format("Jan 2 3:04 PM") }
+									}
+									if w.Info.LastFailure != "" && w.Online(v.Now) {
+										<div class="text-sm text-warning">{ w.Info.LastFailure }</div>
+									}
+								</td>
+								<td>
+									if w.Info.Hostname != "" {
+										{ w.Info.Hostname }
+										<div class="text-sm">{ w.Info.CPU }, { strconv.Itoa(w.Info.Threads) } threads, { w.Info.Version }</div>
+									}
+								</td>
+								<td>
+									if w.Info.PerPhoto > 0 {
+										{ strconv.FormatFloat(w.Info.PerPhoto, 'f', 2, 64) } s/photo
+									}
+								</td>
+								<td>{ strconv.FormatInt(w.Done, 10) }</td>
+								<td>
+									<div class="btn-group">
+										<form method="post" action="/admin/plugins/gallery/workers">
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<input type="hidden" name="op" value="regenerate"/>
+											<input type="hidden" name="id" value={ strconv.FormatInt(w.ID, 10) }/>
+											<button type="submit" class="btn btn-sm btn-outline">New token</button>
+										</form>
+										<form method="post" action="/admin/plugins/gallery/workers">
+											<input type="hidden" name="csrf_token" value={ csrfToken }/>
+											<input type="hidden" name="op" value="delete"/>
+											<input type="hidden" name="id" value={ strconv.FormatInt(w.ID, 10) }/>
+											<button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+										</form>
+									</div>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+			<form method="post" action="/admin/plugins/gallery/workers" class="form-row mb-2">
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				<input type="hidden" name="op" value="create"/>
+				<div class="form-group">
+					<label for="worker_name">New worker</label>
+					<input type="text" id="worker_name" name="name" class="form-control" placeholder="desktop" required/>
+				</div>
+				<div class="form-group">
+					<label>&nbsp;</label>
+					<button type="submit" class="btn btn-primary">Add worker</button>
+				</div>
+			</form>
+			<p class="form-help">Run a worker with the server's image:</p>
+			<pre class="mono text-sm">docker run -d --name cog-worker --restart unless-stopped \
+  -e COG_WORKER_TOKEN=cogw_… -v cog-worker:/data \
+  docker.duckfam.us/jj-software/cog cog gallery worker { v.Server }</pre>
+		}
+	</div>
 }
 
 // scanStatusCard renders the background scan status card (used as full-page component and HTMX partial).

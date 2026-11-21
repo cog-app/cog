@@ -64,15 +64,9 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 	case BackendPigo:
 		return &PigoBackend{}, nil
 	case BackendOnnx:
-		modelsDir := SettingOnnxModelsDir.MustGet(db)
-		if modelsDir == "" {
-			global, err := p.ctx.GlobalStorage()
-			if err != nil {
-				return nil, err
-			}
-			if modelsDir, err = global.LocalPath("onnx_models"); err != nil {
-				return nil, err
-			}
+		modelsDir, err := p.onnxModelsDir(db)
+		if err != nil {
+			return nil, err
 		}
 		b := &OnnxBackend{
 			ModelsDir:   modelsDir,
@@ -87,6 +81,17 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 	default:
 		return nil, fmt.Errorf("unknown recognition backend: %q", backendType)
 	}
+}
+
+func (p *Plugin) onnxModelsDir(sysDB *sql.DB) (string, error) {
+	if dir := SettingOnnxModelsDir.MustGet(sysDB); dir != "" {
+		return dir, nil
+	}
+	global, err := p.ctx.GlobalStorage()
+	if err != nil {
+		return "", err
+	}
+	return global.LocalPath("onnx_models")
 }
 
 // execQuerier is what the recognition writes need: a *sql.DB or a *sql.Tx.

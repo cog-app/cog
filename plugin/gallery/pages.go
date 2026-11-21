@@ -1331,8 +1331,62 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := h.plugin.AggregateRecognitionStats()
 	scanStatus := h.plugin.GetScanStatus()
+	workers, err := h.plugin.Workers()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery Settings")
-	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, plugin.CSRFToken(r)))
+	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, workersView{Workers: workers, Now: h.plugin.ctx.Now(), Server: serverURL(r)}, plugin.CSRFToken(r)))
+}
+
+// WorkersAction adds a remote worker, gives one a new token, or removes one.
+// A new token is shown once, in the flash.
+func (h *Pages) WorkersAction(w http.ResponseWriter, r *http.Request) {
+	const back = "/admin/plugins/gallery#workers"
+	var token string
+	var err error
+	op := r.FormValue("op")
+	var id int64
+	if op == "regenerate" || op == "delete" {
+		if id, err = strconv.ParseInt(r.FormValue("id"), 10, 64); err != nil {
+			flashRedirect(w, r, "error", "No such worker.", back)
+			return
+		}
+	}
+	switch op {
+	case "create":
+		token, err = h.plugin.CreateWorker(r.FormValue("name"))
+	case "regenerate":
+		token, err = h.plugin.RegenerateWorkerToken(id)
+	case "delete":
+		err = h.plugin.DeleteWorker(id)
+	default:
+		err = fmt.Errorf("unknown worker action %q", r.FormValue("op"))
+	}
+	if err != nil {
+		flashRedirect(w, r, "error", err.Error(), back)
+		return
+	}
+	if token != "" {
+		flashRedirect(w, r, "success", "The worker's token, shown only now: "+token, back)
+		return
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+type workersView struct {
+	Workers []worker
+	Now     time.Time
+	Server  string
+}
+
+func serverURL(r *http.Request) string {
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		scheme = "http"
+	}
+	return scheme + "://" + r.Host
 }
 
 // ScanStatusPartial returns the scan status card as an HTMX partial.

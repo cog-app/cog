@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS albums (
 
 -- Files added to an album through a share before a scan has made them
 -- media; the scan moves them into album_media.
+-- A photo being analysed, by the scan ("local") or a remote worker, so no
+-- two analyse it at once. A holder that goes away lets its lease expire.
+CREATE TABLE IF NOT EXISTS analysis_leases (
+    media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+    holder TEXT NOT NULL,
+    token TEXT NOT NULL,
+    expires INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS album_pending (
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
     file_path TEXT NOT NULL,

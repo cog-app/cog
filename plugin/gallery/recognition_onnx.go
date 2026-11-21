@@ -45,15 +45,6 @@ const (
 	scrfdURL      = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/det_10g.onnx"
 	genderageURL  = "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx"
 
-	mobilenetFile  = "mobilenetv2-12-int8.onnx"
-	joytagFile     = "joytag.onnx"
-	joytagTagsFile = "joytag_tags.txt"
-	wd14File       = "wd14.onnx"
-	wd14TagsFile   = "wd14_tags.csv"
-	arcfaceFile    = "w600k_r50.onnx"
-	scrfdFile      = "det_10g.onnx"
-	genderageFile  = "genderage.onnx"
-
 	minFacePixels       = 32 // smaller faces upscale into embeddings that match anyone
 	scrfdInputSize      = 640
 	scrfdScoreThreshold = 0.5

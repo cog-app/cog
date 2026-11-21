@@ -12,6 +12,7 @@ type OnnxBackend struct {
 	ModelsDir   string
 	LibraryPath string
 	TagModel    TagModel
+	Threads     int
 }
 
 func (b *OnnxBackend) Name() string    { return "ONNX (local)" }

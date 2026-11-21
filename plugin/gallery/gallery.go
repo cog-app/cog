@@ -66,6 +66,8 @@ type Plugin struct {
 	// ReleaseMemory can free ONNX sessions under memory pressure.
 	activeBackendsMu sync.Mutex
 	activeBackends   []RecognitionBackend
+
+	hub workerHub
 }
 
 // New creates a new Gallery plugin instance.
@@ -117,6 +119,29 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 						return p.runScanWorker(cmdCtx)
 					},
 				},
+			},
+		})
+		priv.RegisterAdminCommand(plugin.CommandDef{
+			Name:  "workers",
+			Short: "manage remote workers",
+			Sub: []plugin.CommandDef{{
+				Name: "add", Short: "register a worker and print its token", Args: []string{"name"},
+				Run: func(cmdCtx context.Context, args []string) error {
+					token, err := p.CreateWorker(args[0])
+					if err != nil {
+						return err
+					}
+					_, err = fmt.Println(token)
+					return err
+				},
+			}},
+		})
+		priv.RegisterAdminCommand(plugin.CommandDef{
+			Name:  "worker",
+			Short: "analyse photos for a server (token in COG_WORKER_TOKEN; COG_WORKER_THREADS, COG_WORKER_MODELS)",
+			Args:  []string{"server-url"},
+			Run: func(cmdCtx context.Context, args []string) error {
+				return p.runRemoteWorker(cmdCtx, args[0])
 			},
 		})
 	}
@@ -184,6 +209,12 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
 		priv.RegisterRoute("GET /apps/gallery/api/worker/pprof/{profile...}",
 			auth.RequireAuth(auth.RequireAdmin(http.HandlerFunc(p.workerPprof))))
+		// Remote workers sign in with their own token, not a user's.
+		priv.RegisterRoute("POST "+workerAPI+"/lease", http.HandlerFunc(p.workerLease))
+		priv.RegisterRoute("POST "+workerAPI+"/heartbeat", http.HandlerFunc(p.workerHeartbeatHandler))
+		priv.RegisterRoute("GET "+workerAPI+"/models/{name}", http.HandlerFunc(p.workerModelFile))
+		priv.RegisterRoute("GET "+workerAPI+"/jobs/{user}/{media}/file", http.HandlerFunc(p.workerFile))
+		priv.RegisterRoute("POST "+workerAPI+"/jobs/{user}/{media}/result", http.HandlerFunc(p.workerResultHandler))
 	}
 
 	ctx.RegisterAction("POST", "albums", http.HandlerFunc(pages.CreateAlbum))
@@ -216,6 +247,10 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
 		Slug:   "scan",
 		Action: http.HandlerFunc(pages.TriggerSystemScan),
+	})
+	ctx.RegisterSettingsPage(plugin.SettingsPage{
+		Slug:   "workers",
+		Action: http.HandlerFunc(pages.WorkersAction),
 	})
 	ctx.RegisterSettingsPage(plugin.SettingsPage{
 		Slug:   "purge-recognitions",
@@ -291,6 +326,7 @@ func (p *Plugin) manageInProcessWorker(ctx context.Context) {
 }
 
 func (p *Plugin) Stop() error {
+	p.hub.stop()
 	if p.cancel != nil {
 		p.cancel()
 		<-p.done
@@ -311,7 +347,16 @@ func (p *Plugin) SystemDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS gallery_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS gallery_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+		CREATE TABLE IF NOT EXISTS gallery_workers (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			token_hash TEXT NOT NULL UNIQUE,
+			created_at INTEGER NOT NULL,
+			last_seen INTEGER NOT NULL DEFAULT 0,
+			info TEXT NOT NULL DEFAULT '{}',
+			done INTEGER NOT NULL DEFAULT 0
+		)`)
 	if err != nil {
 		return nil, fmt.Errorf("create gallery_settings: %w", err)
 	}

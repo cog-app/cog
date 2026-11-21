@@ -126,6 +126,7 @@ func (r *recognizer) run(ctx context.Context, photo *decodedPhoto, path string) 
 type analysisConfig struct {
 	quality     bool
 	hasher      binaryHasher // nil: no fingerprints
+	algorithm   DuplicateAlgorithm
 	ocr         bool
 	recognition *recognizer // nil: no recognition
 }
@@ -206,10 +207,25 @@ func (r *scanReport) attrs() []any {
 // analysisConfig reads which per-photo stages are on. The release function
 // frees recognition models and must be called when the scan is done.
 func (p *Plugin) analysisConfig(sysDB, db *sql.DB) (*analysisConfig, func(), error) {
+	cfg, err := p.stageConfig(sysDB, db)
+	if err != nil || cfg.recognition == nil {
+		return cfg, func() {}, err
+	}
+	rec, release, err := p.recognizer(sysDB)
+	if err != nil {
+		return nil, release, err
+	}
+	cfg.recognition = rec
+	return cfg, release, nil
+}
+
+// stageConfig is analysisConfig without the recognition models: enough to
+// say what a photo needs and to store what was found for it. Its recognizer
+// has the thresholds and no backends.
+func (p *Plugin) stageConfig(sysDB, db *sql.DB) (*analysisConfig, error) {
 	cfg := &analysisConfig{quality: true, ocr: TesseractAvailable()}
-	release := func() {}
 	if sysDB == nil {
-		return cfg, release, nil
+		return cfg, nil
 	}
 	cfg.quality = SettingQualityScoringEnabled.MustGet(sysDB)
 	cfg.ocr = cfg.ocr && SettingOCREnabled.MustGet(sysDB)
@@ -218,31 +234,37 @@ func (p *Plugin) analysisConfig(sysDB, db *sql.DB) (*analysisConfig, func(), err
 		algorithm := SettingDuplicateAlgorithm.MustGet(sysDB)
 		hasher, err := getHasher(algorithm)
 		if err != nil {
-			return nil, release, err
+			return nil, err
 		}
 		// Fingerprints from another algorithm, or another input, do not
 		// compare: they are cleared and computed again.
-		version := string(algorithm) + fingerprintInput
+		version := fingerprintVersion(algorithm)
 		if last := SettingDuplicateAlgorithmUsed.MustGet(db); last != version {
 			if last != "" {
 				p.log.Info("fingerprints changed, clearing", "old", last, "new", version)
 			}
 			if err := ClearAllFingerprints(db); err != nil {
-				return nil, release, fmt.Errorf("clear fingerprints: %w", err)
+				return nil, fmt.Errorf("clear fingerprints: %w", err)
 			}
 			if err := SettingDuplicateAlgorithmUsed.Set(db, version); err != nil {
-				return nil, release, fmt.Errorf("record fingerprint version: %w", err)
+				return nil, fmt.Errorf("record fingerprint version: %w", err)
 			}
 		}
 		cfg.hasher = hasher
+		cfg.algorithm = algorithm
 	}
 
-	rec, rel, err := p.recognizer(sysDB)
-	if err != nil {
-		return nil, release, err
+	if SettingTagBackend.MustGet(sysDB) != BackendNone || SettingFaceBackend.MustGet(sysDB) != BackendNone {
+		cfg.recognition = &recognizer{
+			tagMinConf:  SettingTagMinConfidence.MustGet(sysDB),
+			faceMinConf: SettingFaceMinConfidence.MustGet(sysDB),
+		}
 	}
-	cfg.recognition = rec
-	return cfg, rel, nil
+	return cfg, nil
+}
+
+func fingerprintVersion(algorithm DuplicateAlgorithm) string {
+	return string(algorithm) + fingerprintInput
 }
 
 // fingerprintInput names what fingerprints are computed from, so a change
@@ -258,35 +280,14 @@ func (p *Plugin) recognizer(sysDB *sql.DB) (*recognizer, func(), error) {
 	if tagType == BackendNone && faceType == BackendNone {
 		return nil, release, nil
 	}
-	r := &recognizer{
-		tagMinConf:  SettingTagMinConfidence.MustGet(sysDB),
-		faceMinConf: SettingFaceMinConfidence.MustGet(sysDB),
+	r, backends, err := newRecognizer(tagType, faceType, func(t RecognitionBackendType) (RecognitionBackend, error) {
+		return p.resolveBackend(sysDB, t)
+	})
+	if err != nil {
+		return nil, release, err
 	}
-	var err error
-	if tagType != BackendNone {
-		if r.tag, err = p.resolveBackend(sysDB, tagType); err != nil {
-			return nil, release, fmt.Errorf("tag backend: %w", err)
-		}
-	}
-	if faceType != BackendNone {
-		if faceType == tagType && r.tag != nil {
-			r.face = r.tag
-		} else if r.face, err = p.resolveBackend(sysDB, faceType); err != nil {
-			return nil, release, fmt.Errorf("face backend: %w", err)
-		}
-	}
-	var backends []RecognitionBackend
-	for _, b := range []RecognitionBackend{r.tag, r.face} {
-		if b == nil || slices.Contains(backends, b) {
-			continue
-		}
-		if ic, ok := b.(interface{ InitErr() error }); ok {
-			if err := ic.InitErr(); err != nil {
-				return nil, release, fmt.Errorf("recognition backend init: %w", err)
-			}
-		}
-		backends = append(backends, b)
-	}
+	r.tagMinConf = SettingTagMinConfidence.MustGet(sysDB)
+	r.faceMinConf = SettingFaceMinConfidence.MustGet(sysDB)
 
 	// Registered so the ReleaseMemory RPC can reach them under memory
 	// pressure; released after the scan to free what onnxruntime allocated.
@@ -306,17 +307,50 @@ func (p *Plugin) recognizer(sysDB *sql.DB) (*recognizer, func(), error) {
 	return r, release, nil
 }
 
+// newRecognizer resolves the tag and face backends, sharing one when both
+// are the same type, and checks that each started. It returns the distinct
+// backends for the caller to release.
+func newRecognizer(tagType, faceType RecognitionBackendType, resolve func(RecognitionBackendType) (RecognitionBackend, error)) (*recognizer, []RecognitionBackend, error) {
+	r := &recognizer{}
+	var err error
+	if tagType != BackendNone {
+		if r.tag, err = resolve(tagType); err != nil {
+			return nil, nil, fmt.Errorf("tag backend: %w", err)
+		}
+	}
+	if faceType != BackendNone {
+		if faceType == tagType && r.tag != nil {
+			r.face = r.tag
+		} else if r.face, err = resolve(faceType); err != nil {
+			return nil, nil, fmt.Errorf("face backend: %w", err)
+		}
+	}
+	var backends []RecognitionBackend
+	for _, b := range []RecognitionBackend{r.tag, r.face} {
+		if b == nil || slices.Contains(backends, b) {
+			continue
+		}
+		if ic, ok := b.(interface{ InitErr() error }); ok {
+			if err := ic.InitErr(); err != nil {
+				return nil, nil, fmt.Errorf("recognition backend init: %w", err)
+			}
+		}
+		backends = append(backends, b)
+	}
+	return r, backends, nil
+}
+
 // analyzePhotos runs the per-photo stages on every photo that needs one,
 // newest first, until done or the deadline passes. It reports whether
 // photos were left for the next scan.
 func (p *Plugin) analyzePhotos(ctx context.Context, db *sql.DB, username string, cfg *analysisConfig, deadline time.Time, report *scanReport) (remaining bool, err error) {
-	query := `SELECT ` + mediaCols + ` FROM media m WHERE ` + cfg.pendingClause() + `
+	query := `SELECT ` + mediaCols + ` FROM media m WHERE ` + cfg.pendingClause() + ` AND ` + unleased + `
 		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC, m.id DESC LIMIT 50`
 	// A photo the stages could not settle would otherwise come back in
 	// every batch.
 	seen := map[int64]bool{}
 	for {
-		rows, err := db.Query(query)
+		rows, err := db.Query(query, p.ctx.Now().Unix())
 		if err != nil {
 			return false, fmt.Errorf("list photos to analyse: %w", err)
 		}
@@ -336,7 +370,18 @@ func (p *Plugin) analyzePhotos(ctx context.Context, db *sql.DB, username string,
 				return true, nil
 			}
 			seen[batch[i].ID] = true
-			if err := p.analyzePhoto(ctx, db, username, &batch[i], cfg, report); err != nil {
+			token, ok, err := p.claimLease(db, batch[i].ID, localHolder)
+			if err != nil {
+				return true, err
+			}
+			if !ok {
+				continue
+			}
+			err = p.analyzePhoto(ctx, db, username, &batch[i], cfg, report)
+			if rerr := releaseLease(db, batch[i].ID, token); rerr != nil {
+				err = errors.Join(err, rerr)
+			}
+			if err != nil {
 				return true, err
 			}
 		}
@@ -360,37 +405,71 @@ func (r *photoResult) fail(stage string, err error) {
 	r.errs = append(r.errs, stage+": "+err.Error())
 }
 
+// photoNeeds says which stages a photo still needs.
+type photoNeeds struct {
+	ContentKey  bool `json:"content_key,omitempty"`
+	Quality     bool `json:"quality,omitempty"`
+	Fingerprint bool `json:"fingerprint,omitempty"`
+	OCR         bool `json:"ocr,omitempty"`
+	Recognition bool `json:"recognition,omitempty"`
+}
+
+func (n photoNeeds) any() bool {
+	return n.ContentKey || n.Quality || n.Fingerprint || n.OCR || n.Recognition
+}
+
+func (c *analysisConfig) needs(m *Media) photoNeeds {
+	return photoNeeds{
+		ContentKey:  m.ContentKey == "",
+		Quality:     c.quality && m.QualityScore == -1,
+		Fingerprint: c.hasher != nil && m.Fingerprint == "",
+		OCR:         c.ocr && m.OCRText == "",
+		Recognition: c.recognition != nil && m.RecognitionState == 0,
+	}
+}
+
+// failedResult marks every stage a photo needs as failed, for a photo whose
+// file could not be read, so the next scan does not pick it up again.
+func failedResult(n photoNeeds, stage string, err error) *photoResult {
+	res := &photoResult{}
+	res.fail(stage, err)
+	if n.Quality {
+		q := float64(qualityFailed)
+		res.quality = &q
+	}
+	if n.Fingerprint {
+		res.fingerprint = fingerprintFailed
+	}
+	if n.OCR {
+		res.ocrText = ocrDone
+	}
+	if n.Recognition {
+		res.recognized, res.recogErr = true, err
+	}
+	return res
+}
+
 // analyzePhoto decodes one photo once and runs every stage it still needs.
 // A stage that fails is recorded on the photo; only a failure to store the
 // results is returned.
 func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, m *Media, cfg *analysisConfig, report *scanReport) error {
-	var res photoResult
-	needQuality := cfg.quality && m.QualityScore == -1
-	needFingerprint := cfg.hasher != nil && m.Fingerprint == ""
-	needOCR := cfg.ocr && m.OCRText == ""
-	needRecognition := cfg.recognition != nil && m.RecognitionState == 0
-
+	n := cfg.needs(m)
 	path, err := p.resolveLocalPath(username, m.FilePath)
 	if err != nil {
 		p.log.Warn("analyse photo", "path", m.FilePath, "err", err)
-		res.fail("open", err)
-		if needQuality {
-			q := float64(qualityFailed)
-			res.quality = &q
-		}
-		if needFingerprint {
-			res.fingerprint = fingerprintFailed
-		}
-		if needOCR {
-			res.ocrText = ocrDone
-		}
-		if needRecognition {
-			res.recognized, res.recogErr = true, err
-		}
-		return p.storePhotoResult(db, m, &res, cfg)
+		return p.storePhotoResult(db, m, failedResult(n, "open", err), cfg)
 	}
+	res, photo := p.preparePhoto(path, m, n, cfg, report)
+	p.finishPhoto(ctx, res, photo, path, m, n, cfg, report)
+	return p.storePhotoResult(db, m, res, cfg)
+}
 
-	if m.ContentKey == "" {
+// preparePhoto runs the stages that need only the decoded photo: the
+// content key, sharpness and fingerprint. The decoded photo is returned for
+// finishPhoto.
+func (p *Plugin) preparePhoto(path string, m *Media, n photoNeeds, cfg *analysisConfig, report *scanReport) (*photoResult, *decodedPhoto) {
+	res := &photoResult{}
+	if n.ContentKey {
 		if err := report.time("content key", func() error {
 			var err error
 			res.contentKey, err = contentKey(path)
@@ -401,7 +480,7 @@ func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, 
 	}
 
 	var photo *decodedPhoto
-	if needQuality || needFingerprint || needRecognition {
+	if n.Quality || n.Fingerprint || n.Recognition {
 		err := report.time("decode", func() error {
 			var err error
 			photo, err = decodePhoto(path)
@@ -413,14 +492,14 @@ func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, 
 		}
 	}
 
-	if needQuality {
+	if n.Quality {
 		q := float64(qualityFailed)
 		if photo != nil {
 			report.measure("quality", func() { q = laplacianVariance(photo.work) })
 		}
 		res.quality = &q
 	}
-	if needFingerprint {
+	if n.Fingerprint {
 		res.fingerprint = fingerprintFailed
 		if photo != nil {
 			report.measure("fingerprint", func() {
@@ -428,7 +507,13 @@ func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, 
 			})
 		}
 	}
-	if needRecognition {
+	return res, photo
+}
+
+// finishPhoto runs recognition and OCR, the stages that take models or a
+// program and so run one photo at a time.
+func (p *Plugin) finishPhoto(ctx context.Context, res *photoResult, photo *decodedPhoto, path string, m *Media, n photoNeeds, cfg *analysisConfig, report *scanReport) {
+	if n.Recognition {
 		res.recognized = true
 		res.recogErr = report.time("recognition", func() error {
 			var err error
@@ -439,7 +524,7 @@ func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, 
 			p.log.Warn("recognize", "path", m.FilePath, "err", res.recogErr)
 		}
 	}
-	if needOCR {
+	if n.OCR {
 		res.ocrText = ocrDone
 		if likelyText(m, res.tags) {
 			err := report.time("ocr", func() error {
@@ -457,7 +542,6 @@ func (p *Plugin) analyzePhoto(ctx context.Context, db *sql.DB, username string, 
 			report.stage("ocr skipped").done++
 		}
 	}
-	return p.storePhotoResult(db, m, &res, cfg)
 }
 
 // textTags are words in a tag that suggest a photo has text worth reading.
