@@ -42,6 +42,9 @@ type Backend interface {
 	SyncFilter(db *sql.DB, p syncprefs.Protocol) (syncprefs.Filter, error)
 	// ItemPage returns the absolute address of item id's page in Cog.
 	ItemPage(r *http.Request, id int64) string
+	// ItemMedia returns the absolute address of item id's media in Cog,
+	// which plays only clean audio for an item to be muted.
+	ItemMedia(r *http.Request, id int64) string
 }
 
 // NewsAPI implements the NextCloud News API v1-2 endpoints for the feed plugin.
@@ -792,11 +795,13 @@ type itemWithSub struct {
 	IsRead      bool
 	IsStarred   bool
 	SubTitle    string
+	Muted       bool // a mute filter matched it: its original audio is not to be played
 }
 
 const itemColumns = `i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
 		i.content_html, i.media_url, i.media_mime, i.published_at, i.fetched_at, i.is_read, i.is_starred,
-		s.title`
+		s.title, EXISTS (SELECT 1 FROM downloads d WHERE d.item_id = i.id
+			AND (d.needs_profanity = 1 OR d.clean_audio_path != ''))`
 
 // allItems pages through items the way NextCloud News does: offset
 // is an item ID, not a row count, and each page continues past the last ID
@@ -889,7 +894,7 @@ func queryItems(db *sql.DB, q string, args ...any) ([]itemWithSub, error) {
 		if err := rows.Scan(
 			&it.ID, &it.SubID, &it.GUID, &it.Type, &it.Title, &it.Author, &it.URL,
 			&it.ContentHTML, &it.MediaURL, &it.MediaMIME, &it.PublishedAt, &it.FetchedAt, &isRead,
-			&isStarred, &it.SubTitle); err != nil {
+			&isStarred, &it.SubTitle, &it.Muted); err != nil {
 			return nil, fmt.Errorf("scan item: %w", err)
 		}
 		it.IsRead = isRead != 0
@@ -993,8 +998,10 @@ func subsToAPI(subs []subscription) []map[string]any {
 // itemToAPI serialises an item. NextCloud News derives guidHash from the GUID
 // and fingerprint from the content; clients key and deduplicate on both, so
 // each must differ between items exactly when NextCloud's would. A video's
-// link is its page in Cog, which plays it; its enclosure stays the original.
-func itemToAPI(it itemWithSub, page string) map[string]any {
+// link is its page in Cog, which plays it; its enclosure stays the original,
+// except for an item to be muted, whose enclosure is its media in Cog
+// (media), which plays only its clean audio.
+func itemToAPI(it itemWithSub, page, media string) map[string]any {
 	fingerprint := md5Hex(it.Title + it.URL + it.ContentHTML)
 	link := it.URL
 	if it.Type == "video" {
@@ -1003,6 +1010,9 @@ func itemToAPI(it itemWithSub, page string) map[string]any {
 	var enclosureMime, enclosureLink any
 	if it.MediaURL != "" {
 		enclosureMime, enclosureLink = it.MediaMIME, it.MediaURL
+		if it.Muted {
+			enclosureLink = media
+		}
 	}
 	return map[string]any{
 		"id":               it.ID,
@@ -1029,7 +1039,7 @@ func itemToAPI(it itemWithSub, page string) map[string]any {
 func (a *NewsAPI) itemsToAPI(r *http.Request, items []itemWithSub) []map[string]any {
 	out := make([]map[string]any, len(items))
 	for i := range items {
-		out[i] = itemToAPI(items[i], a.backend.ItemPage(r, items[i].ID))
+		out[i] = itemToAPI(items[i], a.backend.ItemPage(r, items[i].ID), a.backend.ItemMedia(r, items[i].ID))
 	}
 	return out
 }

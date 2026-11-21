@@ -388,6 +388,35 @@
                   Mark all read
                 </button>
               </form>
+              <details>
+                <summary>
+                  Play unread in mpv
+                </summary>
+                <div class="secret-box">
+                  <code class="break-anywhere">
+                    http://127.0.0.1:«port»/apps/feed/m3u/index/unread/all.m3u?sig=elEq8I8IQjrzSbYb_xSkh3xeRHtQbHegnACAAJHGIjs
+                  </code>
+                  <button class="btn" onclick="__templ_copyText_12a2(\"http://127.0.0.1:«port»/apps/feed/m3u/index/unread/all.m3u?sig=elEq8I8IQjrzSbYb_xSkh3xeRHtQbHegnACAAJHGIjs\")" type="button">
+                    Copy link
+                  </button>
+                </div>
+                <div class="secret-box">
+                  <code class="break-anywhere">
+                    http://127.0.0.1:«port»/apps/feed/m3u/index/unread/all.m3u?sig=MnWaEly4mdB9meDnIlYMGskSQxZlIclW0lwPpu7VHsA&skip=silence
+                  </code>
+                  <button class="btn" onclick="__templ_copyText_12a2(\"http://127.0.0.1:«port»/apps/feed/m3u/index/unread/all.m3u?sig=MnWaEly4mdB9meDnIlYMGskSQxZlIclW0lwPpu7VHsA\\u0026skip=silence\")" type="button">
+                    Copy link (skip silence)
+                  </button>
+                </div>
+                <p>
+                  <a download="" href="/apps/feed/launchers/unread/all.m3u">
+                    Download launcher
+                  </a>
+                </p>
+                <p class="text-sm">
+                  Plays in mpv or any player that opens .m3u links. Revoke media links in Sync settings to stop every link.
+                </p>
+              </details>
             </div>
           </header>
           <form action="/apps/feed/" class="feed-search" method="get" role="search">

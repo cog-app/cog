@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb"
 	"git.duckfam.us/jj-software/cog/plugin/feed/feedpb/feedpbconnect"
+	"git.duckfam.us/jj-software/cog/plugin/feed/hls"
 )
 
 // feedClient is a FeedService client signed in with authorization, over
@@ -242,6 +245,91 @@ func TestReportProgressOverGRPC(t *testing.T) {
 	assert.True(t, item.Msg.Item.Playback.Completed)
 }
 
+func TestReportProgressEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}, 10))
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+
+	pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5, EditList: "abc123abc123",
+	}))
+	require.NoError(t, err)
+	assert.True(t, math.Abs(pb.Msg.ProgressSec-8) < 1e-9)
+	got, err := client.GetItem(ctx, connect.NewRequest(&feedpb.GetItemRequest{Id: id}))
+	require.NoError(t, err)
+	assert.True(t, math.Abs(got.Msg.Item.Playback.ProgressSec-8) < 1e-9)
+}
+
+// The cuts are in media time, so the item's end is the media duration the
+// edit list was recorded with; the feed's own figure (short, long or
+// missing) plays no part.
+func TestReportProgressEditListUsesMediaDuration(t *testing.T) {
+	for _, feedDuration := range []int64{0, 6, 5000} {
+		t.Run(strconv.FormatInt(feedDuration, 10), func(t *testing.T) {
+			env := cogtest.New(t, feed.New())
+			u := env.CreateUser(t, "alice", "pass")
+			store := feedStore(t, env, u.Username)
+			subID, err := store.CreateSubscription(feed.Subscription{Kind: "rss", URL: "https://podcast.example.com/feed", Title: "P"})
+			require.NoError(t, err)
+			id, _, err := store.UpsertItem(feed.Item{SubscriptionID: subID, GUID: "d", Type: "audio", Title: "d",
+				MediaURL: "https://cdn.example.com/d.mp3", DurationSec: feedDuration})
+			require.NoError(t, err)
+			// Media is 3600 s; the presentation is 3597 s long.
+			require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}, {Start: 6, End: 7}}, 3600))
+			client := feedClient(t, env, u.AppPassword(t, "phone"))
+			ctx := context.Background()
+			now := time.Now()
+			n := 0
+			report := func(sec float64) float64 {
+				t.Helper()
+				n++
+				// Each later than the last, or the older report loses.
+				pb, err := client.ReportProgress(ctx, connect.NewRequest(&feedpb.ReportProgressRequest{
+					ItemId: id, ProgressSec: sec, EditList: "abc123abc123", At: timestamppb.New(now.Add(time.Duration(n) * time.Second)),
+				}))
+				require.NoError(t, err)
+				return pb.Msg.ProgressSec
+			}
+			assert.Equal(t, 8.0, report(5))
+			assert.Equal(t, 1503.0, report(1500))
+			assert.Equal(t, 3600.0, report(3597-1e-7))
+			assert.Equal(t, 3600.0, report(9999))
+		})
+	}
+}
+
+func TestReportProgressUnknownEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	_, err := client.ReportProgress(context.Background(), connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5, EditList: "000000000000",
+	}))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	assert.Contains(t, err.Error(), "unknown edit list")
+}
+
+func TestReportProgressNoEditList(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	store := feedStore(t, env, u.Username)
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep1.mp3")
+	require.NoError(t, store.RecordEdit(id, "abc123abc123", []hls.Cut{{Start: 2, End: 4}}, 10))
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	pb, err := client.ReportProgress(context.Background(), connect.NewRequest(&feedpb.ReportProgressRequest{
+		ItemId: id, ProgressSec: 5,
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, 5.0, pb.Msg.ProgressSec)
+}
+
 func TestPreviewQueryOverGRPC(t *testing.T) {
 	env := cogtest.New(t, feed.New())
 	u := env.CreateUser(t, "alice", "pass")
@@ -321,6 +409,84 @@ func TestPlayerPrefsOverGRPC(t *testing.T) {
 		_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(bad))
 		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%+v", bad)
 	}
+}
+
+func TestSetPlayerPrefsSkipSilenceMin(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	ctx := context.Background()
+	get := func() *feedpb.PlayerPrefs {
+		t.Helper()
+		res, err := client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+		require.NoError(t, err)
+		return res.Msg
+	}
+
+	prefs := get()
+	assert.Equal(t, 1.0, prefs.SkipSilenceMinSec)
+
+	// A new shortest silence resets every item's edges and wakes the
+	// worker to make them again.
+	poked(t, env)
+	prefs.SkipSilenceMinSec = 2.5
+	_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+	require.NoError(t, err)
+	assert.Equal(t, 2.5, get().SkipSilenceMinSec)
+	assert.True(t, poked(t, env), "worker not woken")
+
+	// Zero is a client that predates the field: the stored value stays.
+	prefs.SkipSilenceMinSec = 0
+	prefs.Speed = 1.25
+	_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+	require.NoError(t, err)
+	assert.False(t, poked(t, env), "nothing reset")
+	after := get()
+	assert.Equal(t, 2.5, after.SkipSilenceMinSec)
+	assert.Equal(t, 1.25, after.Speed)
+
+	for _, bad := range []float64{0.4, 10.5, -1, math.NaN(), math.Inf(1)} {
+		prefs.SkipSilenceMinSec = bad
+		_, err := client.SetPlayerPrefs(ctx, connect.NewRequest(prefs))
+		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%g", bad)
+	}
+	assert.Equal(t, 2.5, get().SkipSilenceMinSec)
+}
+
+// Changing the shortest silence changes the plan, so the edges are remade.
+func TestSetPlayerPrefsResetsEdges(t *testing.T) {
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "alice", "pass")
+	client := feedClient(t, env, u.AppPassword(t, "phone"))
+	store := feedStore(t, env, u.Username)
+	ctx := context.Background()
+	id := seedAudioItem(t, store, "https://cdn.example.com/ep.mp3")
+	require.NoError(t, store.EnqueueDownload(id))
+	require.NoError(t, store.MarkDownloadReady(id, "media/1.mp3", 100))
+	require.NoError(t, store.SavePackage(id, "media/1.hls-audio.m4a", "", 300))
+	require.NoError(t, store.SetSilenceRanges(id, nil))
+	edit := func() string {
+		t.Helper()
+		d, err := store.GetDownload(id)
+		require.NoError(t, err)
+		return d.EdgesEdit
+	}
+	set := func(minSilence float64) {
+		t.Helper()
+		res, err := client.GetPlayerPrefs(ctx, connect.NewRequest(&feedpb.GetPlayerPrefsRequest{}))
+		require.NoError(t, err)
+		res.Msg.SkipSilenceMinSec = minSilence
+		_, err = client.SetPlayerPrefs(ctx, connect.NewRequest(res.Msg))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.SetEdges(id, "abcdefabcdef", nil))
+	set(1) // the default: unchanged
+	assert.Equal(t, "abcdefabcdef", edit())
+	set(0) // a client without the field: unchanged
+	assert.Equal(t, "abcdefabcdef", edit())
+	set(2)
+	assert.Equal(t, "", edit())
 }
 
 func TestExportOPMLOverGRPC(t *testing.T) {

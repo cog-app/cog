@@ -112,12 +112,17 @@ func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin,
 		log.Error("feed orchestrator: download", "user", username, "err", err)
 	}
 
+	pkg := pipeline.NewPackager(store, space)
+	if err := pkg.RunOnce(ctx); err != nil {
+		log.Error("feed orchestrator: package", "user", username, "err", err)
+	}
+
 	sil := pipeline.NewSilence(store, space)
 	if err := sil.RunOnce(ctx); err != nil {
 		log.Error("feed orchestrator: silence", "user", username, "err", err)
 	}
 
-	tx := pipeline.NewTranscribe(store, space)
+	tx := pipeline.NewTranscribe(store, space, plug.WhisperSettings)
 	if err := tx.RunOnce(ctx); err != nil {
 		log.Error("feed orchestrator: transcribe", "user", username, "err", err)
 	}
@@ -128,5 +133,14 @@ func processUser(ctx context.Context, plug *feed.Plugin, prof *profanity.Plugin,
 		if err := pf.RunOnce(ctx); err != nil {
 			log.Error("feed orchestrator: profanity", "user", username, "err", err)
 		}
+	}
+
+	if err := pkg.RunCleanOnce(ctx); err != nil {
+		log.Error("feed orchestrator: package clean", "user", username, "err", err)
+	}
+
+	// Last: the clean track RunCleanOnce makes is one of the renditions cut.
+	if err := pipeline.NewEdges(store, space, prof != nil).RunOnce(ctx); err != nil {
+		log.Error("feed orchestrator: edges", "user", username, "err", err)
 	}
 }

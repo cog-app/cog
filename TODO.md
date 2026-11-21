@@ -158,6 +158,72 @@ the choices; this is what Cog needs for it, in the order the app needs it.
 
 ## Media
 
+- [ ] **Feed media over HLS** (`DESIGN/plugins/feed_hls.md`): video
+      and audio as separate fragmented-MP4 tracks, byte-range playlists written
+      per request, mute (clean rendition) and skip (dropped segments, edge
+      transcodes) applied server-side for any player, captions as a WebVTT
+      rendition, and signed URLs and M3Us for external players like mpv.
+      Replaces the merged-mp4 YouTube download.
+  - [x] Phase 1: YouTube downloads as separate tracks, the packager
+        (`pipeline.Packager`; tracks indexed by their own `sidx`), master and
+        media playlists, byte-range serving from signed links that need no
+        session (`/apps/feed/hls/…`, revoked from Sync settings), and the web
+        player on hls.js (`TestPackage*`, `TestHLS*`, `TestBrowser/HLS`).
+  - [x] Phase 2: the captions rendition (segmented WebVTT with
+        `X-TIMESTAMP-MAP`, YouTube rolling-caption cleanup, `TestParseVTT*`,
+        `TestVTTSegment*`, `TestHLSSubs*`, `TestHLSCaptions*`,
+        `TestBrowser/HLSCaptions*`).
+  - [x] Phase 3: mute, the clean rendition as a whole re-encoded audio track
+        (a departure from spliced segments; the packager makes it, Clean is
+        the default rendition, captions masked, no `mute` option;
+        `TestProfanityWorkerNoRanges*`, `TestCleanTrackStore`,
+        `TestPackageCleanTrack*`, `TestRecleanReplacesTrack`,
+        `TestMasterCleanRendition`, `TestMasterAudioOnlyRenditions`,
+        `TestHLSClean*`, `TestHLSCaptionsMaskedWhenClean`,
+        `TestHLSCaptionsWithheldWithoutProfanity`, `TestResolveMediaClean*`,
+        `TestPlayerFragmentCleanPending`, `TestBrowser/HLSClean`).
+        Still open: re-clean items when the word list changes; manual check
+        (phase 6a) of mpv on an audio-only cleaned master.
+  - [x] Phase 4: skip, with dropped segments, per-rendition edge transcodes
+        made on demand, discontinuities only at cuts, and the time mapping
+        (`ReportProgressRequest.edit_list`); the web ranges use the same
+        effective cuts (`TestEffectiveCuts*`, `TestPlanCuts*`,
+        `TestCutEntries*`, `TestEditID*`, `TestHLSOptions*`, `TestEdges*`,
+        `TestHLSSkip*`, `TestHLSSkipPlaysInFFmpeg`,
+        `TestHLSSkipManyCutsInSync`, `TestAudioSpans`,
+        `TestBrowser/HLSSkipCaptions`, `TestReportProgressEditList*`).
+        Captions' `X-TIMESTAMP-MAP` now uses the track's start (reverses
+        phase 2's `MPEGTS:0`). Audio edges are whole frames that keep the
+        audio within half a frame of the plan; edges survive Collect while
+        pending, wait for profanity muting, go most recently asked first,
+        report `failed` and retry after 6 h. **Before phases 5 and 6a build
+        on skip:** by hand, mpv on a long many-cut video (gaps at the cuts,
+        wall-clock length, A/V sync at the end). Still open: Media3 with two
+        SPS in a video edge's `avcC` (phase 6b, on the phone); whether mpv
+        shows presentation or item time across discontinuities (phase 6a,
+        by hand); B-frame delay read from the first fragment only (wrong for
+        elst-shifted sources); `edges_wanted` never expires; `hls_edits`
+        never pruned; VTT and media playlists replan per request;
+        `AddParamSets` assumes default-base-is-moof; a generation counter
+        for the worker's check-then-record race.
+  - [x] Phase 5: undownloaded YouTube from googlevideo (default `direct`, a
+        302 to googlevideo; `proxy` as the admin-set fallback), one resolve
+        cached until near expiry with pinned formats, never remote for a muted
+        item, skip unavailable, falls back to download
+        (`TestHLSRemote*`, `TestResolveMediaRemote*`, `TestRemoteTrack*`,
+        `TestParseRequestedFormats*`, `TestYouTubeMode*`, `TestWhisperSettingsServerWide`).
+        Pending: the manual check (desktop Chrome, then the phone off Wi-Fi).
+        Still open: a packaging backfill for legacy done-but-unpackaged
+        downloads, an index cache, the redirect target from another network,
+        chunked requests.
+  - [x] Phase 6a: M3U of a playlist or view for external players: signed
+        `/apps/feed/m3u/{user}/{kind}/{id}.m3u`, a desktop launcher, and
+        links on the view pages (`TestM3U*`, `TestViewPagesOfferM3U`).
+        Pending: the by-hand mpv check (both entries play in order, silence
+        skipped, window title, subtitles, a cleaned podcast plays once,
+        `gio launch` of the launcher). Still open: progress back from
+        external players.
+  - [ ] Phase 6b: Android on Media3 HLS with background audio-only.
 - [x] **Serve `items/{id}/media` as an API route, not a page.** As a page,
       a request that was not HTMX went through `shellMiddleware`, which
       buffered the whole file and wrapped it in the HTML shell, and a missing
@@ -169,10 +235,9 @@ the choices; this is what Cog needs for it, in the order the app needs it.
       expiry its URL carries, the origin for other enclosures
       (`TestResolveMedia*`). Still open: `max_height`, and caching a resolved
       stream until it expires.
-- [ ] `?variant=audio` on the media route for a downloaded video: an audio
-      sidecar remuxed once (`ffmpeg -vn -c:a copy`) and kept beside the
-      download, so background play and audio-only offline copies do not move
-      the video bytes.
+- [x] Audio alone for a downloaded video without moving the video bytes:
+      once packaged, the media route serves the audio track, which is a file
+      of its own (HLS phase 1, `TestResolveMediaPackagedAudio`).
 - [x] Ranges that never run ffmpeg in the request. Silence detection is a
       pipeline worker after the downloader (`pipeline.Silence`); the endpoint
       reads the row and answers `pending` until it has run, and the web

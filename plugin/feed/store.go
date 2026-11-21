@@ -561,6 +561,44 @@ type Download struct {
 	NeedsTranscribe bool
 	SilenceRanges   string // JSON array of Range (action="skip"); empty when unknown
 	SilenceState    string // "" = unknown, "done" = computed (may be empty result)
+	VideoPath       string // the video track, as downloaded or as packaged
+	PackageState    string // "" pending, "done", "error" (pipeline/package.go)
+	PackageError    string
+	CleanTrackPath  string // the clean audio as an HLS track; "" until packaged
+	CleanTrackError string
+	EdgesWanted     bool   // a player asked for the skip presentation
+	EdgesEdit       string // the edit list the edges were made for; "" = none yet
+	EdgesError      string // why they could not be made
+	EdgesIndex      string // JSON EdgesIndex of the edges of EdgesEdit; "" until made
+	ProfanityError  string // why profanity muting last failed; "" if it has not
+	TranscribeError string // why transcription last failed; "" if it has not
+}
+
+// muted is whether the item's audio is to be muted: a mute filter matched it
+// (EnqueueProfanity), muting is pending or failed, or a clean file exists.
+// Such an item plays only its clean audio, never one it was not made from.
+func (d Download) muted() bool {
+	return d.NeedsProfanity || d.CleanAudioPath != ""
+}
+
+// uncleanOnly is whether the item is to be muted and has no clean audio
+// yet: nothing of it may play, downloaded or not, until cleaning makes some
+// (Plugin.waitClean says why). Cleaning ends with clean audio, or with
+// needs_profanity cleared when there was nothing to mute.
+func (d Download) uncleanOnly() bool {
+	return d.NeedsProfanity && d.CleanAudioPath == ""
+}
+
+// uncleanOnlySQL is uncleanOnly of item i's download, as an SQL condition,
+// for lists that leave out what cannot play (ViewSpec.Playable).
+const uncleanOnlySQL = `EXISTS (SELECT 1 FROM downloads d WHERE d.item_id = i.id
+	AND d.needs_profanity = 1 AND d.clean_audio_path = '')`
+
+// hlsUnclean is whether the item's HLS presentation has only its original
+// audio while the item is to be muted: until its clean audio is packaged as
+// a track, the presentation is not to be played.
+func (d Download) hlsUnclean() bool {
+	return d.muted() && d.CleanTrackPath == ""
 }
 
 // Range is a time span within a media item with an associated player action.
@@ -667,10 +705,12 @@ const enqueueDownloadSQL = `
 	INSERT INTO downloads (item_id, state) VALUES (?, 'queued')
 	ON CONFLICT(item_id) DO UPDATE SET
 		state = CASE
+			WHEN downloads.state = 'ready' AND downloads.package_state = 'error' AND downloads.video_path != '' THEN 'queued'
 			WHEN downloads.state IN ('ready','downloading') THEN downloads.state
 			ELSE 'queued'
 		END,
 		error = CASE
+			WHEN downloads.state = 'ready' AND downloads.package_state = 'error' AND downloads.video_path != '' THEN ''
 			WHEN downloads.state IN ('ready','downloading') THEN downloads.error
 			ELSE ''
 		END`
@@ -760,7 +800,8 @@ func (s *Store) EnqueueDownload(itemID int64) error {
 func (s *Store) PendingDownloads(limit int) ([]Download, error) {
 	rows, err := s.db.Query(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
-		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe
+		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
+		       video_path, package_state, package_error, clean_track_path, clean_track_error
 		FROM downloads WHERE state = 'queued' ORDER BY item_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("pending downloads: %w", err)
@@ -779,11 +820,30 @@ func (s *Store) MarkDownloadStart(itemID int64) error {
 	return nil
 }
 
-// MarkDownloadReady transitions a download to state 'ready' with path and byte count.
+// MarkDownloadReady transitions a download to state 'ready' with path and
+// byte count. The packager looks at it again.
 func (s *Store) MarkDownloadReady(itemID int64, path string, bytes int64) error {
+	return s.markReady(itemID, path, "", bytes)
+}
+
+// MarkVideoDownloadReady is MarkDownloadReady for a download that came as
+// an audio and a video file.
+func (s *Store) MarkVideoDownloadReady(itemID int64, audioPath, videoPath string, bytes int64) error {
+	return s.markReady(itemID, audioPath, videoPath, bytes)
+}
+
+// markReady records a finished download. Any clean audio was made from the
+// previous one, so it is forgotten and, if there was one, made again.
+func (s *Store) markReady(itemID int64, audioPath, videoPath string, bytes int64) error {
 	_, err := s.db.Exec(`
-		UPDATE downloads SET state = 'ready', local_path = ?, bytes = ?, completed_at = unixepoch()
-		WHERE item_id = ?`, path, bytes, itemID)
+		UPDATE downloads SET state = 'ready', local_path = ?, video_path = ?, bytes = ?,
+			completed_at = unixepoch(), package_state = '', package_error = '',
+			clean_track_path = '', clean_track_error = '',
+			edges_edit = '', edges_error = '', edges_index = '',
+			profanity_error = '', transcribe_error = '',
+			needs_profanity = CASE WHEN clean_audio_path != '' THEN 1 ELSE needs_profanity END,
+			clean_audio_path = ''
+		WHERE item_id = ?`, audioPath, videoPath, bytes, itemID)
 	if err != nil {
 		return fmt.Errorf("mark download ready: %w", err)
 	}
@@ -801,20 +861,27 @@ func (s *Store) MarkDownloadError(itemID int64, errMsg string) error {
 	return nil
 }
 
-// SetCleanAudioPath updates the clean_audio_path for a download row.
+// SetCleanAudioPath updates the clean_audio_path for a download row. A new
+// clean file has no track yet, so the old track and its error are cleared, and
+// with them the edges, which were planned against the old track.
 func (s *Store) SetCleanAudioPath(itemID int64, path string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ? WHERE item_id = ?`, path, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET clean_audio_path = ?,
+			clean_track_path = '', clean_track_error = '',
+			edges_edit = '', edges_error = '', edges_index = ''
+		WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set clean audio path: %w", err)
 	}
 	return nil
 }
 
-// DownloadFiles returns every file a download row names: media, cleaned
-// audio and captions.
+// DownloadFiles returns every file a download row names: media (audio and
+// video tracks), cleaned audio and captions.
 func (s *Store) DownloadFiles() ([]string, error) {
 	rows, err := s.db.Query(`SELECT local_path FROM downloads WHERE local_path != ''
+		UNION SELECT video_path FROM downloads WHERE video_path != ''
 		UNION SELECT clean_audio_path FROM downloads WHERE clean_audio_path != ''
+		UNION SELECT clean_track_path FROM downloads WHERE clean_track_path != ''
 		UNION SELECT captions_path FROM downloads WHERE captions_path != ''`)
 	if err != nil {
 		return nil, fmt.Errorf("download files: %w", err)
@@ -831,9 +898,10 @@ func (s *Store) DownloadFiles() ([]string, error) {
 	return out, rows.Err()
 }
 
-// SetCaptionsPath updates the captions_path for a download row.
+// SetCaptionsPath updates the captions_path for a download row. Muting
+// reads the captions, so its error is forgotten and it is tried afresh.
 func (s *Store) SetCaptionsPath(itemID int64, path string) error {
-	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ? WHERE item_id = ?`, path, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET captions_path = ?, profanity_error = '' WHERE item_id = ?`, path, itemID)
 	if err != nil {
 		return fmt.Errorf("set captions path: %w", err)
 	}
@@ -853,19 +921,24 @@ func (s *Store) FindDownload(itemID int64) (Download, error) {
 // GetDownload returns the download record for an item.
 func (s *Store) GetDownload(itemID int64) (Download, error) {
 	var d Download
-	var needsProf, needsTrans int
+	var needsProf, needsTrans, wanted int
 	err := s.db.QueryRow(`
 		SELECT item_id, state, local_path, clean_audio_path, captions_path,
 		       bytes, error, started_at, completed_at, needs_profanity, needs_transcribe,
-		       silence_ranges, silence_state
+		       silence_ranges, silence_state, video_path, package_state, package_error,
+		       clean_track_path, clean_track_error, edges_wanted, edges_edit, edges_error, edges_index,
+		       profanity_error, transcribe_error
 		FROM downloads WHERE item_id = ?`, itemID).Scan(
 		&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 		&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
-		&d.SilenceRanges, &d.SilenceState,
+		&d.SilenceRanges, &d.SilenceState, &d.VideoPath, &d.PackageState, &d.PackageError,
+		&d.CleanTrackPath, &d.CleanTrackError, &wanted, &d.EdgesEdit, &d.EdgesError, &d.EdgesIndex,
+		&d.ProfanityError, &d.TranscribeError,
 	)
 	if err != nil {
 		return Download{}, fmt.Errorf("get download: %w", err)
 	}
+	d.EdgesWanted = wanted != 0
 	d.NeedsProfanity = needsProf != 0
 	d.NeedsTranscribe = needsTrans != 0
 	return d, nil
@@ -877,12 +950,17 @@ func (s *Store) GetSilenceRanges(itemID int64) ([]Range, error) {
 	if err != nil {
 		return nil, err
 	}
+	return d.silenceRanges()
+}
+
+// silenceRanges decodes d's cached silence ranges.
+func (d Download) silenceRanges() ([]Range, error) {
 	if d.SilenceRanges == "" {
 		return nil, nil
 	}
 	var rs []Range
 	if err := json.Unmarshal([]byte(d.SilenceRanges), &rs); err != nil {
-		return nil, fmt.Errorf("decode silence ranges for item %d: %w", itemID, err)
+		return nil, fmt.Errorf("decode silence ranges for item %d: %w", d.ItemID, err)
 	}
 	return rs, nil
 }
@@ -901,13 +979,15 @@ func (s *Store) PendingSilence(limit int) ([]int64, error) {
 }
 
 // SetSilenceRanges caches silence ranges for an item and marks detection done.
+// The cuts come from them, so any edges made are forgotten.
 func (s *Store) SetSilenceRanges(itemID int64, ranges []Range) error {
 	buf, err := json.Marshal(ranges)
 	if err != nil {
 		return fmt.Errorf("encode silence ranges: %w", err)
 	}
 	_, err = s.db.Exec(
-		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done' WHERE item_id = ?`,
+		`UPDATE downloads SET silence_ranges = ?, silence_state = 'done',
+			edges_edit = '', edges_error = '', edges_index = '' WHERE item_id = ?`,
 		string(buf), itemID)
 	if err != nil {
 		return fmt.Errorf("save silence ranges for item %d: %w", itemID, err)
@@ -965,9 +1045,31 @@ func (s *Store) PendingProfanityWithCaptions(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending profanity with captions")
 }
 
-// ClearNeedsProfanity clears the needs_profanity flag for a download.
+// MarkProfanityError records why profanity muting failed. needs_profanity
+// stays set, so the worker tries again; edges stop waiting for the clean
+// rendition (PendingEdges). New captions, a new download or a success
+// clear it.
+func (s *Store) MarkProfanityError(itemID int64, msg string) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET profanity_error = ? WHERE item_id = ?`, msg, itemID); err != nil {
+		return fmt.Errorf("mark profanity error: %w", err)
+	}
+	return nil
+}
+
+// MarkTranscribeError records why transcription failed. needs_transcribe
+// stays set, so the worker tries again; edges stop waiting for the captions
+// muting needs (PendingEdges). A new download or a success clear it.
+func (s *Store) MarkTranscribeError(itemID int64, msg string) error {
+	if _, err := s.db.Exec(`UPDATE downloads SET transcribe_error = ? WHERE item_id = ?`, msg, itemID); err != nil {
+		return fmt.Errorf("mark transcribe error: %w", err)
+	}
+	return nil
+}
+
+// ClearNeedsProfanity clears the needs_profanity flag for a download, and
+// the error of an earlier try.
 func (s *Store) ClearNeedsProfanity(itemID int64) error {
-	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0 WHERE item_id = ?`, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET needs_profanity = 0, profanity_error = '' WHERE item_id = ?`, itemID)
 	if err != nil {
 		return fmt.Errorf("clear needs profanity: %w", err)
 	}
@@ -1009,9 +1111,10 @@ func (s *Store) PendingTranscribeReady(limit int) ([]int64, error) {
 	return scanInt64IDs(rows, "pending transcribe ready")
 }
 
-// ClearNeedsTranscribe clears the needs_transcribe flag for a download.
+// ClearNeedsTranscribe clears the needs_transcribe flag for a download, and
+// the error of an earlier try.
 func (s *Store) ClearNeedsTranscribe(itemID int64) error {
-	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0 WHERE item_id = ?`, itemID)
+	_, err := s.db.Exec(`UPDATE downloads SET needs_transcribe = 0, transcribe_error = '' WHERE item_id = ?`, itemID)
 	if err != nil {
 		return fmt.Errorf("clear needs transcribe: %w", err)
 	}
@@ -1028,6 +1131,8 @@ func scanDownloads(rows *sql.Rows) ([]Download, error) {
 		if err := rows.Scan(
 			&d.ItemID, &d.State, &d.LocalPath, &d.CleanAudioPath, &d.CaptionsPath,
 			&d.Bytes, &d.Error, &d.StartedAt, &d.CompletedAt, &needsProf, &needsTrans,
+			&d.VideoPath, &d.PackageState, &d.PackageError,
+			&d.CleanTrackPath, &d.CleanTrackError,
 		); err != nil {
 			return nil, fmt.Errorf("scan download: %w", err)
 		}
@@ -1111,7 +1216,12 @@ type ItemPlayback struct {
 	DownloadState     string
 	DownloadError     string // why the last download failed, when DownloadState is "error"
 	HasCleanAudio     bool
+	CleanPending      bool   // a clean file is waiting to be packaged as a track
 	SourceKind        string // subscription.kind
+	Packaged          bool   // the download is packaged for HLS
+	HasVideo          bool   // the download has a video track apart from its audio
+	HLSURL            string // the signed master playlist; set by handlers, not the store
+	Waiting           string // why it cannot play until it is clean; set by handlers
 }
 
 // GetItemPlayback returns an ItemPlayback for a single item by ID, joining
@@ -1135,7 +1245,10 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 			COALESCE(pb.completed, 0),
 			COALESCE(d.state, ''),
 			COALESCE(d.error, ''),
-			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END
+			CASE WHEN d.clean_audio_path != '' AND d.clean_audio_path IS NOT NULL THEN 1 ELSE 0 END,
+			COALESCE(d.package_state = 'done', 0),
+			COALESCE(d.video_path != '', 0),
+			COALESCE(d.clean_audio_path != '' AND d.clean_track_path = '', 0)
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id
 		LEFT JOIN playback pb ON pb.item_id = i.id
@@ -1151,6 +1264,9 @@ func (s *Store) GetItemPlayback(itemID int64) (ItemPlayback, error) {
 		&downloadState,
 		&ip.DownloadError,
 		&hasClean,
+		&ip.Packaged,
+		&ip.HasVideo,
+		&ip.CleanPending,
 	)
 	if err != nil {
 		return ItemPlayback{}, fmt.Errorf("get item playback: %w", err)
@@ -1318,6 +1434,9 @@ func (s *Store) LoadSidebarCounts() (SidebarCounts, error) {
 type ItemWithSubscription struct {
 	Item
 	SubscriptionTitle string
+	// Waiting is whether it cannot play until it is clean
+	// (Download.uncleanOnly); set by the lists of views (listItems).
+	Waiting bool
 }
 
 // ViewSpec selects which items to return in ListItemsForView.
@@ -1338,6 +1457,10 @@ type ViewSpec struct {
 	Unfinished bool
 	Order      PlayOrder // "" is newest first
 	Seed       int64     // the shuffle, when Order is OrderShuffled
+	// Playable leaves out items that cannot play yet: those to be muted
+	// with no clean audio (Download.uncleanOnly). A playlist, which players
+	// queue from, is Playable; the lists a screen browses are not.
+	Playable bool
 	// After continues a list from the item it last returned (keyset
 	// pagination): only items after it in this order are listed.
 	After *Cursor
@@ -1391,6 +1514,9 @@ func (spec ViewSpec) from() (joins string, where []string, args []any, err error
 	}
 	if spec.Unfinished {
 		where = append(where, unfinishedSQL)
+	}
+	if spec.Playable {
+		where = append(where, "NOT "+uncleanOnlySQL)
 	}
 
 	if spec.Query != nil {
@@ -1453,7 +1579,7 @@ func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []C
 		SELECT i.id, i.subscription_id, i.guid, i.type, i.title, i.author, i.url,
 		       i.content_html, i.media_url, i.media_mime, i.duration_sec, i.thumbnail_url,
 		       i.published_at, i.fetched_at, i.is_read, i.is_starred, i.content_hash,
-		       COALESCE(s.title, s.url) AS subscription_title, ` + key + `
+		       COALESCE(s.title, s.url) AS subscription_title, ` + uncleanOnlySQL + `, ` + key + `
 		FROM items i
 		JOIN subscriptions s ON i.subscription_id = s.id` + joins
 	args = append(slices.Clone(keyArgs), args...)
@@ -1487,7 +1613,7 @@ func (s *Store) listItems(spec ViewSpec, limit int) ([]ItemWithSubscription, []C
 			&iws.ID, &iws.SubscriptionID, &iws.GUID, &iws.Type, &iws.Title, &iws.Author,
 			&iws.URL, &iws.ContentHTML, &iws.MediaURL, &iws.MediaMIME, &iws.DurationSec,
 			&iws.ThumbnailURL, &iws.PublishedAt, &iws.FetchedAt, &isRead, &isStarred,
-			&iws.ContentHash, &iws.SubscriptionTitle, &k,
+			&iws.ContentHash, &iws.SubscriptionTitle, &iws.Waiting, &k,
 		); err != nil {
 			return nil, nil, fmt.Errorf("list items for view scan: %w", err)
 		}
@@ -1740,8 +1866,9 @@ func (s *Store) PlaybackByItems(ids []int64) (map[int64]Playback, error) {
 }
 
 // DownloadsByItems returns the download row per item ID in one query, with
-// what a client is shown of it: state, error, size and captions. Items with
-// no download are absent from the map.
+// what a client is shown of it (state, error, size and captions) and how it
+// plays (package state, whether it is muted, and its clean track). Items with no download are
+// absent from the map.
 func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	out := make(map[int64]Download)
 	if len(ids) == 0 {
@@ -1749,7 +1876,8 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	}
 	in, args := idArgs(ids)
 	rows, err := s.db.Query(`
-		SELECT item_id, state, error, bytes, captions_path
+		SELECT item_id, state, error, bytes, captions_path,
+		       package_state, needs_profanity, clean_audio_path, clean_track_path
 		FROM downloads WHERE item_id IN (`+in+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("downloads by items: %w", err)
@@ -1757,7 +1885,8 @@ func (s *Store) DownloadsByItems(ids []int64) (map[int64]Download, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var d Download
-		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath); err != nil {
+		if err := rows.Scan(&d.ItemID, &d.State, &d.Error, &d.Bytes, &d.CaptionsPath,
+			&d.PackageState, &d.NeedsProfanity, &d.CleanAudioPath, &d.CleanTrackPath); err != nil {
 			return nil, fmt.Errorf("downloads by items scan: %w", err)
 		}
 		out[d.ItemID] = d
@@ -1951,6 +2080,8 @@ var (
 	settingAutoplayNext  = BoolSetting("autoplay_next", true)
 	settingSkipSilence   = BoolSetting("skip_silence", false)
 	settingHideEmpty     = BoolSetting("hide_empty", false)
+
+	settingSkipSilenceMinSec = FloatSetting("skip_silence_min_sec", 1.0)
 )
 
 // The bounds of the player preferences a client may set.
@@ -1959,6 +2090,9 @@ const (
 	MaxSpeed   = 4.0
 	MinSkipSec = 1
 	MaxSkipSec = 120
+
+	MinSkipSilenceSec = 0.5
+	MaxSkipSilenceSec = 10.0
 )
 
 // PlayerPrefs is the per-user set of media-player preferences.
@@ -1970,6 +2104,9 @@ type PlayerPrefs struct {
 	AutoplayNext bool    `json:"autoplayNext"`
 	SkipSilence  bool    `json:"skipSilence"`
 	HideEmpty    bool    `json:"hideEmpty"`
+
+	// SkipSilenceMinSec is the shortest silence skip silence cuts.
+	SkipSilenceMinSec float64 `json:"skipSilenceMinSec"`
 }
 
 // LoadPlayerPrefs reads the per-user player preferences, falling back to defaults.
@@ -1997,11 +2134,20 @@ func (s *Store) LoadPlayerPrefs() (PlayerPrefs, error) {
 	if p.HideEmpty, err = settingHideEmpty.Get(s.db); err != nil {
 		return p, fmt.Errorf("load hide_empty: %w", err)
 	}
+	if p.SkipSilenceMinSec, err = settingSkipSilenceMinSec.Get(s.db); err != nil {
+		return p, fmt.Errorf("load skip_silence_min_sec: %w", err)
+	}
 	return p, nil
 }
 
 // SavePlayerPrefs persists the per-user player preferences.
+// When the shortest silence skipped changes, so do the cuts: every item's
+// edges are forgotten (and remade for the items players want).
 func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
+	oldMin, err := settingSkipSilenceMinSec.Get(s.db)
+	if err != nil {
+		return fmt.Errorf("load skip_silence_min_sec: %w", err)
+	}
 	if err := settingPlaybackSpeed.Set(s.db, p.Speed); err != nil {
 		return fmt.Errorf("save playback_speed: %w", err)
 	}
@@ -2022,6 +2168,12 @@ func (s *Store) SavePlayerPrefs(p PlayerPrefs) error {
 	}
 	if err := settingHideEmpty.Set(s.db, p.HideEmpty); err != nil {
 		return fmt.Errorf("save hide_empty: %w", err)
+	}
+	if err := settingSkipSilenceMinSec.Set(s.db, p.SkipSilenceMinSec); err != nil {
+		return fmt.Errorf("save skip_silence_min_sec: %w", err)
+	}
+	if p.SkipSilenceMinSec != oldMin {
+		return s.ResetEdges()
 	}
 	return nil
 }

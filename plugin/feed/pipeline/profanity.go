@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
-	"strings"
 
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
@@ -53,6 +52,14 @@ func (w *Profanity) RunOnce(ctx context.Context) error {
 		}
 		if err := w.processOne(ctx, id); err != nil {
 			slog.Warn("feed profanity: process failed", "item_id", id, "err", err)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Recorded so edges stop waiting for a clean rendition; the
+			// flag stays and the next tick tries again.
+			if err := w.store.MarkProfanityError(id, err.Error()); err != nil {
+				slog.Error("feed profanity: record error", "item_id", id, "err", err)
+			}
 		}
 	}
 	return nil
@@ -82,13 +89,22 @@ func (w *Profanity) processOne(ctx context.Context, itemID int64) error {
 	if err != nil {
 		return fmt.Errorf("media path: %w", err)
 	}
-	name := cleanPath(feed.Name(d.LocalPath))
+	name := cleanName(itemID, d.LocalPath)
 	tmp := "clean/" + path.Base(name)
 	out, err := w.space.Cache.LocalPath(tmp)
 	if err != nil {
 		return fmt.Errorf("clean output: %w", err)
 	}
 	if err := w.processor.Process(ctx, in, out, captions); err != nil {
+		if errors.Is(err, profanity.ErrNoRanges) {
+			// Nothing to mute: no clean audio, and an older one is stale.
+			// The file it named is Collect's to remove.
+			return errors.Join(
+				w.space.Cache.Remove(tmp),
+				w.store.SetCleanAudioPath(itemID, ""),
+				w.store.ClearNeedsProfanity(itemID),
+			)
+		}
 		return errors.Join(fmt.Errorf("processor: %w", err), w.space.Cache.Remove(tmp))
 	}
 	if _, err := w.space.Keep(name, tmp); err != nil {
@@ -103,15 +119,10 @@ func (w *Profanity) processOne(ctx context.Context, itemID int64) error {
 	return nil
 }
 
-// cleanPath inserts ".clean" before the file extension of a storage name.
-//
-//	foo.mp3 -> foo.clean.mp3
-//	foo     -> foo.clean
-func cleanPath(p string) string {
-	ext := path.Ext(p)
-	base := strings.TrimSuffix(p, ext)
-	if ext == "" {
-		return base + ".clean"
-	}
-	return base + ".clean" + ext
+// cleanName is the storage name of an item's cleaned audio file,
+// "media/<id>.clean" plus the extension of the download's file. It does not
+// depend on the name of any track made from the download, so cleaning again
+// never overwrites a track a player is reading.
+func cleanName(itemID int64, localPath string) string {
+	return fmt.Sprintf("media/%d.clean%s", itemID, path.Ext(localPath))
 }
