@@ -110,3 +110,42 @@ func TestScanResetsChangedFile(t *testing.T) {
 	require.Equal(t, 800, width)
 }
 
+
+func (e *scanEnv) folderAlbums(t *testing.T) map[string][]string {
+	t.Helper()
+	rows, err := e.db.Query(`SELECT a.auto_key, m.file_path FROM albums a
+		JOIN album_media am ON am.album_id = a.id JOIN media m ON m.id = am.media_id
+		WHERE a.album_type = ? ORDER BY a.auto_key, m.file_path`, gallery.AlbumFolder)
+	require.NoError(t, err)
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var k, p string
+		require.NoError(t, rows.Scan(&k, &p))
+		out[k] = append(out[k], p)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
+// A photo moved to another folder leaves its old folder's album, and an
+// album left empty goes.
+func TestScanFolderAlbumsFollowMoves(t *testing.T) {
+	e := newScanEnv(t)
+	e.upload(t, "/Photos/Trip/a.jpg", photoJPEG(t, 1, 64, 48))
+	e.upload(t, "/Photos/Home/b.jpg", photoJPEG(t, 2, 64, 48))
+	e.scan(t)
+	require.Equal(t, map[string][]string{
+		"/Photos/Home": {"/Photos/Home/b.jpg"},
+		"/Photos/Trip": {"/Photos/Trip/a.jpg"},
+	}, e.folderAlbums(t))
+
+	e.PostJSON(t, "/api/files/rename", map[string]string{"old_path": "/Photos/Trip/a.jpg", "new_path": "/Photos/Home/a.jpg"}, e.alice.Auth).Status(200)
+	e.scan(t)
+	require.Equal(t, map[string][]string{
+		"/Photos/Home": {"/Photos/Home/a.jpg", "/Photos/Home/b.jpg"},
+	}, e.folderAlbums(t))
+	var n int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM albums WHERE album_type = ? AND auto_key = '/Photos/Trip'`, gallery.AlbumFolder).Scan(&n))
+	require.Equal(t, 0, n)
+}

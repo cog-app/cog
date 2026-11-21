@@ -581,21 +581,36 @@ func (p *Plugin) reverseGeocode(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("list ungeocoded media: %w", err)
 	}
-	defer rows.Close()
-
+	type place struct {
+		id                               int64
+		city, region, country, placeName string
+	}
+	var places []place
 	for rows.Next() {
-		var id int64
+		var pl place
 		var lat, lon float64
-		if err := rows.Scan(&id, &lat, &lon); err != nil {
+		if err := rows.Scan(&pl.id, &lat, &lon); err != nil {
+			rows.Close()
 			return fmt.Errorf("scan ungeocoded media: %w", err)
 		}
-		city, region, country, placeName := p.geocoder.Reverse(lat, lon)
-		if _, err := db.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
-			city, region, country, placeName, id); err != nil {
-			return fmt.Errorf("store place for media %d: %w", id, err)
-		}
+		pl.city, pl.region, pl.country, pl.placeName = p.geocoder.Reverse(lat, lon)
+		places = append(places, pl)
 	}
-	return rows.Err()
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fmt.Errorf("list ungeocoded media: %w", err)
+	}
+	if len(places) == 0 {
+		return nil
+	}
+	return inTx(db, func(tx *sql.Tx) error {
+		for _, pl := range places {
+			if _, err := tx.Exec(`UPDATE media SET city = ?, region = ?, country = ?, place_name = ? WHERE id = ?`,
+				pl.city, pl.region, pl.country, pl.placeName, pl.id); err != nil {
+				return fmt.Errorf("store place for media %d: %w", pl.id, err)
+			}
+		}
+		return nil
+	})
 }
 
 // generateAutoAlbums creates auto-albums by date (month) and folder.
@@ -630,69 +645,151 @@ func (p *Plugin) generateAutoAlbums(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	for _, r := range refs {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	want := map[autoAlbumKey]*autoAlbum{}
+	add := func(typ int, key, name string, mediaID int64) {
+		k := autoAlbumKey{typ, key}
+		a := want[k]
+		if a == nil {
+			a = &autoAlbum{name: name, media: map[int64]bool{}}
+			want[k] = a
 		}
-
+		a.media[mediaID] = true
+	}
+	for _, r := range refs {
 		ts := r.DateIndexed
 		if r.DateTaken != nil {
 			ts = *r.DateTaken
 		}
-
-		// Date album (by month)
 		monthKey := fmtMonth(ts)
-		monthName := fmtMonthName(monthKey)
-		if err := addToAutoAlbum(db, AlbumDate, monthKey, monthName, r.ID); err != nil {
-			return err
-		}
+		add(AlbumDate, monthKey, fmtMonthName(monthKey), r.ID)
 
-		// Folder album
-		dir := filepath.Dir(r.FilePath)
-		if dir != "" && dir != "." {
-			folderName := dir
-			if i := strings.LastIndex(dir, "/"); i >= 0 {
-				folderName = dir[i+1:]
-			}
-			if err := addToAutoAlbum(db, AlbumFolder, dir, folderName, r.ID); err != nil {
-				return err
-			}
+		if dir := filepath.Dir(r.FilePath); dir != "" && dir != "." && dir != "/" {
+			add(AlbumFolder, dir, path.Base(dir), r.ID)
 		}
-
-		// Camera album
 		if r.CameraModel != "" {
-			cameraKey := r.CameraMake + "/" + r.CameraModel
-			cameraName := strings.TrimSpace(r.CameraMake + " " + r.CameraModel)
-			if err := addToAutoAlbum(db, AlbumCamera, cameraKey, cameraName, r.ID); err != nil {
-				return err
-			}
+			add(AlbumCamera, r.CameraMake+"/"+r.CameraModel, strings.TrimSpace(r.CameraMake+" "+r.CameraModel), r.ID)
 		}
-
-		// Location album (by city)
 		if r.City != "" {
-			locationKey := r.City + "/" + r.Country
-			locationName := r.City
+			name := r.City
 			if r.Country != "" {
-				locationName = r.City + ", " + r.Country
+				name = r.City + ", " + r.Country
 			}
-			if err := addToAutoAlbum(db, AlbumLocation, locationKey, locationName, r.ID); err != nil {
-				return err
-			}
+			add(AlbumLocation, r.City+"/"+r.Country, name, r.ID)
 		}
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
-	return nil
+	have, err := loadAutoAlbums(db)
+	if err != nil {
+		return err
+	}
+
+	// Only what differs is written: rewriting every membership each scan was
+	// thousands of commits every fifteen minutes for no change.
+	return inTx(db, func(tx *sql.Tx) error {
+		for k, w := range want {
+			h := have[k]
+			if h == nil {
+				res, err := tx.Exec(`INSERT INTO albums (name, album_type, auto_key) VALUES (?, ?, ?)`, w.name, k.typ, k.key)
+				if err != nil {
+					return fmt.Errorf("create auto-album %q: %w", k.key, err)
+				}
+				id, err := res.LastInsertId()
+				if err != nil {
+					return fmt.Errorf("create auto-album %q: %w", k.key, err)
+				}
+				h = &autoAlbum{id: id, name: w.name, media: map[int64]bool{}}
+			}
+			changed := h.name != w.name
+			for mediaID := range w.media {
+				if h.media[mediaID] {
+					continue
+				}
+				if _, err := tx.Exec(`INSERT OR IGNORE INTO album_media (album_id, media_id) VALUES (?, ?)`, h.id, mediaID); err != nil {
+					return fmt.Errorf("add media %d to auto-album %q: %w", mediaID, k.key, err)
+				}
+				changed = true
+			}
+			for mediaID := range h.media {
+				if w.media[mediaID] {
+					continue
+				}
+				if _, err := tx.Exec(`DELETE FROM album_media WHERE album_id = ? AND media_id = ?`, h.id, mediaID); err != nil {
+					return fmt.Errorf("remove media %d from auto-album %q: %w", mediaID, k.key, err)
+				}
+				changed = true
+			}
+			if changed {
+				if _, err := tx.Exec(`UPDATE albums SET name = ?, updated_at = unixepoch() WHERE id = ?`, w.name, h.id); err != nil {
+					return fmt.Errorf("update auto-album %q: %w", k.key, err)
+				}
+			}
+		}
+		for k, h := range have {
+			if want[k] != nil {
+				continue
+			}
+			if _, err := tx.Exec(`DELETE FROM albums WHERE id = ?`, h.id); err != nil {
+				return fmt.Errorf("delete empty auto-album %q: %w", k.key, err)
+			}
+		}
+		return nil
+	})
 }
 
-func addToAutoAlbum(db *sql.DB, albumType int, key, name string, mediaID int64) error {
-	albumID, err := UpsertAutoAlbum(db, albumType, key, name)
+type autoAlbumKey struct {
+	typ int
+	key string
+}
+
+type autoAlbum struct {
+	id    int64
+	name  string
+	media map[int64]bool
+}
+
+// loadAutoAlbums returns every automatic album with its members.
+func loadAutoAlbums(db *sql.DB) (map[autoAlbumKey]*autoAlbum, error) {
+	have := map[autoAlbumKey]*autoAlbum{}
+	byID := map[int64]*autoAlbum{}
+	rows, err := db.Query(`SELECT id, album_type, auto_key, name FROM albums WHERE album_type != 0`)
 	if err != nil {
-		return fmt.Errorf("auto-album %q: %w", key, err)
+		return nil, fmt.Errorf("list auto-albums: %w", err)
 	}
-	if err := AddMediaToAlbum(db, albumID, mediaID); err != nil {
-		return fmt.Errorf("add media %d to auto-album %q: %w", mediaID, key, err)
+	for rows.Next() {
+		var k autoAlbumKey
+		a := &autoAlbum{media: map[int64]bool{}}
+		if err := rows.Scan(&a.id, &k.typ, &k.key, &a.name); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("list auto-albums: %w", err)
+		}
+		have[k] = a
+		byID[a.id] = a
 	}
-	return nil
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, fmt.Errorf("list auto-albums: %w", err)
+	}
+	rows, err = db.Query(`SELECT album_id, media_id FROM album_media
+		WHERE album_id IN (SELECT id FROM albums WHERE album_type != 0)`)
+	if err != nil {
+		return nil, fmt.Errorf("list auto-album media: %w", err)
+	}
+	for rows.Next() {
+		var albumID, mediaID int64
+		if err := rows.Scan(&albumID, &mediaID); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("list auto-album media: %w", err)
+		}
+		if a := byID[albumID]; a != nil {
+			a.media[mediaID] = true
+		}
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, fmt.Errorf("list auto-album media: %w", err)
+	}
+	return have, nil
 }
 
 // preGenerateThumbnails generates 256px thumbnails for all media that don't have one cached yet.
