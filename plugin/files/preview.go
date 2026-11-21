@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-		_ "image/gif"
+	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
 	"io"
