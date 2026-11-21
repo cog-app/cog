@@ -12,7 +12,7 @@ import (
 // execHandler dispatches command execution via the cobra command tree.
 // It never delegates to the OS — unknown commands return exit status 127.
 func (s *Shell) execHandler(ctx context.Context, args []string) error {
-	root := s.newRootCmd()
+	root := s.newRootCmd(args[0])
 	root.SetContext(ctx)
 
 	hc := interp.HandlerCtx(ctx)

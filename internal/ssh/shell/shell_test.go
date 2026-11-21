@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -15,16 +16,18 @@ import (
 
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
+
+	"mvdan.cc/sh/v3/interp"
 )
 
-func newTestShell(t *testing.T) (*Shell, string) {
+func newTestShell(t testing.TB) (*Shell, string) {
 	t.Helper()
 	return newShell(t, nil)
 }
 
 // newShell returns a shell on a VFS like a session's, with the files of a
 // fresh directory at /files, and that directory.
-func newShell(t *testing.T, cmds map[string][]plugin.CommandDef) (*Shell, string) {
+func newShell(t testing.TB, cmds map[string][]plugin.CommandDef) (*Shell, string) {
 	t.Helper()
 	dir := t.TempDir()
 	// Create some test files and directories.
@@ -46,6 +49,34 @@ func newShell(t *testing.T, cmds map[string][]plugin.CommandDef) (*Shell, string
 	ofs.Bind("/dev/urandom", &devURandHandler{})
 
 	return New("testuser", ofs, cmds, nil, nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))), dir
+}
+
+func writeFiles(t testing.TB, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// runStatus runs command and returns its output and exit status.
+func runStatus(t testing.TB, sh *Shell, command string) (stdout, stderr string, status int) {
+	t.Helper()
+	var out, errBuf strings.Builder
+	err := sh.Run(context.Background(), command, strings.NewReader(""), &out, &errBuf)
+	if err != nil {
+		es, ok := errors.AsType[interp.ExitStatus](err)
+		if !ok {
+			t.Fatalf("%s: %v", command, err)
+		}
+		status = int(es)
+	}
+	return out.String(), errBuf.String(), status
 }
 
 func runCmd(t *testing.T, sh *Shell, command string) (stdout, stderr string) {
