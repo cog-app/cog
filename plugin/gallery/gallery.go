@@ -314,6 +314,12 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 			p.log.Warn("recognition stats", "user", username, "err", err)
 			continue
 		}
+		pending, err := PendingWork(db)
+		if err != nil {
+			p.log.Warn("pending work", "user", username, "err", err)
+			continue
+		}
+		total.Users = append(total.Users, UserPending{Username: username, Pending: pending})
 		total.TotalImages += s.TotalImages
 		total.Pending += s.Pending
 		total.Done += s.Done

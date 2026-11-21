@@ -959,6 +959,13 @@ type RecognitionStats struct {
 	Done        int
 	Errored     int
 	Errors      []string // distinct error messages from errored images
+	Users       []UserPending
+}
+
+// UserPending is what one user's scan has still to do.
+type UserPending struct {
+	Username string
+	Pending
 }
 
 // GetRecognitionStats returns recognition state counts for images.

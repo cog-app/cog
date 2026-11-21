@@ -198,3 +198,10 @@ func TestScanStoresUprightDimensions(t *testing.T) {
 	require.Equal(t, 300, w)
 	require.Equal(t, 400, h)
 }
+
+// The admin page says, per user, what the scan still has to do.
+func TestAdminPageShowsPendingWork(t *testing.T) {
+	e := newScanEnv(t) // alice is the first user, so the admin
+	e.upload(t, "/Photos/a.jpg", photoJPEG(t, 1, 64, 48))
+	e.Get(t, "/admin/plugins/gallery", e.alice.Auth).Status(200).Contains("Waiting for").Contains("<td>alice</td>")
+}

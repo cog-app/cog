@@ -1582,6 +1582,34 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) 
 					</dd>
 				}
 			</dl>
+			if len(stats.Users) > 0 {
+				<table class="table table-sm mb-2">
+					<thead>
+						<tr>
+							<th>Waiting for</th>
+							<th>Metadata</th>
+							<th>Sharpness</th>
+							<th>Fingerprint</th>
+							<th>OCR</th>
+							<th>Recognition</th>
+							<th>Failed</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, u := range stats.Users {
+							<tr>
+								<td>{ u.Username }</td>
+								<td>{ strconv.Itoa(u.Metadata) }</td>
+								<td>{ strconv.Itoa(u.Quality) }</td>
+								<td>{ strconv.Itoa(u.Fingerprint) }</td>
+								<td>{ strconv.Itoa(u.OCR) }</td>
+								<td>{ strconv.Itoa(u.Recognition) }</td>
+								<td>{ strconv.Itoa(u.Failed) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
 			<div class="btn-group">
 				<form method="post" action="/admin/plugins/gallery/scan">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
