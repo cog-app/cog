@@ -191,11 +191,15 @@ func TestSharedFolderMountWritesAsOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(trash))
 
-	// The mount point itself is unmounted, not deleted.
+	// The mount point itself is unmounted, not deleted, and a rename moves
+	// the mount.
 	require.Error(t, l.fp.Trash("wife", "/Photos"))
 	require.Error(t, l.fp.HardDelete("wife", "/Photos"))
 	_, err = l.fp.Rename("wife", "/Photos", "/Pictures")
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.Equal(t, []string{"2026", "beach.jpg"}, listNames(t, l.fp, "wife", "/Pictures"))
+	_, err = l.fp.Rename("wife", "/Pictures", "/Photos")
+	require.NoError(t, err)
 	// Nor can anything leave it by a rename.
 	_, err = l.fp.Rename("wife", "/Photos/beach.jpg", "/beach.jpg")
 	require.True(t, errors.Is(err, vfs.ErrCrossMount), "want vfs.ErrCrossMount")
@@ -509,6 +513,15 @@ func TestShellVolumesWhole(t *testing.T) {
 	require.Equal(t, mount.Volume, m.Kind)
 	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "admin", "/JPhotos"))
 
+	// A partial name, as tab completion leaves at a common prefix.
+	out, err = admin("ln -s /volumes/hdd/jonathan/Pho /files/Partial")
+	require.Error(t, err)
+	require.Contains(t, out, "no such folder")
+	_, err = l.env.Providers.Mounts.GetByUserPath(l.admin.ID, "/Partial")
+	require.True(t, errors.Is(err, mount.ErrNotFound))
+	_, err = admin("ln -s /volumes/hdd/jonathan/Photos/beach.jpg /files/Beach")
+	require.Error(t, err)
+
 	// The server's own files stay out of sight, and out of reach.
 	out, err = admin("ls /volumes/default")
 	require.NoError(t, err)
@@ -517,4 +530,44 @@ func TestShellVolumesWhole(t *testing.T) {
 	require.Error(t, err)
 	_, err = admin("ln -s /volumes/default /files/data")
 	require.Error(t, err)
+}
+
+func TestShellMoveMount(t *testing.T) {
+	l := newPhotoLibrary(t, plugin.PermRead)
+	admin := shellFor(t, l, "admin")
+	mountAt := func(p string) bool {
+		t.Helper()
+		_, err := l.env.Providers.Mounts.GetByUserPath(l.admin.ID, p)
+		if errors.Is(err, mount.ErrNotFound) {
+			return false
+		}
+		require.NoError(t, err)
+		return true
+	}
+
+	_, err := admin("ln -s /volumes/hdd/jonathan/Photos /files/Photos2")
+	require.NoError(t, err)
+	_, err = admin("mv /files/Photos2/ /files/Photos")
+	require.NoError(t, err)
+	require.False(t, mountAt("/Photos2"))
+	require.True(t, mountAt("/Photos"))
+	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "admin", "/Photos"))
+	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "jonathan", "/Photos"))
+
+	_, err = admin("mkdir /files/Media")
+	require.NoError(t, err)
+	_, err = admin("mv /files/Photos /files/Media")
+	require.NoError(t, err)
+	require.True(t, mountAt("/Media/Photos"))
+	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "admin", "/Media/Photos"))
+
+	// A folder holding a mount takes it along.
+	_, err = admin("mv /files/Media /files/Library")
+	require.NoError(t, err)
+	require.True(t, mountAt("/Library/Photos"))
+	require.Equal(t, []string{"beach.jpg"}, listNames(t, l.fp, "admin", "/Library/Photos"))
+
+	_, err = admin("mv /files/Library/Photos /files/Library/Photos/inner")
+	require.Error(t, err)
+	require.True(t, mountAt("/Library/Photos"))
 }

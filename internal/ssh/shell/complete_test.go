@@ -286,7 +286,7 @@ func TestCompleteProblemPaintedBelowLine(t *testing.T) {
 	prompt := "\033[1;32mme@cog\033[0m:/files$ "
 	line := []rune("cp -x Pho")
 
-	if got := string(c.paint(prompt, line, 80)); got != string(line) {
+	if got := string(c.paint(prompt, line, line, 80)); got != string(line) {
 		t.Fatalf("expected nothing painted before a Tab, got %q", got)
 	}
 	if got, _ := c.Do(line, len(line)); len(got) != 0 {
@@ -294,10 +294,10 @@ func TestCompleteProblemPaintedBelowLine(t *testing.T) {
 	}
 	// 15 columns of prompt and 9 of line put the cursor back in column 25.
 	want := "cp -x Pho\n\033[K\033[31mcp: unknown shorthand flag: 'x' in -x\033[0m\033[1A\033[25G"
-	if got := string(c.paint(prompt, line, 80)); got != want {
+	if got := string(c.paint(prompt, line, line, 80)); got != want {
 		t.Fatalf("painted %q, want %q", got, want)
 	}
-	if got := string(c.paint(prompt, line, 80)); got != string(line) {
+	if got := string(c.paint(prompt, line, line, 80)); got != string(line) {
 		t.Fatalf("expected the problem to be painted once, got %q", got)
 	}
 
@@ -315,7 +315,7 @@ func TestCompleteProblemTruncatedToWidth(t *testing.T) {
 	line := []rune("nosuchcommand ")
 	c.Do(line, len(line))
 	want := "nosuchcommand \n\033[Knosuchcommand: comma\033[1A\033[17G"
-	if got := string(c.paint("$ ", line, 21)); got != want {
+	if got := string(c.paint("$ ", line, line, 21)); got != want {
 		t.Fatalf("painted %q, want %q", got, want)
 	}
 }

@@ -244,6 +244,18 @@ func (s *Shared) VolumeTarget(u *user.User, p string) (*volume.Volume, string, e
 	rel := strings.TrimPrefix(at, "/"+v.Root)
 	if !v.Areas() {
 		rel = at
+		// An area that does not exist is made by mounting it; a folder of a
+		// volume is not, so a mount of one that is not there shows nothing.
+		fi, err := t.Stat(p)
+		if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, iofs.ErrNotExist) {
+			return nil, "", fmt.Errorf("no such folder: %w", vfs.ErrNotFound)
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		if !fi.IsDir {
+			return nil, "", fmt.Errorf("%w: not a folder", ErrMountPoint)
+		}
 	}
 	return v.Volume, strings.Trim(rel, "/"), nil
 }

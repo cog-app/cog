@@ -30,6 +30,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/bodylimit"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
+	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/vfs"
@@ -697,11 +698,19 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	if err != nil {
 		return nil, err
 	}
+	var u *user.User
+	if p.Shared != nil {
+		if u, err = p.Shared.Users.GetByUsername(username); err != nil {
+			return nil, err
+		}
+		if meta, ok, err := p.renameMount(db, u, oldPath, newPath); ok || err != nil {
+			return meta, err
+		}
+	}
 	if meta, ok, err := p.renameShared(db, username, oldPath, newPath); ok || err != nil {
 		return meta, err
 	}
 
-	// Rename on disk via VFS.
 	fs, err := p.userFS(username)
 	if err != nil {
 		return nil, err
@@ -712,6 +721,11 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	}
 	if err := fs.Rename(oldPath, newPath); err != nil {
 		return nil, fmt.Errorf("rename: %w", err)
+	}
+	if u != nil {
+		if _, err := p.Shared.Mounts.Move(u.ID, oldPath, newPath); err != nil {
+			return nil, err
+		}
 	}
 
 	moved, err := p.moveRows(db, oldPath, newPath)
@@ -730,6 +744,34 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 		p.treeChanged()
 	}
 	return meta, err
+}
+
+// renameMount is Rename of one of u's mounts (true): the mount moves, and
+// what it holds stays where it is.
+func (p *Plugin) renameMount(db *sql.DB, u *user.User, oldPath, newPath string) (*FileMeta, bool, error) {
+	if ok, err := p.Shared.MoveMount(u, oldPath, newPath); !ok || err != nil {
+		return nil, ok, err
+	}
+	fs, err := p.userFS(u.Username)
+	if err != nil {
+		return nil, true, err
+	}
+	// MountFS lists a mount only in its parent folder, so the parent must exist.
+	if err := fs.Mkdir(filepath.Dir(newPath)); err != nil {
+		return nil, true, fmt.Errorf("mkdir new parent: %w", err)
+	}
+	moved, err := p.moveRows(db, oldPath, newPath)
+	if err != nil {
+		return nil, true, err
+	}
+	p.treeChanged()
+	p.logActivity(u.Username, "file_changed", u.Username+" renamed "+filepath.Base(oldPath)+" to "+filepath.Base(newPath), "", newPath)
+	if moved == 0 {
+		meta, err := p.record(db, fs, newPath)
+		return meta, true, err
+	}
+	meta, err := p.GetByPath(u.Username, newPath)
+	return meta, true, err
 }
 
 // renameShared is Rename within a folder shared with username (true): the
