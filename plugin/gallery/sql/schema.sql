@@ -99,8 +99,13 @@ CREATE TABLE IF NOT EXISTS people (
     representative_face_id INTEGER,
     visible INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    contact_uid TEXT NOT NULL DEFAULT ''
+    contact_uid TEXT NOT NULL DEFAULT '',
+    linked_from TEXT NOT NULL DEFAULT '', -- the owner of a shared people list this person mirrors
+    linked_id INTEGER                     -- and their id there
 );
+-- The people list as one row, so the sharing system has something to name.
+CREATE TABLE IF NOT EXISTS people_lists (id INTEGER PRIMARY KEY);
+INSERT OR IGNORE INTO people_lists (id) VALUES (1);
 
 CREATE TABLE IF NOT EXISTS faces (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,7 +118,8 @@ CREATE TABLE IF NOT EXISTS faces (
     embedding BLOB,
     confidence REAL NOT NULL DEFAULT 0.0,
     estimated_age REAL NOT NULL DEFAULT -1,
-    quality REAL NOT NULL DEFAULT -1 -- see faceQuality; -1 for faces stored before it
+    quality REAL NOT NULL DEFAULT -1, -- see faceQuality; -1 for faces stored before it
+    owner_face_id INTEGER -- the face this was copied from, on a photo shared from another gallery
 );
 
 CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);

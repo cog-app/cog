@@ -137,6 +137,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Table:    "albums",
 		IDColumn: "id",
 	})
+	ctx.RegisterResource(plugin.ResourceDef{
+		Type:     peopleResourceType,
+		Table:    "people_lists",
+		IDColumn: "id",
+	})
 
 	pages := NewPages(p)
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Timeline))

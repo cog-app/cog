@@ -912,7 +912,9 @@ templ photoViewPage(v photoView, csrfToken string) {
 // --- People ---
 templ peoplePage(activePath string, people []Person, allCount, unnamedCount int, unnamedOnly bool, admin bool) {
 	@galleryLayout(activePath) {
-		@ui.PageHeader("People", nil)
+		@ui.PageHeader("People", nil) {
+			<cog-share-button resource="people" resource-id="1" share-title="People" btn-class="btn">Share</cog-share-button>
+		}
 		if allCount > 0 {
 			<nav class="gallery-segmented" aria-label="Filter people">
 				@segmentLink("/apps/gallery/people", "All", allCount, !unnamedOnly)

@@ -225,6 +225,9 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := report.time("albums", func() error { return p.generateAutoAlbums(ctx, galleryDB) }); err != nil {
 		return warnings, remaining, fmt.Errorf("auto-albums: %w", err)
 	}
+	if err := report.time("people", func() error { return p.syncSharedPeople(galleryDB, username, nil) }); err != nil {
+		warn("shared people", err)
+	}
 	if err := report.time("clustering", func() error { return clusterFaces(galleryDB, sysDB) }); err != nil {
 		warn("clustering", err)
 	}

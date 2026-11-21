@@ -3,18 +3,29 @@ package gallery_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"testing"
 
 	"git.duckfam.us/jj-software/cog/internal/mount"
+	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
 )
 
-// alice shares /Share with bob, who mounts it at /Photos/Alice. Her gallery
-// scans /Share/Photos; the rest of the folder only bob's does.
-func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
+type shareEnv struct {
+	*scanEnv
+	bob   *cogtest.User
+	bobDB *sql.DB
+	fp    *files.Plugin
+}
+
+// newShareEnv has alice share /Share with bob, who mounts it at
+// /Photos/Alice. Her gallery scans /Share/Photos; the rest of the folder
+// only bob's does.
+func newShareEnv(t *testing.T) *shareEnv {
+	t.Helper()
 	e := newScanEnv(t)
 	bob := e.CreateUser(t, "bob", "pass")
 	fp := e.Providers.Shared.Files
@@ -35,10 +46,23 @@ func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
 	require.NoError(t, err)
 	bobDB, err := e.g.DB("bob")
 	require.NoError(t, err)
+	return &shareEnv{scanEnv: e, bob: bob, bobDB: bobDB, fp: fp}
+}
 
+// scanBob indexes bob's photos, as asking for a scan does, and scans them.
+func (e *shareEnv) scanBob(t *testing.T) {
+	t.Helper()
+	_, err := e.fp.ReconcileTree(context.Background(), "bob", "/Photos")
+	require.NoError(t, err)
+	require.NoError(t, e.g.ScanUser(context.Background(), "bob"))
+}
+
+func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
+	e := newShareEnv(t)
+	bobDB, fp := e.bobDB, e.fp
 	e.scan(t)
 	aliceID := e.mediaID(t, "/Share/Photos/a.jpg")
-	_, err = e.db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = 1000 WHERE id = ?`, aliceID)
+	_, err := e.db.Exec(`UPDATE media SET recognition_state = 1, recognition_at = 1000 WHERE id = ?`, aliceID)
 	require.NoError(t, err)
 	_, err = e.db.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, quality) VALUES (?, 0.1, 0.2, 0.3, 0.4, x'0000803f', 0.9, 0.7)`, aliceID)
 	require.NoError(t, err)
@@ -46,9 +70,7 @@ func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, gallery.AddMediaTag(e.db, aliceID, tagID, 0.8))
 
-	_, err = fp.ReconcileTree(context.Background(), "bob", "/Photos")
-	require.NoError(t, err)
-	require.NoError(t, e.g.ScanUser(context.Background(), "bob"))
+	e.scanBob(t)
 
 	var from, fingerprint, theirs, makeType string
 	var width int
@@ -89,7 +111,7 @@ func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.db.Exec(`INSERT INTO faces (media_id, x, y, w, h, confidence) VALUES (?, 0.5, 0.5, 0.1, 0.1, 0.9)`, aliceID)
 	require.NoError(t, err)
-	require.NoError(t, e.g.ScanUser(context.Background(), "bob"))
+	e.scanBob(t)
 	require.NoError(t, bobDB.QueryRow(`SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE m.shared_from = 'alice'`).Scan(&faces))
 	require.Equal(t, 2, faces)
 }

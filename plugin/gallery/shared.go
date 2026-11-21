@@ -288,19 +288,20 @@ func adoptMedia(tx *sql.Tx, ownerDB *sql.DB, r sharedRow, m *ownerMedia) error {
 		return err
 	}
 
-	faces, err := ownerDB.Query(`SELECT x, y, w, h, embedding, confidence, estimated_age, quality FROM faces WHERE media_id = ?`, m.id)
+	faces, err := ownerDB.Query(`SELECT id, x, y, w, h, embedding, confidence, estimated_age, quality FROM faces WHERE media_id = ?`, m.id)
 	if err != nil {
 		return fmt.Errorf("read owner's faces: %w", err)
 	}
 	defer faces.Close()
 	for faces.Next() {
+		var id int64
 		var x, y, w, h, conf, age, quality float64
 		var embedding []byte
-		if err := faces.Scan(&x, &y, &w, &h, &embedding, &conf, &age, &quality); err != nil {
+		if err := faces.Scan(&id, &x, &y, &w, &h, &embedding, &conf, &age, &quality); err != nil {
 			return fmt.Errorf("read owner's faces: %w", err)
 		}
-		if _, err := tx.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age, quality)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.id, x, y, w, h, embedding, conf, age, quality); err != nil {
+		if _, err := tx.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age, quality, owner_face_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.id, x, y, w, h, embedding, conf, age, quality, id); err != nil {
 			return fmt.Errorf("copy face to media %d: %w", r.id, err)
 		}
 	}
