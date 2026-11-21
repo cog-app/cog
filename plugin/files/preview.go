@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"git.duckfam.us/jj-software/cog/internal/safeimage"
-	"image"
-	_ "image/gif"
+		_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
 	"io"
@@ -20,10 +18,10 @@ import (
 	"sync"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/imaging"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/plugin"
 
-	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
@@ -158,81 +156,112 @@ func HasPreview(mimeType string) bool {
 	return canConvertToPNG(mimeType)
 }
 
+// thumbDir holds cached thumbnails. Thumbnails made before EXIF orientation
+// was applied lived under oldThumbDir; that directory is removed the first
+// time a user's thumbnail is asked for, since every one in it is suspect.
+const (
+	thumbDir    = "thumbs"
+	oldThumbDir = "thumbnails"
+)
+
 // Preview returns a JPEG thumbnail for an image file, on any mount. It
 // caches thumbnails in the user's cache keyed by ETag + size.
 func (p *Plugin) Preview(username, filePath string, size int) (plugin.StoredFile, error) {
+	cache, name, err := p.ensurePreview(username, filePath, size, nil)
+	if err != nil {
+		return nil, err
+	}
+	return cache.Open(name)
+}
+
+// EnsurePreview caches a thumbnail of an image file if it is not cached
+// already, and reports whether it had to make one.
+func (p *Plugin) EnsurePreview(username, filePath string, size int) (generated bool, err error) {
+	_, _, err = p.ensurePreview(username, filePath, size, &generated)
+	return generated, err
+}
+
+func (p *Plugin) ensurePreview(username, filePath string, size int, generated *bool) (plugin.Storage, string, error) {
 	size = plugin.ThumbnailSize(size)
 
 	meta, err := p.GetByPath(username, filePath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !HasPreview(meta.MimeType) {
-		return nil, fmt.Errorf("no preview for %s", meta.MimeType)
+		return nil, "", fmt.Errorf("no preview for %s", meta.MimeType)
 	}
 	cache, err := p.ctx.UserCache(username)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if _, done := p.oldThumbsGone.LoadOrStore(username, true); !done {
+		if err := cache.RemoveAll(oldThumbDir); err != nil {
+			p.log.Error("remove old thumbnails", "user", username, "err", err)
+		}
 	}
 
-	name := fmt.Sprintf("thumbnails/%d/%s.jpg", size, path.Base(meta.ETag))
+	name := fmt.Sprintf("%s/%d/%s.jpg", thumbDir, size, path.Base(meta.ETag))
+	// Opening rather than statting marks the thumbnail used, so the cache
+	// sweep keeps what the gallery's scans keep asking for.
 	if f, err := cache.Open(name); err == nil {
-		return f, nil
+		return cache, name, f.Close()
 	} else if !errors.Is(err, iofs.ErrNotExist) {
-		return nil, fmt.Errorf("open thumbnail: %w", err)
+		return nil, "", fmt.Errorf("open thumbnail: %w", err)
 	}
+	if err := p.generatePreview(username, filePath, meta, cache, name, size); err != nil {
+		return nil, "", err
+	}
+	if generated != nil {
+		*generated = true
+	}
+	return cache, name, nil
+}
 
-	// Cache miss — generate thumbnail.
-	var srcFile io.ReadCloser
+// generatePreview makes a size×size-bounded JPEG of an image, turned upright,
+// and stores it in the cache as name.
+func (p *Plugin) generatePreview(username, filePath string, meta *FileMeta, cache plugin.Storage, name string, size int) error {
+	var (
+		srcFile io.ReadCloser
+		err     error
+	)
 	if isNativeImage(meta.MimeType) {
 		srcFile, err = p.open(username, filePath)
 	} else {
-		// For non-native formats, convert to PNG first.
 		var png string
 		if png, err = p.convertToPNG(username, cache, filePath, meta); err != nil {
-			return nil, fmt.Errorf("convert to png: %w", err)
+			return fmt.Errorf("convert to png: %w", err)
 		}
 		srcFile, err = cache.Open(png)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("open source: %w", err)
+		return fmt.Errorf("open source: %w", err)
 	}
-	defer srcFile.Close()
+	data, err := io.ReadAll(srcFile)
+	if err = errors.Join(err, srcFile.Close()); err != nil {
+		return fmt.Errorf("read source: %w", err)
+	}
 
-	src, _, err := safeimage.Decode(srcFile)
+	src, _, orientation, err := imaging.Decode(data)
 	if err != nil {
-		return nil, fmt.Errorf("decode image: %w", err)
+		return fmt.Errorf("decode image: %w", err)
 	}
-
-	// Compute dimensions that fit within size x size, preserving aspect ratio.
-	bounds := src.Bounds()
-	sw, sh := bounds.Dx(), bounds.Dy()
-	dw, dh := size, size
-	if sw > sh {
-		dh = sh * size / sw
-	} else {
-		dw = sw * size / sh
-	}
-	if dw < 1 {
-		dw = 1
-	}
-	if dh < 1 {
-		dh = 1
-	}
-
-	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
+	b := src.Bounds()
+	ow, oh := imaging.OrientedSize(b.Dx(), b.Dy(), orientation)
+	w, h := imaging.Fit(ow, oh, size)
+	w, h = imaging.OrientedSize(w, h, orientation)
+	thumb := imaging.Orient(imaging.Resize(src, w, h), orientation)
 
 	// Put replaces in one step, so a request for the same thumbnail
 	// meanwhile never opens a half-written one.
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 80}); err != nil {
-		return nil, fmt.Errorf("encode thumbnail: %w", err)
+	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 80}); err != nil {
+		return fmt.Errorf("encode thumbnail: %w", err)
 	}
 	if _, err := cache.Put(name, &buf); err != nil {
-		return nil, fmt.Errorf("write thumbnail: %w", err)
+		return fmt.Errorf("write thumbnail: %w", err)
 	}
-	return cache.Open(name)
+	return nil
 }
 
 // localCopy copies a user's file into the cache under name, for a program

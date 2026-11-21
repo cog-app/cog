@@ -71,6 +71,8 @@ type Plugin struct {
 	uploadsMu sync.Mutex
 	uploads   map[string]*pathLock
 
+	oldThumbsGone sync.Map // username → true once oldThumbDir is removed
+
 	// Shared is what others shared with each user, for the Shared with me
 	// pages. The host sets it once its stores exist.
 	Shared *Shared
