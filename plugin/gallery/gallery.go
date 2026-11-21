@@ -133,7 +133,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		EnrichSQL:    "SELECT rowid, file_path, place_name, camera_model, ocr_text FROM media WHERE rowid IN (?)",
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
-		Type:     "album",
+		Type:     albumResourceType,
 		Table:    "albums",
 		IDColumn: "id",
 	})
@@ -147,6 +147,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("{$}", http.HandlerFunc(pages.Timeline))
 	ctx.RegisterPage("albums", http.HandlerFunc(pages.Albums))
 	ctx.RegisterPage("album/{id}", http.HandlerFunc(pages.AlbumView))
+	ctx.RegisterPage("shared/{owner}/album/{id}", http.HandlerFunc(pages.SharedAlbumView))
 	ctx.RegisterPage("photo/{id}", http.HandlerFunc(pages.PhotoView))
 	ctx.RegisterPage("people", http.HandlerFunc(pages.People))
 	ctx.RegisterPage("person/{id}", http.HandlerFunc(pages.PersonView))
@@ -162,6 +163,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/media/{id}", http.HandlerFunc(pages.MediaDetailAPI))
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
+	ctx.RegisterAPI("api/shared/{owner}/album/{id}/media/{media_id}/thumbnail", http.HandlerFunc(pages.SharedAlbumThumbnail))
 	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))

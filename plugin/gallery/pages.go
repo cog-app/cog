@@ -110,8 +110,15 @@ func (h *Pages) Albums(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	var shared []SharedAlbum
+	if u := plugin.UserFromContext(r.Context()); u != nil {
+		if shared, err = h.plugin.sharedAlbums(u.ID); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+	}
 	plugin.SetTitle(w, "Albums")
-	ui.Render(w, r, albumsPage(r.URL.Path, albums, plugin.CSRFToken(r)))
+	ui.Render(w, r, albumsPage(r.URL.Path, albums, shared, plugin.CSRFToken(r)))
 }
 
 // AlbumView renders a single album.
