@@ -1054,6 +1054,47 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 	return nil
 }
 
+// ReconcileTree brings the index of dir and everything beneath it in step
+// with the disk, as listing each folder would. The index otherwise learns
+// of a file on a mounted volume only when someone opens its folder, so
+// whatever reads the index for whole trees - the gallery - would miss most
+// of a volume nobody browses. It returns how many folders it read.
+func (p *Plugin) ReconcileTree(ctx context.Context, username, dir string) (int, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return 0, err
+	}
+	queue := []string{normalizePath(dir)}
+	var read int
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return read, err
+		}
+		d := queue[0]
+		queue = queue[1:]
+		if err := p.reconcile(db, username, d); err != nil {
+			return read, err
+		}
+		read++
+		rows, err := db.Query(`SELECT path FROM files WHERE parent_path = ? AND is_dir = 1`, d)
+		if err != nil {
+			return read, fmt.Errorf("list folders of %s: %w", d, err)
+		}
+		for rows.Next() {
+			var sub string
+			if err := rows.Scan(&sub); err != nil {
+				rows.Close()
+				return read, fmt.Errorf("list folders of %s: %w", d, err)
+			}
+			queue = append(queue, sub)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return read, fmt.Errorf("list folders of %s: %w", d, err)
+		}
+	}
+	return read, nil
+}
+
 func getByID(db *sql.DB, id int64) (*FileMeta, error) {
 	var f FileMeta
 	err := db.QueryRow(`

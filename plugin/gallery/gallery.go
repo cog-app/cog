@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -52,6 +53,9 @@ type Plugin struct {
 	geocoder *Geocoder
 	cancel   context.CancelFunc
 	done     chan struct{}
+
+	runCtx  context.Context // the plugin's lifetime, set by Start
+	indexMu sync.Mutex      // one index pass at a time
 
 	scanMu     sync.Mutex
 	scanClient scannerClient // RPC or in-process scan worker client
@@ -241,6 +245,7 @@ func (p *Plugin) filesPeer() *files.Plugin {
 
 func (p *Plugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
+	p.runCtx = ctx
 	p.done = make(chan struct{})
 	if useSubprocess() {
 		go p.manageScanWorker(ctx)
@@ -590,8 +595,10 @@ func (p *Plugin) GetScanStatus() ScanStatus {
 	return status
 }
 
-// requestScan asks the scan worker to scan a user (or "*" for all users).
+// requestScan asks the scan worker to scan a user (or "*" for all users),
+// after bringing the files index of their scan folders up to date.
 func (p *Plugin) requestScan(username string) {
+	p.indexScanFolders(username)
 	p.scanMu.Lock()
 	client := p.scanClient
 	p.scanMu.Unlock()
@@ -610,6 +617,79 @@ func (p *Plugin) requestScan(username string) {
 	case err != nil:
 		p.log.Error("request scan", "user", username, "err", err)
 	}
+}
+
+// indexScanFolders has the files plugin read every folder under a user's
+// (or with "*" every user's) scan folders, so the scan sees files on a
+// volume nobody has browsed. It runs in the server, which owns writes to
+// the files index; the worker only reads it.
+func (p *Plugin) indexScanFolders(username string) {
+	fp := p.filesPeer()
+	if fp == nil {
+		return
+	}
+	users := []string{username}
+	if username == "*" {
+		var err error
+		if users, err = p.ctx.UsersOf("files"); err != nil {
+			p.log.Error("index scan folders: list users", "err", err)
+			return
+		}
+	}
+	p.indexMu.Lock()
+	defer p.indexMu.Unlock()
+	ctx := p.runCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, u := range users {
+		db, err := p.DB(u)
+		if err != nil {
+			p.log.Error("index scan folders: gallery db", "user", u, "err", err)
+			continue
+		}
+		start := time.Now()
+		var folders int
+		for _, dir := range scanRoots(ParseScanFolders(db)) {
+			n, err := fp.ReconcileTree(ctx, u, dir)
+			folders += n
+			if err != nil {
+				p.log.Error("index scan folder", "user", u, "dir", dir, "err", err)
+			}
+		}
+		p.log.Info("indexed scan folders", "user", u, "folders", folders, "took", time.Since(start).Round(time.Millisecond))
+	}
+}
+
+// scanRoots returns the folders to index for a set of scan folder patterns:
+// each pattern's directory up to its first wildcard, with folders inside
+// another left out.
+func scanRoots(patterns []string) []string {
+	var roots []string
+	for _, pat := range patterns {
+		dir := TrimScanPath(pat)
+		if i := strings.IndexAny(dir, "*?["); i >= 0 {
+			dir = dir[:i]
+			if j := strings.LastIndex(dir, "/"); j >= 0 {
+				dir = dir[:j+1]
+			} else {
+				dir = ""
+			}
+		}
+		roots = append(roots, "/"+strings.TrimSuffix(dir, "/"))
+	}
+	slices.Sort(roots)
+	var out []string
+	for _, r := range roots {
+		if len(out) > 0 {
+			last := out[len(out)-1]
+			if r == last || last == "/" || strings.HasPrefix(r, last+"/") {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // manageScanWorker spawns and supervises the scan worker subprocess.

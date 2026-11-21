@@ -1,6 +1,7 @@
 package files_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -313,4 +314,35 @@ func TestReplaceKeepsIdentity(t *testing.T) {
 	renamed, err := plug.Rename(alice.Username, "/other.txt", "/renamed.txt")
 	require.NoError(t, err)
 	require.Equal(t, other.ID, renamed.ID)
+}
+
+// TestReconcileTree: files put on disk in folders nobody has listed reach
+// the index, and only beneath the folder asked for.
+func TestReconcileTree(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	plug := getFilesPlugin(t, env)
+	require.NoError(t, plug.EnsureRootDir(alice.Username))
+	raw, err := env.Providers.Plugins.UserFS(alice.Username)
+	require.NoError(t, err)
+	for _, p := range []string{"/Photos/2024/a.jpg", "/Photos/2024/trip/b.jpg", "/Other/c.jpg"} {
+		require.NoError(t, raw.Put(p, strings.NewReader("x")))
+	}
+
+	n, err := plug.ReconcileTree(context.Background(), alice.Username, "/Photos")
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	db, err := plug.DB(alice.Username)
+	require.NoError(t, err)
+	rows, err := db.Query(`SELECT path FROM files WHERE is_dir = 0 ORDER BY path`)
+	require.NoError(t, err)
+	defer rows.Close()
+	var indexed []string
+	for rows.Next() {
+		var p string
+		require.NoError(t, rows.Scan(&p))
+		indexed = append(indexed, p)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []string{"/Photos/2024/a.jpg", "/Photos/2024/trip/b.jpg"}, indexed)
 }
