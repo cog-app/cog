@@ -540,6 +540,8 @@ func (b *OnnxBackend) AnalyzeImage(ctx context.Context, photo *decodedPhoto) (*R
 				face.EstimatedAge = age
 			}
 		}
+		face.Quality = faceQuality(face.Confidence, float64(facePixW), float64(facePixH),
+			face.Landmarks, float64(bounds.Dx()), float64(bounds.Dy()))
 		kept = append(kept, *face)
 	}
 	result.Faces = kept

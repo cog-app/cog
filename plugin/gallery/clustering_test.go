@@ -476,3 +476,36 @@ func TestStoreRecognitionReplacesEarlierPass(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.Equal(t, []string{"cat", "grandma's house"}, names)
 }
+
+func setFaceBox(t *testing.T, db *sql.DB, faceID int64, size float64) {
+	t.Helper()
+	_, err := db.Exec(`UPDATE faces SET w = ?, h = ? WHERE id = ?`, size, size, faceID)
+	require.NoError(t, err)
+}
+
+// A poor face founds no one: matching nobody, it stays unassigned. Close
+// enough to someone, it joins them.
+func TestClusterPoorFacesDoNotFoundPeople(t *testing.T) {
+	db := testDB(t)
+	date := int64(1718409600)
+	good := insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(0, 0.01), -1)
+	// 30 px faces in a 1000 px photo.
+	samePerson := insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(0, 0.01), -1)
+	setFaceBox(t, db, samePerson, 0.03)
+	stranger := insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(7, 0.01), -1)
+	setFaceBox(t, db, stranger, 0.03)
+
+	require.NoError(t, clusterFaces(db, nil))
+	require.Equal(t, 1, countPeople(t, db))
+	require.Equal(t, personForFace(t, db, good), personForFace(t, db, samePerson))
+	require.Equal(t, int64(0), personForFace(t, db, stranger))
+}
+
+func TestFaceQuality(t *testing.T) {
+	frontal := [][2]float64{{0.4, 0.4}, {0.6, 0.4}, {0.5, 0.5}, {0.42, 0.6}, {0.58, 0.6}}
+	profile := [][2]float64{{0.4, 0.4}, {0.6, 0.4}, {0.65, 0.5}, {0.42, 0.6}, {0.58, 0.6}}
+	big := faceQuality(0.9, 200, 200, frontal, 1000, 1000)
+	require.True(t, math.Abs(big-0.9) < 1e-9, "quality %v", big)
+	require.True(t, faceQuality(0.9, 200, 200, profile, 1000, 1000) < seedFaceQuality)
+	require.True(t, faceQuality(0.9, 40, 40, frontal, 1000, 1000) < seedFaceQuality)
+}

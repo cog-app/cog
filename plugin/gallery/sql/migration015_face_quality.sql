@@ -1,0 +1,2 @@
+-- IF COLUMN faces.quality NOT EXIST
+ALTER TABLE faces ADD COLUMN quality REAL NOT NULL DEFAULT -1;

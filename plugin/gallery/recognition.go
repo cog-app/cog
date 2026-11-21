@@ -20,6 +20,7 @@ type DetectedFace struct {
 	Embedding    []float32    // face embedding vector
 	EstimatedAge float64      // estimated age in years, -1 if not available
 	Confidence   float64
+	Quality      float64 // see faceQuality; 0 leaves it to be worked out from the box
 }
 
 // RecognitionResult holds the output of image analysis.
@@ -172,9 +173,13 @@ func storeFace(db execQuerier, mediaID int64, face *DetectedFace) error {
 		embeddingBlob = float32SliceToBytes(face.Embedding)
 	}
 
-	if _, err := db.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		mediaID, x, y, w, h, embeddingBlob, face.Confidence, face.EstimatedAge); err != nil {
+	quality := face.Quality
+	if quality <= 0 {
+		quality = -1
+	}
+	if _, err := db.Exec(`INSERT INTO faces (media_id, x, y, w, h, embedding, confidence, estimated_age, quality)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		mediaID, x, y, w, h, embeddingBlob, face.Confidence, face.EstimatedAge, quality); err != nil {
 		return fmt.Errorf("store face on media %d: %w", mediaID, err)
 	}
 	return nil

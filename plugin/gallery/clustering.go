@@ -1,16 +1,44 @@
 package gallery
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
 const (
 	defaultClusterThreshold = 0.35 // cosine distance threshold for face clustering
+
+	// seedFaceQuality is the faceQuality a face needs to found a person.
+	seedFaceQuality = 0.4
+	// poorFaceMatch scales the threshold for a face below seedFaceQuality:
+	// its embedding is less reliable, so it must be closer to join anyone.
+	poorFaceMatch = 0.8
 )
+
+// faceQuality rates how far a face's embedding can be trusted, 0 to 1: the
+// detector's confidence, times how much of ArcFace's 112 px input the face
+// fills, times how frontal it is. Turning away is judged by how far the
+// nose sits from between the eyes; without landmarks the face is taken as
+// frontal.
+func faceQuality(confidence, widthPx, heightPx float64, landmarks [][2]float64, imgW, imgH float64) float64 {
+	size := math.Min(math.Min(widthPx, heightPx)/112, 1)
+	frontal := 1.0
+	if len(landmarks) == 5 && imgW > 0 && imgH > 0 {
+		lx, rx := landmarks[0][0]*imgW, landmarks[1][0]*imgW
+		ly, ry := landmarks[0][1]*imgH, landmarks[1][1]*imgH
+		eyes := math.Hypot(rx-lx, ry-ly)
+		if eyes > 0 {
+			yaw := math.Abs(landmarks[2][0]*imgW-(lx+rx)/2) / eyes
+			frontal = math.Max(0, math.Min(1, 1-2*yaw))
+		}
+	}
+	return math.Max(0, math.Min(1, confidence)) * size * frontal
+}
 
 // clusterFaces assigns unassigned faces to existing people or creates new clusters.
 // If sysDB is non-nil, the threshold is read from system settings.
@@ -40,9 +68,8 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		return err
 	}
 
-	// Get unassigned faces with embeddings, age estimates, and photo dates.
 	rows, err := db.Query(`SELECT f.id, f.media_id, f.embedding, f.estimated_age,
-		COALESCE(m.date_taken, m.date_indexed)
+		COALESCE(m.date_taken, m.date_indexed), f.quality, f.confidence, f.w * m.width, f.h * m.height
 		FROM faces f JOIN media m ON m.id = f.media_id
 		WHERE f.person_id IS NULL AND f.embedding IS NOT NULL`)
 	if err != nil {
@@ -56,13 +83,18 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		embedding    []float32
 		estimatedAge float64
 		photoDate    int64
+		quality      float64
 	}
 	var faces []unassignedFace
 	for rows.Next() {
 		var f unassignedFace
 		var blob []byte
-		if err := rows.Scan(&f.id, &f.mediaID, &blob, &f.estimatedAge, &f.photoDate); err != nil {
+		var conf, wpx, hpx float64
+		if err := rows.Scan(&f.id, &f.mediaID, &blob, &f.estimatedAge, &f.photoDate, &f.quality, &conf, &wpx, &hpx); err != nil {
 			return fmt.Errorf("scan unassigned face: %w", err)
+		}
+		if f.quality < 0 {
+			f.quality = faceQuality(conf, wpx, hpx, nil, 0, 0)
 		}
 		f.embedding = bytesToFloat32Slice(blob)
 		if len(f.embedding) > 0 {
@@ -72,48 +104,64 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	// The best faces go first, so a person is founded on a clear face and the
+	// poor ones are then judged against it.
+	slices.SortStableFunc(faces, func(a, b unassignedFace) int { return cmp.Compare(b.quality, a.quality) })
 
-	for _, face := range faces {
-		bestPersonID := int64(0)
-		bestDist := threshold
-
-		// Compare against existing centroids with age penalty.
-		for personID, centroid := range centroids {
-			dist := cosineDistance(face.embedding, centroid)
-			dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
-			if dist < bestDist {
-				bestDist = dist
-				bestPersonID = personID
+	err = inTx(db, func(tx *sql.Tx) error {
+		for _, face := range faces {
+			good := face.quality >= seedFaceQuality
+			limit := threshold
+			if !good {
+				limit = threshold * poorFaceMatch
 			}
-		}
+			bestPersonID := int64(0)
+			bestDist := limit
 
-		// Chain matching: if centroid didn't match, try recent faces.
-		if bestPersonID == 0 {
-			for personID, recent := range recentFaces {
-				for _, emb := range recent {
-					dist := cosineDistance(face.embedding, emb)
-					dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
-					if dist < bestDist {
-						bestDist = dist
-						bestPersonID = personID
+			for personID, centroid := range centroids {
+				dist := cosineDistance(face.embedding, centroid)
+				dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
+				if dist < bestDist {
+					bestDist = dist
+					bestPersonID = personID
+				}
+			}
+
+			// Chain matching: if centroid didn't match, try recent faces.
+			if bestPersonID == 0 {
+				for personID, recent := range recentFaces {
+					for _, emb := range recent {
+						dist := cosineDistance(face.embedding, emb)
+						dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
+						if dist < bestDist {
+							bestDist = dist
+							bestPersonID = personID
+						}
 					}
 				}
 			}
-		}
 
-		if bestPersonID > 0 {
-			// Assign to existing person.
-			if _, err := db.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, bestPersonID, face.id); err != nil {
-				return fmt.Errorf("assign face %d: %w", face.id, err)
+			switch {
+			case bestPersonID > 0:
+				if _, err := tx.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, bestPersonID, face.id); err != nil {
+					return fmt.Errorf("assign face %d: %w", face.id, err)
+				}
+			case good:
+				personID, err := createPersonFromFace(tx, face.id)
+				if err != nil {
+					return err
+				}
+				centroids[personID] = face.embedding
+			default:
+				// A blurred, tiny or turned-away face that matches no one is
+				// left unassigned rather than made a person of its own: it
+				// would found a cluster that anyone's poor faces then join.
 			}
-		} else {
-			// Create new person cluster.
-			personID, err := CreatePersonFromFace(db, face.id)
-			if err != nil {
-				return err
-			}
-			centroids[personID] = face.embedding
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	// Faces without embeddings (e.g. Pigo-only, no ArcFace) can't be clustered.

@@ -808,20 +808,22 @@ func DeleteFace(db *sql.DB, faceID int64) error {
 
 // CreatePersonFromFace creates a new unnamed person and assigns the given face to it.
 func CreatePersonFromFace(db *sql.DB, faceID int64) (int64, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, fmt.Errorf("begin new person: %w", err)
-	}
-	defer tx.Rollback()
+	var personID int64
+	err := inTx(db, func(tx *sql.Tx) error {
+		var err error
+		personID, err = createPersonFromFace(tx, faceID)
+		return err
+	})
+	return personID, err
+}
+
+func createPersonFromFace(tx *sql.Tx, faceID int64) (int64, error) {
 	var personID int64
 	if err := tx.QueryRow(`INSERT INTO people (name, representative_face_id) VALUES ('', ?) RETURNING id`, faceID).Scan(&personID); err != nil {
 		return 0, fmt.Errorf("create person for face %d: %w", faceID, err)
 	}
 	if _, err := tx.Exec(`UPDATE faces SET person_id = ? WHERE id = ?`, personID, faceID); err != nil {
 		return 0, fmt.Errorf("assign face %d: %w", faceID, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit new person: %w", err)
 	}
 	return personID, nil
 }
