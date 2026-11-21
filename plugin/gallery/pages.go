@@ -165,8 +165,16 @@ func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var uploads albumUploads
+	if album.AlbumType == AlbumManual {
+		if err := db.QueryRow(`SELECT upload_folder FROM albums WHERE id = ?`, id).Scan(&uploads.Folder); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		uploads.Default = defaultUploadFolder(db, album.Name)
+	}
 	plugin.SetTitle(w, album.Name)
-	ui.Render(w, r, albumViewPage(r.URL.Path, album, media, candidates, plugin.CSRFToken(r)))
+	ui.Render(w, r, albumViewPage(r.URL.Path, album, media, candidates, uploads, plugin.CSRFToken(r)))
 }
 
 // PhotoView renders the detail view for a single photo.
@@ -711,6 +719,16 @@ func (h *Pages) RenameAlbum(w http.ResponseWriter, r *http.Request) {
 	if err := RenameAlbumRow(db, id, name, strings.TrimSpace(r.FormValue("description"))); err != nil {
 		flashRedirect(w, r, "error", "The album could not be renamed: "+err.Error(), back)
 		return
+	}
+	if _, ok := r.PostForm["upload_folder"]; ok {
+		folder := strings.TrimSpace(r.PostFormValue("upload_folder"))
+		if folder != "" {
+			folder = path.Clean("/" + folder)
+		}
+		if _, err := db.Exec(`UPDATE albums SET upload_folder = ? WHERE id = ?`, folder, id); err != nil {
+			flashRedirect(w, r, "error", "The album's folder could not be saved: "+err.Error(), back)
+			return
+		}
 	}
 	flashRedirect(w, r, "success", "Saved “"+name+"”.", back)
 }

@@ -187,6 +187,9 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := report.time("shared", func() error { return p.adoptShared(ctx, galleryDB, filesDB, username) }); err != nil {
 		warn("shared", err)
 	}
+	if err := report.time("album-uploads", func() error { return addPendingAlbumMedia(galleryDB) }); err != nil {
+		warn("album-uploads", err)
+	}
 	if err := report.time("metadata", func() error { return p.extractMetadata(ctx, galleryDB, username) }); err != nil {
 		return warnings, false, fmt.Errorf("metadata: %w", err)
 	}

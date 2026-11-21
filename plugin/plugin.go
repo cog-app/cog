@@ -148,10 +148,25 @@ type ResourceDef struct {
 	// If empty, defaults to Read-only and Read/Write.
 	PermissionLevels []PermissionLevel
 	// Collection, when set, lets a share of the resource be added to its
-	// audience's files as a read-only folder of the owner's files: it
-	// returns the resource's name and where those files are in the owner's
-	// files, or ErrResourceGone. In-process plugins only.
-	Collection func(owner, resourceID string) (name string, paths []string, err error)
+	// audience's files as a folder of the owner's files. In-process plugins
+	// only.
+	Collection *Collection
+}
+
+// Collection is a resource that is a set of its owner's files, such as an
+// album.
+type Collection struct {
+	// List returns the resource's name and where its files are in the
+	// owner's files, or ErrResourceGone.
+	List func(owner, resourceID string) (name string, paths []string, err error)
+	// Folder, when set, lets a share with write permission add files: they
+	// are written to the folder of the owner's files it returns, and each is
+	// passed to Add once it is there.
+	Folder func(owner, resourceID string) (string, error)
+	Add    func(owner, resourceID, path string) error
+	// Remove, when set, lets a share with write permission take a file out
+	// of the resource. The file stays in the owner's files.
+	Remove func(owner, resourceID, path string) error
 }
 
 // ErrResourceGone is a shared resource that is no longer there.

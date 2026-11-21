@@ -541,10 +541,11 @@ templ albumFields(idPrefix, name, description string) {
 			<label for={ idPrefix + "-description" }>Description <span class="text-muted">(optional)</span></label>
 			<textarea class="form-control" id={ idPrefix + "-description" } name="description" rows="3">{ description }</textarea>
 		</div>
+		{ children... }
 	</div>
 }
 
-templ albumViewPage(activePath string, album *Album, media []Media, candidates []Media, csrfToken string) {
+templ albumViewPage(activePath string, album *Album, media []Media, candidates []Media, uploads albumUploads, csrfToken string) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader(album.Name, []ui.Crumb{{Label: "Albums", URL: "/apps/gallery/albums"}}) {
 			if album.AlbumType == AlbumManual {
@@ -613,7 +614,13 @@ templ albumViewPage(activePath string, album *Album, media []Media, candidates [
 			@ui.Modal("gallery-rename-album", "Rename album") {
 				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/rename", album.ID)) }>
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					@albumFields("rename-album", album.Name, album.Description)
+					@albumFields("rename-album", album.Name, album.Description) {
+						<div class="form-group mb-0 mt-2">
+							<label for="rename-album-upload-folder">Folder for photos added by others <span class="text-muted">(optional)</span></label>
+							<input class="form-control" type="text" id="rename-album-upload-folder" name="upload_folder" value={ uploads.Folder } placeholder={ uploads.Default } autocomplete="off" aria-describedby="rename-album-upload-folder-help"/>
+							<p class="form-help" id="rename-album-upload-folder-help">{ "When you share the album with permission to edit, the photos people add go here in your files. Leave it empty to use " + uploads.Default + "." }</p>
+						</div>
+					}
 					<div class="modal-footer">
 						<button type="button" class="btn" data-modal-close>Cancel</button>
 						<button type="submit" class="btn btn-primary">Save</button>

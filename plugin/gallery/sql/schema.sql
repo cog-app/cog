@@ -54,7 +54,18 @@ CREATE TABLE IF NOT EXISTS albums (
     cover_media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    -- Where photos added through a share of the album go; '' is a folder
+    -- named after it in the first scan folder.
+    upload_folder TEXT NOT NULL DEFAULT ''
+);
+
+-- Files added to an album through a share before a scan has made them
+-- media; the scan moves them into album_media.
+CREATE TABLE IF NOT EXISTS album_pending (
+    album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    PRIMARY KEY (album_id, file_path)
 );
 
 -- Only automatic albums are keyed: every manual album (album_type 0) has an

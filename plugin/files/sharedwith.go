@@ -32,9 +32,9 @@ type Shared struct {
 	// Server is where the server keeps its own files, which no volume
 	// shows or mounts.
 	Server volume.ServerFiles
-	// Collection returns how to list a plugin resource type that can be
-	// added to someone's files as a folder of its owner's.
-	Collection func(resourceType string) (mount.CollectionFunc, bool)
+	// Collection returns a plugin resource type that can be added to
+	// someone's files as a folder of its owner's.
+	Collection func(resourceType string) (*plugin.Collection, bool)
 }
 
 // SharedKind is what a shared entry is.
@@ -183,8 +183,8 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 				}
 			}
 		case SharedCollection:
-			list, _ := s.collection(e.ResourceType)
-			name, _, err := list(e.Owner.Username, e.ResourceID)
+			c, _ := s.collection(e.ResourceType)
+			name, _, err := c.List(e.Owner.Username, e.ResourceID)
 			if errors.Is(err, plugin.ErrResourceGone) {
 				continue
 			}
@@ -192,7 +192,10 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 				return nil, fmt.Errorf("%s %s of %s: %w", e.ResourceType, e.ResourceID, e.Owner.Username, err)
 			}
 			e.Name = name
-			e.Perms &^= plugin.PermWrite | plugin.PermReshare
+			e.Perms &^= plugin.PermReshare
+			if c.Folder == nil && c.Remove == nil {
+				e.Perms &^= plugin.PermWrite
+			}
 			for _, m := range mounts {
 				if m.Kind == mount.Share && m.ShareOwnerID == e.Owner.ID &&
 					m.ShareResourceType == e.ResourceType && m.ShareResourceID == e.ResourceID {
@@ -237,7 +240,7 @@ func (s *Shared) List(u *user.User) ([]SharedOwner, error) {
 	return out, nil
 }
 
-func (s *Shared) collection(resourceType string) (mount.CollectionFunc, bool) {
+func (s *Shared) collection(resourceType string) (*plugin.Collection, bool) {
 	if s.Collection == nil {
 		return nil, false
 	}
@@ -247,11 +250,11 @@ func (s *Shared) collection(resourceType string) (mount.CollectionFunc, bool) {
 // CollectionEntries returns the files of a shared collection: their names in it
 // and where they are in its owner's files.
 func (s *Shared) CollectionEntries(e *SharedEntry) ([]volume.CollectionEntry, error) {
-	list, ok := s.collection(e.ResourceType)
+	c, ok := s.collection(e.ResourceType)
 	if e.Kind != SharedCollection || !ok {
 		return nil, fmt.Errorf("%s is not a collection: %w", e.Name, ErrNotShared)
 	}
-	_, paths, err := list(e.Owner.Username, e.ResourceID)
+	_, paths, err := c.List(e.Owner.Username, e.ResourceID)
 	if errors.Is(err, plugin.ErrResourceGone) {
 		return nil, ErrNotShared
 	}

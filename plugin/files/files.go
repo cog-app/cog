@@ -462,6 +462,10 @@ func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precon
 	body.Settle(size)
 	w.Done()
 	recorded = true
+	// A file added to a collection mounted here is the owner's as well.
+	if err := p.recordShared(username, filePath); err != nil {
+		p.log.Warn("record uploaded file for its owner; reconcile will", "path", filePath, "err", err)
+	}
 
 	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)
 	return &FileMeta{
@@ -639,6 +643,9 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 
 	db, err := p.DB(username)
 	if err != nil {
+		return err
+	}
+	if ok, err := p.removeFromCollection(db, username, filePath); ok || err != nil {
 		return err
 	}
 	t, ok, err := p.writable(username, filePath)

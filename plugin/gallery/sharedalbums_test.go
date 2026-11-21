@@ -81,7 +81,7 @@ func TestSharedAlbumInFiles(t *testing.T) {
 	e.PostForm(t, "/api/shares/create", url.Values{
 		"resource_type": {"gallery:album"}, "resource_id": {fmt.Sprint(album)},
 		"subject_type": {"USER"}, "subject_id": {bob.ID},
-		"permissions": {fmt.Sprint(plugin.PermRead | plugin.PermWrite)},
+		"permissions": {fmt.Sprint(plugin.PermRead)},
 	}, aliceCookie, aliceCSRF).Status(200)
 
 	e.Get(t, "/apps/files/shared", bob.Auth).Status(200).Contains("Holiday").Contains("view only")
@@ -117,4 +117,71 @@ func TestSharedAlbumInFiles(t *testing.T) {
 	}
 	download("/Photos/Holiday/in.jpg").Status(404)
 	e.Get(t, "/apps/files/shared", bob.Auth).Status(200).NotContains("Holiday")
+}
+
+func TestSharedAlbumUploads(t *testing.T) {
+	e := newScanEnv(t)
+	bob := e.CreateUser(t, "bob", "pass")
+	e.upload(t, "/Photos/2019/in.jpg", photoJPEG(t, 1, 640, 480))
+	e.scan(t)
+	res, err := e.db.Exec(`INSERT INTO albums (name) VALUES ('Holiday')`)
+	require.NoError(t, err)
+	album, err := res.LastInsertId()
+	require.NoError(t, err)
+	_, err = e.db.Exec(`INSERT INTO album_media (album_id, media_id) VALUES (?, ?)`, album, e.mediaID(t, "/Photos/2019/in.jpg"))
+	require.NoError(t, err)
+	aliceCookie, aliceCSRF := sessionAuth(t, e.Env, e.alice)
+	e.PostForm(t, "/api/shares/create", url.Values{
+		"resource_type": {"gallery:album"}, "resource_id": {fmt.Sprint(album)},
+		"subject_type": {"USER"}, "subject_id": {bob.ID},
+		"permissions": {fmt.Sprint(plugin.PermRead | plugin.PermWrite)},
+	}, aliceCookie, aliceCSRF).Status(200)
+	e.Get(t, "/apps/gallery/album/"+fmt.Sprint(album), e.alice.Auth).Status(200).Contains(`placeholder="/Photos/Holiday"`)
+
+	bobCookie, bobCSRF := sessionAuth(t, e.Env, bob)
+	e.PostForm(t, "/apps/files/shared/alice/Holiday", url.Values{"action": {"mount"}, "path": {"/Holiday"}},
+		bobCookie, bobCSRF, cogtest.StopRedirect).Status(303)
+	upload := func(p, body string) *cogtest.Response {
+		return e.PostText(t, "/api/files/upload?path="+url.QueryEscape(p), body, bob.Auth)
+	}
+	aliceFile := func(p string) string {
+		t.Helper()
+		fsys, err := e.Providers.Shared.Files.FS("alice")
+		require.NoError(t, err)
+		data, err := fsys.ReadFile(p)
+		require.NoError(t, err)
+		return string(data)
+	}
+	added := photoJPEG(t, 3, 640, 480)
+	upload("/Holiday/new.jpg", string(added)).Status(201)
+	require.Equal(t, string(added), aliceFile("/Photos/Holiday/new.jpg"))
+	_, err = e.Providers.Shared.Files.ReconcileTree(context.Background(), "bob", "/Holiday")
+	require.NoError(t, err)
+	e.Get(t, "/api/files/download?path="+url.QueryEscape("/Holiday/new.jpg"), bob.Auth).Status(200).Equals(string(added))
+	r := upload("/Holiday/in.jpg", "x")
+	require.True(t, r.StatusCode >= 400, "overwrite of the owner's photo: %d", r.StatusCode)
+
+	var pending int
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_pending WHERE album_id = ?`, album).Scan(&pending))
+	require.Equal(t, 1, pending)
+	e.scan(t)
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_pending`).Scan(&pending))
+	require.Equal(t, 0, pending)
+	var inAlbum int
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_media WHERE album_id = ? AND media_id = ?`,
+		album, e.mediaID(t, "/Photos/Holiday/new.jpg")).Scan(&inAlbum))
+	require.Equal(t, 1, inAlbum)
+
+	e.Delete(t, "/api/files/delete?path="+url.QueryEscape("/Holiday/in.jpg"), bob.Auth).Status(204)
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_media WHERE album_id = ? AND media_id = ?`,
+		album, e.mediaID(t, "/Photos/2019/in.jpg")).Scan(&inAlbum))
+	require.Equal(t, 0, inAlbum)
+	aliceFile("/Photos/2019/in.jpg")
+
+	e.PostForm(t, "/apps/gallery/albums/"+fmt.Sprint(album)+"/rename", url.Values{
+		"name": {"Holiday"}, "upload_folder": {"Shared/Hol"},
+	}, aliceCookie, aliceCSRF, cogtest.StopRedirect).Status(303)
+	later := photoJPEG(t, 4, 640, 480)
+	upload("/Holiday/later.jpg", string(later)).Status(201)
+	require.Equal(t, string(later), aliceFile("/Shared/Hol/later.jpg"))
 }

@@ -25,6 +25,7 @@ type NavItem = cogplugin.NavItem
 type Widget = cogplugin.Widget
 type HookCallback = cogplugin.HookCallback
 type ResourceDef = cogplugin.ResourceDef
+type Collection = cogplugin.Collection
 type ResourceHandler = cogplugin.ResourceHandler
 type ResourceHandlerFunc = cogplugin.ResourceHandlerFunc
 type UserContext = cogplugin.UserContext

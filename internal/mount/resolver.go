@@ -29,9 +29,9 @@ type Resolver struct {
 	// or "" when it is not there any more: a shared folder is named by its
 	// ID, and its path changes when it is moved.
 	DirPath func(owner, resourceID string) (string, error)
-	// Collection returns how to list a plugin resource type a share mount
-	// may mount as a folder of its owner's files.
-	Collection func(resourceType string) (CollectionFunc, bool)
+	// Collection returns a plugin resource type a share mount may mount as
+	// a folder of its owner's files.
+	Collection func(resourceType string) (*plugin.Collection, bool)
 
 	mu    sync.Mutex
 	cache map[string]cachedFS // by username
@@ -44,10 +44,6 @@ type cachedFS struct {
 
 // cacheTTL is how long a user's VFS is trusted without a change notice.
 const cacheTTL = 30 * time.Second
-
-// CollectionFunc returns a collection's name and where its files are in
-// owner's files.
-type CollectionFunc = func(owner, resourceID string) (name string, paths []string, err error)
 
 // SharedDirType is the share resource type of a directory of the files
 // plugin: what a share mount mounts.
@@ -284,7 +280,7 @@ func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEn
 		return volume.MountEntry{}, false, nil
 	}
 	if m.ShareResourceType != SharedDirType {
-		return r.collectionEntry(owner, m, depth)
+		return r.collectionEntry(owner, m, perms, depth)
 	}
 	if r.DirPath == nil {
 		return volume.MountEntry{}, false, nil
@@ -316,18 +312,18 @@ func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEn
 	return e, true, nil
 }
 
-// collectionEntry mounts a plugin's collection of owner's files, read-only:
-// a change to one would be a change to the owner's file, which the
-// collection does not hold.
-func (r *Resolver) collectionEntry(owner *user.User, m *Mount, depth int) (volume.MountEntry, bool, error) {
+// collectionEntry mounts a plugin's collection of owner's files. A file in
+// it is the owner's, so it cannot be changed through the mount; with write
+// permission, files can be added to the collection and taken out of it.
+func (r *Resolver) collectionEntry(owner *user.User, m *Mount, perms uint32, depth int) (volume.MountEntry, bool, error) {
 	if r.Collection == nil {
 		return volume.MountEntry{}, false, nil
 	}
-	list, ok := r.Collection(m.ShareResourceType)
+	c, ok := r.Collection(m.ShareResourceType)
 	if !ok {
 		return volume.MountEntry{}, false, nil
 	}
-	if _, _, err := list(owner.Username, m.ShareResourceID); errors.Is(err, plugin.ErrResourceGone) {
+	if _, _, err := c.List(owner.Username, m.ShareResourceID); errors.Is(err, plugin.ErrResourceGone) {
 		return volume.MountEntry{}, false, nil
 	} else if err != nil {
 		return volume.MountEntry{}, false, fmt.Errorf("%s %s of %s: %w", m.ShareResourceType, m.ShareResourceID, owner.Username, err)
@@ -336,18 +332,35 @@ func (r *Resolver) collectionEntry(owner *user.User, m *Mount, depth int) (volum
 	if err != nil {
 		return volume.MountEntry{}, false, fmt.Errorf("files of %s: %w", owner.Username, err)
 	}
-	backend := volume.NewCollectionFS(ownerFS, func() ([]string, error) {
-		_, paths, err := list(owner.Username, m.ShareResourceID)
+	backend := collectionFS(ownerFS, owner.Username, m.ShareResourceID, c, perms&plugin.PermWrite != 0)
+	return volume.MountEntry{
+		UserPath:   m.UserPath,
+		Backend:    backend,
+		ReadOnly:   !backend.Writable(),
+		ChargeTo:   owner.Username,
+		ShareOwner: owner.Username,
+	}, true, nil
+}
+
+// collectionFS is the folder of owner's files c lists for the resource
+// id, taking additions and removals when write allows them and c can.
+func collectionFS(ownerFS vfs.FS, owner, id string, c *plugin.Collection, write bool) *volume.CollectionFS {
+	fs := volume.NewCollectionFS(ownerFS, func() ([]string, error) {
+		_, paths, err := c.List(owner, id)
 		if errors.Is(err, plugin.ErrResourceGone) {
 			return nil, nil
 		}
 		return paths, err
 	})
-	return volume.MountEntry{
-		UserPath:   m.UserPath,
-		Backend:    backend,
-		ReadOnly:   true,
-		ChargeTo:   owner.Username,
-		ShareOwner: owner.Username,
-	}, true, nil
+	if !write {
+		return fs
+	}
+	if c.Folder != nil && c.Add != nil {
+		fs.Folder = func() (string, error) { return c.Folder(owner, id) }
+		fs.Add = func(p string) error { return c.Add(owner, id, p) }
+	}
+	if c.Remove != nil {
+		fs.Remove = func(p string) error { return c.Remove(owner, id, p) }
+	}
+	return fs
 }

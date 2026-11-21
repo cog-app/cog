@@ -1,8 +1,10 @@
 package volume
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"slices"
@@ -57,11 +59,17 @@ func CollectionEntries(paths []string) []CollectionEntry {
 // plugin that keeps it.
 const collectionTTL = 2 * time.Second
 
-// CollectionFS is a read-only flat folder of files from someone's tree,
-// as a plugin lists them: an album's photos, say.
+// CollectionFS is a flat folder of files from someone's tree, as a plugin
+// lists them: an album's photos, say. Its files are the owner's and cannot
+// be changed through it. With Folder and Add set, a new file is written to
+// Folder and added to the collection; with Remove, deleting one takes it out.
 type CollectionFS struct {
 	owner vfs.FS
 	list  func() ([]string, error)
+
+	Folder func() (string, error)
+	Add    func(ownerPath string) error
+	Remove func(ownerPath string) error
 
 	mu      sync.Mutex
 	entries []CollectionEntry
@@ -71,6 +79,17 @@ type CollectionFS struct {
 // NewCollectionFS returns the folder of the files list names in owner.
 func NewCollectionFS(owner vfs.FS, list func() ([]string, error)) *CollectionFS {
 	return &CollectionFS{owner: owner, list: list}
+}
+
+// Writable reports whether files can be added to or removed from c.
+func (c *CollectionFS) Writable() bool {
+	return (c.Folder != nil && c.Add != nil) || c.Remove != nil
+}
+
+func (c *CollectionFS) invalidate() {
+	c.mu.Lock()
+	c.expires = time.Time{}
+	c.mu.Unlock()
 }
 
 func (c *CollectionFS) load() ([]CollectionEntry, error) {
@@ -191,21 +210,114 @@ func (c *CollectionFS) Unwrap(p string) (vfs.FS, string, error) {
 }
 
 func (c *CollectionFS) OpenFile(p string, flag int, perm os.FileMode) (vfs.File, error) {
-	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
-		return nil, vfs.ErrReadOnly
-	}
-	t, err := c.target(p)
-	if err != nil {
-		return nil, err
-	}
 	opener, ok := c.owner.(vfs.FileOpener)
 	if !ok {
 		return nil, fmt.Errorf("backend does not support OpenFile")
 	}
-	return opener.OpenFile(t, flag, perm)
+	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) == 0 {
+		t, err := c.target(p)
+		if err != nil {
+			return nil, err
+		}
+		return opener.OpenFile(t, flag, perm)
+	}
+	if flag&os.O_CREATE == 0 {
+		if _, err := c.target(p); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+	}
+	dst, err := c.newFile(p)
+	if err != nil {
+		return nil, err
+	}
+	f, err := opener.OpenFile(dst, flag|os.O_EXCL, perm)
+	if err != nil {
+		return nil, err
+	}
+	// Added before it is written, so the name answers a stat while it is.
+	if err := c.added(dst); err != nil {
+		return nil, errors.Join(err, f.Close())
+	}
+	return f, nil
 }
 
-func (c *CollectionFS) Put(p string, _ io.Reader) error { return vfs.ErrReadOnly }
-func (c *CollectionFS) Mkdir(p string) error            { return vfs.ErrReadOnly }
-func (c *CollectionFS) Delete(p string) error           { return vfs.ErrReadOnly }
-func (c *CollectionFS) Rename(_, _ string) error        { return vfs.ErrReadOnly }
+func (c *CollectionFS) Put(p string, content io.Reader) error {
+	dst, err := c.newFile(p)
+	if err != nil {
+		return err
+	}
+	if err := c.owner.Put(dst, content); err != nil {
+		return err
+	}
+	return c.added(dst)
+}
+
+// newFile returns where in its owner's files a file added as p goes: in
+// Folder, under p's name or, when that is taken there, "name (2).ext".
+func (c *CollectionFS) newFile(p string) (string, error) {
+	if c.Folder == nil || c.Add == nil {
+		return "", vfs.ErrReadOnly
+	}
+	p = path.Clean("/" + p)
+	if p == "/" || path.Dir(p) != "/" {
+		return "", fmt.Errorf("%s: a collection holds no folders: %w", p, vfs.ErrReadOnly)
+	}
+	if _, ok := c.OwnerPath(p); ok {
+		return "", fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+	}
+	folder, err := c.Folder()
+	if err != nil {
+		return "", err
+	}
+	folder = path.Clean("/" + folder)
+	if err := c.owner.Mkdir(folder); err != nil {
+		return "", fmt.Errorf("create %s: %w", folder, err)
+	}
+	base := p[1:]
+	ext := path.Ext(base)
+	name := base
+	for n := 2; ; n++ {
+		dst := path.Join(folder, name)
+		_, err := c.owner.Stat(dst)
+		if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+			return dst, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		name = strings.TrimSuffix(base, ext) + " (" + strconv.Itoa(n) + ")" + ext
+	}
+}
+
+// added adds dst, just written, to the collection, or removes it from the
+// owner's files when it cannot be.
+func (c *CollectionFS) added(dst string) error {
+	defer c.invalidate()
+	if err := c.Add(dst); err != nil {
+		return errors.Join(fmt.Errorf("add %s: %w", dst, err), c.owner.Delete(dst))
+	}
+	return nil
+}
+
+func (c *CollectionFS) Mkdir(p string) error {
+	if path.Clean("/"+p) == "/" {
+		return nil
+	}
+	return fmt.Errorf("%s: a collection holds no folders: %w", p, vfs.ErrReadOnly)
+}
+
+// Delete takes p out of the collection. Its file stays in the owner's files.
+func (c *CollectionFS) Delete(p string) error {
+	if c.Remove == nil {
+		return vfs.ErrReadOnly
+	}
+	t, err := c.target(p)
+	if err != nil {
+		return err
+	}
+	defer c.invalidate()
+	return c.Remove(t)
+}
+
+func (c *CollectionFS) Rename(_, _ string) error { return vfs.ErrReadOnly }

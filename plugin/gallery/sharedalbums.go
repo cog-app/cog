@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,11 +84,20 @@ func albumsByID(db *sql.DB, ids []int64) ([]Album, error) {
 	return scanAlbumRows(rows)
 }
 
-// albumCollection is an album as a folder of its owner's files.
-func (p *Plugin) albumCollection(owner, resourceID string) (string, []string, error) {
+func albumIDOf(resourceID string) (int64, error) {
 	id, err := strconv.ParseInt(resourceID, 10, 64)
 	if err != nil {
-		return "", nil, cogplugin.ErrResourceGone
+		return 0, cogplugin.ErrResourceGone
+	}
+	return id, nil
+}
+
+// albumCollection is an album as a folder of its owner's files: its media,
+// and what was added through a share that no scan has reached yet.
+func (p *Plugin) albumCollection(owner, resourceID string) (string, []string, error) {
+	id, err := albumIDOf(resourceID)
+	if err != nil {
+		return "", nil, err
 	}
 	db, err := p.DB(owner)
 	if err != nil {
@@ -100,7 +110,8 @@ func (p *Plugin) albumCollection(owner, resourceID string) (string, []string, er
 		return "", nil, err
 	}
 	rows, err := db.Query(`SELECT m.file_path FROM media m JOIN album_media am ON am.media_id = m.id
-		WHERE am.album_id = ?`, id)
+		WHERE am.album_id = ?
+		UNION SELECT file_path FROM album_pending WHERE album_id = ?`, id, id)
 	if err != nil {
 		return "", nil, err
 	}
@@ -114,6 +125,114 @@ func (p *Plugin) albumCollection(owner, resourceID string) (string, []string, er
 		paths = append(paths, fp)
 	}
 	return name, paths, rows.Err()
+}
+
+// albumUploadFolder is where photos added to an album through a share go
+// in its owner's files: the folder they chose, or one named after the album
+// in their first scan folder, which the scan that adds them reaches.
+func (p *Plugin) albumUploadFolder(owner, resourceID string) (string, error) {
+	id, err := albumIDOf(resourceID)
+	if err != nil {
+		return "", err
+	}
+	db, err := p.DB(owner)
+	if err != nil {
+		return "", err
+	}
+	var name, folder string
+	err = db.QueryRow(`SELECT name, upload_folder FROM albums WHERE id = ?`, id).Scan(&name, &folder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", cogplugin.ErrResourceGone
+	}
+	if err != nil {
+		return "", err
+	}
+	if folder != "" {
+		return folder, nil
+	}
+	return defaultUploadFolder(db, name), nil
+}
+
+// albumUploads is where photos added through a share of an album go: the
+// folder its owner chose, if they did, and the one used if not.
+type albumUploads struct {
+	Folder, Default string
+}
+
+func defaultUploadFolder(db *sql.DB, album string) string {
+	root := "/"
+	if roots := scanRoots(ParseScanFolders(db)); len(roots) > 0 {
+		root = roots[0]
+	}
+	return path.Join(root, strings.NewReplacer("/", "-", "\\", "-").Replace(album))
+}
+
+// addToAlbumCollection adds the owner's file at filePath to the album: as
+// its media when a scan has seen it, or pending the scan that will.
+func (p *Plugin) addToAlbumCollection(owner, resourceID, filePath string) error {
+	id, err := albumIDOf(resourceID)
+	if err != nil {
+		return err
+	}
+	db, err := p.DB(owner)
+	if err != nil {
+		return err
+	}
+	return inTx(db, func(tx *sql.Tx) error {
+		res, err := tx.Exec(`INSERT OR IGNORE INTO album_media (album_id, media_id)
+			SELECT ?, id FROM media WHERE file_path = ?`, id, filePath)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n == 0 {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO album_pending (album_id, file_path) VALUES (?, ?)`, id, filePath); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(`UPDATE albums SET updated_at = unixepoch() WHERE id = ?`, id)
+		return err
+	})
+}
+
+// removeFromAlbumCollection takes the owner's file at filePath out of the
+// album.
+func (p *Plugin) removeFromAlbumCollection(owner, resourceID, filePath string) error {
+	id, err := albumIDOf(resourceID)
+	if err != nil {
+		return err
+	}
+	db, err := p.DB(owner)
+	if err != nil {
+		return err
+	}
+	return inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM album_media WHERE album_id = ?
+			AND media_id IN (SELECT id FROM media WHERE file_path = ?)`, id, filePath); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM album_pending WHERE album_id = ? AND file_path = ?`, id, filePath); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`UPDATE albums SET updated_at = unixepoch() WHERE id = ?`, id)
+		return err
+	})
+}
+
+// addPendingAlbumMedia moves files added to albums through a share into
+// them once a scan has made them media.
+func addPendingAlbumMedia(db *sql.DB) error {
+	return inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO album_media (album_id, media_id)
+			SELECT p.album_id, m.id FROM album_pending p JOIN media m ON m.file_path = p.file_path`); err != nil {
+			return fmt.Errorf("add pending album media: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM album_pending WHERE file_path IN (SELECT file_path FROM media)`); err != nil {
+			return fmt.Errorf("clear pending album media: %w", err)
+		}
+		return nil
+	})
 }
 
 // errNotShared hides whether an album exists from someone it was not shared

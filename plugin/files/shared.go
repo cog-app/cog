@@ -1,6 +1,7 @@
 package files
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,9 @@ type sharedTarget struct {
 	path      string
 	readOnly  bool // the share does not let username write
 	mountRoot bool // path is the mount point itself
+	// collection: path is in a plugin's collection of the owner's files,
+	// whose files cannot be changed through it, only taken out.
+	collection bool
 }
 
 // shared reports whether path is in a folder shared with username and
@@ -56,6 +60,13 @@ func (p *Plugin) shared(username, path string) (sharedTarget, bool, error) {
 			t.mountRoot = mountPath == normalizePath(path)
 		}
 	}
+	if en, ok := fsys.(interface {
+		Entry(string) (volume.MountEntry, error)
+	}); ok {
+		if e, err := en.Entry(path); err == nil {
+			_, t.collection = e.Backend.(*volume.CollectionFS)
+		}
+	}
 	return t, true, nil
 }
 
@@ -66,10 +77,30 @@ func (p *Plugin) writable(username, path string) (sharedTarget, bool, error) {
 	if err != nil || !ok {
 		return t, ok, err
 	}
-	if t.readOnly {
+	if t.readOnly || t.collection {
 		return t, true, vfs.ErrReadOnly
 	}
 	return t, true, nil
+}
+
+// removeFromCollection takes path out of the collection mounted in
+// username's files that holds it (true), leaving the owner's file be.
+func (p *Plugin) removeFromCollection(db *sql.DB, username, path string) (bool, error) {
+	t, ok, err := p.shared(username, path)
+	if err != nil || !ok || !t.collection {
+		return false, err
+	}
+	if t.mountRoot {
+		return true, errMountPoint
+	}
+	fsys, err := p.userFS(username)
+	if err != nil {
+		return true, err
+	}
+	if err := fsys.Delete(path); err != nil {
+		return true, err
+	}
+	return true, forgetRows(db, path)
 }
 
 // recordShared records path on its owner's side after it changed beneath

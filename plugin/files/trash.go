@@ -84,6 +84,9 @@ func (p *Plugin) Trash(username, filePath string) error {
 	if err != nil {
 		return err
 	}
+	if ok, err := p.removeFromCollection(db, username, filePath); ok || err != nil {
+		return err
+	}
 	// What is deleted from a folder shared with username goes to its
 	// owner's trash: it is theirs to restore.
 	t, ok, err := p.writable(username, filePath)

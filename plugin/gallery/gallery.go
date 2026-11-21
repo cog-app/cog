@@ -133,10 +133,15 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		EnrichSQL:    "SELECT rowid, file_path, place_name, camera_model, ocr_text FROM media WHERE rowid IN (?)",
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
-		Type:       albumResourceType,
-		Table:      "albums",
-		IDColumn:   "id",
-		Collection: p.albumCollection,
+		Type:     albumResourceType,
+		Table:    "albums",
+		IDColumn: "id",
+		Collection: &plugin.Collection{
+			List:   p.albumCollection,
+			Folder: p.albumUploadFolder,
+			Add:    p.addToAlbumCollection,
+			Remove: p.removeFromAlbumCollection,
+		},
 	})
 	ctx.RegisterResource(plugin.ResourceDef{
 		Type:     peopleResourceType,
