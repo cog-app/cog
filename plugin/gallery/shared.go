@@ -25,7 +25,7 @@ type shareTargeter interface {
 // sharedSig is what changes when a scan stage stores something for a photo,
 // read the same way on both sides so a copy is made only when it would
 // differ.
-const sharedSig = `width || '/' || height || '/' || coalesce(date_taken, '') || '/' || city || '/' ||
+const sharedSig = `width || '/' || height || '/' || coalesce(date_taken, '') || '/' || date_indexed || '/' || city || '/' ||
 	quality_score || '/' || fingerprint || '/' || length(ocr_text) || '/' || content_key || '/' ||
 	scan_error || '/' || recognition_state || '/' || coalesce(recognition_at, '')`
 

@@ -10,10 +10,12 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/gallery"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // photoJPEG draws a noisy gradient, distinct per seed, so fingerprints and
@@ -204,4 +206,22 @@ func TestAdminPageShowsPendingWork(t *testing.T) {
 	e := newScanEnv(t) // alice is the first user, so the admin
 	e.upload(t, "/Photos/a.jpg", photoJPEG(t, 1, 64, 48))
 	e.Get(t, "/admin/plugins/gallery", e.alice.Auth).Status(200).Contains("Waiting for").Contains("<td>alice</td>")
+}
+
+// A photo with no date of its own is placed by its file's time, not by the
+// day the gallery found it.
+func TestUndatedPhotoTakesFileTime(t *testing.T) {
+	e := newScanEnv(t)
+	e.upload(t, "/Photos/old.jpg", photoJPEG(t, 1, 64, 64))
+	fsys, err := e.Providers.Shared.Files.FS("alice")
+	require.NoError(t, err)
+	mtime := time.Date(2011, time.June, 5, 10, 0, 0, 0, time.UTC)
+	require.NoError(t, fsys.(vfs.AttrSetter).Chtimes("/Photos/old.jpg", mtime, mtime))
+	e.scan(t)
+
+	var taken sql.NullInt64
+	var dated int64
+	require.NoError(t, e.db.QueryRow(`SELECT date_taken, date_indexed FROM media WHERE file_path = '/Photos/old.jpg'`).Scan(&taken, &dated))
+	require.False(t, taken.Valid)
+	require.Equal(t, mtime.Unix(), dated)
 }

@@ -200,6 +200,9 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := report.time("metadata", func() error { return p.extractMetadata(ctx, galleryDB, username) }); err != nil {
 		return warnings, false, fmt.Errorf("metadata: %w", err)
 	}
+	if err := report.time("file-dates", func() error { return fileDates(galleryDB, filesDB) }); err != nil {
+		warn("file-dates", err)
+	}
 
 	sysDB, err := p.SystemDB()
 	if err != nil {
@@ -442,6 +445,61 @@ func (p *Plugin) contentKeyOf(username, filePath string) string {
 	}
 	p.log.Debug("content key", "path", filePath, "err", err)
 	return ""
+}
+
+// fileDates dates a photo that carries no date of its own by its file's
+// modification time, not by when the gallery first saw it: a library copied
+// or re-indexed in one go would otherwise all land on that day. A shared
+// photo has its owner's date copied.
+func fileDates(galleryDB, filesDB *sql.DB) error {
+	rows, err := galleryDB.Query(`SELECT id, file_id, date_indexed FROM media WHERE date_taken IS NULL AND shared_from = ''`)
+	if err != nil {
+		return err
+	}
+	type undated struct{ id, fileID, date int64 }
+	var media []undated
+	for rows.Next() {
+		var u undated
+		if err := rows.Scan(&u.id, &u.fileID, &u.date); err != nil {
+			rows.Close()
+			return err
+		}
+		media = append(media, u)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	if len(media) == 0 {
+		return nil
+	}
+	mtimes := make(map[int64]int64, len(media))
+	frows, err := filesDB.Query(`SELECT id, disk_mtime FROM files WHERE is_dir = 0 AND disk_mtime > 0`)
+	if err != nil {
+		return fmt.Errorf("file times: %w", err)
+	}
+	for frows.Next() {
+		var id, mtime int64
+		if err := frows.Scan(&id, &mtime); err != nil {
+			frows.Close()
+			return fmt.Errorf("file times: %w", err)
+		}
+		mtimes[id] = mtime
+	}
+	if err := errors.Join(frows.Err(), frows.Close()); err != nil {
+		return fmt.Errorf("file times: %w", err)
+	}
+	return inTx(galleryDB, func(tx *sql.Tx) error {
+		for _, u := range media {
+			mtime, ok := mtimes[u.fileID]
+			if !ok || mtime == u.date {
+				continue
+			}
+			if _, err := tx.Exec(`UPDATE media SET date_indexed = ? WHERE id = ?`, mtime, u.id); err != nil {
+				return fmt.Errorf("date media %d: %w", u.id, err)
+			}
+		}
+		return nil
+	})
 }
 
 // extractMetadata reads EXIF data from images that haven't been processed yet.
