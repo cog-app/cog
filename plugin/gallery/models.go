@@ -10,6 +10,10 @@ const DeviceCUDA = "cuda"
 // server have different hardware.
 func onnxDevice() string { return os.Getenv("COG_ONNX_DEVICE") }
 
+// onnxLibrary is COG_ONNX_LIBRARY, for a worker whose onnxruntime is not in
+// a system directory, such as the GPU build beside its CUDA libraries.
+func onnxLibrary() string { return os.Getenv("COG_ONNX_LIBRARY") }
+
 const (
 	mobilenetFile  = "mobilenetv2-12-int8.onnx"
 	joytagFile     = "joytag.onnx"

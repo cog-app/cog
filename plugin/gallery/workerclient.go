@@ -103,7 +103,7 @@ func (p *Plugin) runRemoteWorker(ctx context.Context, server string) error {
 		CPU:      cpuModel(),
 		Threads:  threads,
 		OCR:      TesseractAvailable(),
-		ONNX:     (&OnnxBackend{}).Available(),
+		ONNX:     (&OnnxBackend{LibraryPath: onnxLibrary()}).Available(),
 	})
 	defer func() { rw.release() }()
 	p.log.Info("worker starting", "server", rw.server, "threads", threads, "models", modelsDir)
@@ -299,7 +299,7 @@ func (rw *remoteWorker) backend(cfg workerConfig) func(RecognitionBackendType) (
 		case BackendPigo:
 			return &PigoBackend{}, nil
 		case BackendOnnx:
-			b := &OnnxBackend{ModelsDir: rw.modelsDir, TagModel: cfg.TagModel, Threads: rw.threads, Device: onnxDevice()}
+			b := &OnnxBackend{ModelsDir: rw.modelsDir, LibraryPath: onnxLibrary(), TagModel: cfg.TagModel, Threads: rw.threads, Device: onnxDevice()}
 			if !b.Available() {
 				return nil, errors.New("onnx backend not available: libonnxruntime.so not found")
 			}
