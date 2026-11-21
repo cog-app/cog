@@ -204,6 +204,65 @@ func TestCp(t *testing.T) {
 	}
 }
 
+func TestCpRecursive(t *testing.T) {
+	sh, dir := newTestShell(t)
+	runCmd(t, sh, "mkdir /files/Documents/sub && echo deep > /files/Documents/sub/deep.txt")
+
+	if _, stderr := runCmd(t, sh, "cp /files/Documents /files/Copy"); !strings.Contains(stderr, "omitting directory") {
+		t.Fatalf("expected cp without -r to refuse a directory, got %q", stderr)
+	}
+	if _, stderr := runCmd(t, sh, "cp -r /files/Documents /files/Copy"); stderr != "" {
+		t.Fatal(stderr)
+	}
+	for _, f := range []string{"Copy/notes.txt", "Copy/sub/deep.txt", "Documents/notes.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, stderr := runCmd(t, sh, "cp -R /files/Documents /files/Copy"); stderr != "" {
+		t.Fatal(stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Copy/Documents/sub/deep.txt")); err != nil {
+		t.Fatal("expected a copy into an existing directory to land inside it:", err)
+	}
+
+	if _, stderr := runCmd(t, sh, "cp -r /files/Documents /files/Documents/sub"); !strings.Contains(stderr, "into itself") {
+		t.Fatalf("expected copying a directory into itself to fail, got %q", stderr)
+	}
+}
+
+func TestCpMultiple(t *testing.T) {
+	sh, dir := newTestShell(t)
+	runCmd(t, sh, "mkdir /files/Dest && touch /files/a.txt /files/b.txt")
+
+	if _, stderr := runCmd(t, sh, "cp /files/a.txt /files/b.txt /files/c.txt"); !strings.Contains(stderr, "not a directory") {
+		t.Fatalf("expected several sources to need a directory, got %q", stderr)
+	}
+	if _, stderr := runCmd(t, sh, "cd /files && cp *.txt Dest/"); stderr != "" {
+		t.Fatal(stderr)
+	}
+	for _, f := range []string{"a.txt", "b.txt", "hello.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, "Dest", f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMvMultiple(t *testing.T) {
+	sh, dir := newTestShell(t)
+	runCmd(t, sh, "mkdir /files/Dest && touch /files/a.txt /files/b.txt")
+
+	if _, stderr := runCmd(t, sh, "mv /files/a.txt /files/nosuch.txt /files/b.txt /files/Dest"); stderr == "" {
+		t.Fatal("expected the missing source to be reported")
+	}
+	for _, f := range []string{"a.txt", "b.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, "Dest", f)); err != nil {
+			t.Fatal("expected the other sources to move:", err)
+		}
+	}
+}
+
 func TestMv(t *testing.T) {
 	sh, dir := newTestShell(t)
 	runCmd(t, sh, "touch /files/moveme.txt")

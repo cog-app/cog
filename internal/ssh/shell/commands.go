@@ -263,53 +263,106 @@ func (s *Shell) newCatCmd() *cobra.Command {
 }
 
 func (s *Shell) newCpCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "cp <src> <dst>",
-		Short:             "Copy a file",
-		Args:              cobra.ExactArgs(2),
+	var recursive bool
+	cmd := &cobra.Command{
+		Use:               "cp [flags] <src...> <dst>",
+		Short:             "Copy files and directories",
+		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
-			srcVP := s.toVirtualPath(dir, args[0])
-			dstVP := s.toVirtualPath(dir, args[1])
-			if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
-				dstVP = path.Join(dstVP, path.Base(srcVP))
-			}
-			rc, err := s.fs.Get(srcVP)
-			if err != nil {
-				s.errorf(stderr, "cp: %v\n", err)
-				return exitErr(1)
-			}
-			defer rc.Close()
-			if err := s.fs.Put(dstVP, rc); err != nil {
-				s.errorf(stderr, "cp: %v\n", err)
-				return exitErr(1)
-			}
-			return nil
+			return s.eachTarget(stderr, "cp", dir, args, func(src, dst string) error {
+				fi, err := s.fs.Stat(src)
+				if err != nil {
+					return err
+				}
+				if fi.IsDir {
+					if !recursive {
+						return fmt.Errorf("-r not specified; omitting directory %s", src)
+					}
+					if dst == src || strings.HasPrefix(dst, src+"/") {
+						return fmt.Errorf("cannot copy %s into itself", src)
+					}
+				}
+				return s.copyTree(src, dst, fi)
+			})
 		},
 	}
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "Copy directories recursively")
+	cmd.Flags().BoolVarP(&recursive, "R", "R", false, "Same as -r")
+	_ = cmd.Flags().MarkHidden("R")
+	return cmd
+}
+
+func (s *Shell) copyTree(src, dst string, fi *vfs.FileInfo) error {
+	if !fi.IsDir {
+		rc, err := s.fs.Get(src)
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+		return s.fs.Put(dst, rc)
+	}
+	if err := s.fs.Mkdir(dst); err != nil {
+		return err
+	}
+	entries, err := s.fs.List(src)
+	if err != nil {
+		return err
+	}
+	for i := range entries {
+		e := &entries[i]
+		if err := s.copyTree(path.Join(src, e.Name), path.Join(dst, e.Name), e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Shell) newMvCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:               "mv <src> <dst>",
-		Short:             "Move or rename a file",
-		Args:              cobra.ExactArgs(2),
+		Use:               "mv <src...> <dst>",
+		Short:             "Move or rename files",
+		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: s.completePaths,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, stderr, _, dir := getHC(cmd)
-			srcVP := s.toVirtualPath(dir, args[0])
-			dstVP := s.toVirtualPath(dir, args[1])
-			if fi, err := s.fs.Stat(dstVP); err == nil && fi.IsDir {
-				dstVP = path.Join(dstVP, path.Base(srcVP))
-			}
-			if err := s.fs.Rename(srcVP, dstVP); err != nil {
-				s.errorf(stderr, "mv: %v\n", err)
-				return exitErr(1)
-			}
-			return nil
+			return s.eachTarget(stderr, "mv", dir, args, s.fs.Rename)
 		},
 	}
+}
+
+// eachTarget applies op to each source in args and its destination, the last
+// arg. With several sources the destination must be a directory. A failed
+// source is reported and the rest still run, as coreutils does.
+func (s *Shell) eachTarget(stderr io.Writer, name, dir string, args []string, op func(src, dst string) error) error {
+	srcs, target := args[:len(args)-1], s.toVirtualPath(dir, args[len(args)-1])
+	fi, err := s.fs.Stat(target)
+	if err != nil && !isNotExist(err) {
+		s.errorf(stderr, "%s: %v\n", name, err)
+		return exitErr(1)
+	}
+	intoDir := err == nil && fi.IsDir
+	if len(srcs) > 1 && !intoDir {
+		s.errorf(stderr, "%s: target %s is not a directory\n", name, args[len(args)-1])
+		return exitErr(1)
+	}
+	failed := false
+	for _, src := range srcs {
+		srcVP := s.toVirtualPath(dir, src)
+		dst := target
+		if intoDir {
+			dst = path.Join(target, path.Base(srcVP))
+		}
+		if err := op(srcVP, dst); err != nil {
+			s.errorf(stderr, "%s: %v\n", name, err)
+			failed = true
+		}
+	}
+	if failed {
+		return exitErr(1)
+	}
+	return nil
 }
 
 func (s *Shell) newRmCmd() *cobra.Command {

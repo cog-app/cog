@@ -187,8 +187,9 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		dir:   func() string { return runner.Dir },
 	}
 
+	prompt := s.prompt(runner)
 	rlCfg := &readline.Config{
-		Prompt:       s.prompt(runner),
+		Prompt:       prompt,
 		AutoComplete: comp,
 		Stdin:        rlStdin,
 		Stdout:       rlStdout,
@@ -210,6 +211,11 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		rlCfg.FuncOnWidthChanged = func(func()) {}
 	}
 
+	rlCfg.Painter = func(line []rune, _ int) []rune {
+		width, _ := rlCfg.FuncGetSize()
+		return comp.paint(prompt, line, width)
+	}
+
 	rl, err := readline.NewFromConfig(rlCfg)
 	if err != nil {
 		return err
@@ -218,6 +224,9 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 
 	for {
 		line, err := rl.Readline()
+		if clearErr := comp.clearShown(rlStdout); clearErr != nil {
+			return fmt.Errorf("clear completion message: %w", clearErr)
+		}
 		if err == readline.ErrInterrupt {
 			continue
 		}
@@ -259,7 +268,8 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 		}
 
 		// Update prompt — pwd may have changed.
-		rl.SetPrompt(s.prompt(runner))
+		prompt = s.prompt(runner)
+		rl.SetPrompt(prompt)
 	}
 }
 

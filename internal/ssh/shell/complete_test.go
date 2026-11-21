@@ -2,8 +2,12 @@ package shell
 
 import (
 	"context"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -241,6 +245,91 @@ func TestCompleteFlagNames(t *testing.T) {
 	}
 	if !found["a "] && !found["-all "] {
 		t.Fatalf("expected -a or --all in %v", names)
+	}
+}
+
+// cobra reports a line it cannot complete on the process's stderr, which for
+// the server is its log rather than the session.
+func TestCompleteRejectedLineStaysOffStderr(t *testing.T) {
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = orig })
+
+	for _, line := range []string{"cp -x Pho", "nosuchcmd ", "ls --nosuch=", "head -n abc "} {
+		if got, _ := c.Do([]rune(line), len(line)); len(got) != 0 {
+			t.Errorf("%q: expected no candidates, got %v", line, runeSliceStrings(got))
+		}
+	}
+	os.Stderr = orig
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	leaked, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leaked) != 0 {
+		t.Fatalf("completion wrote to stderr: %q", leaked)
+	}
+}
+
+func TestCompleteProblemPaintedBelowLine(t *testing.T) {
+	sh, _ := newTestShell(t)
+	sh.color = true
+	c := &completer{shell: sh, dir: func() string { return home }}
+	prompt := "\033[1;32mme@cog\033[0m:/files$ "
+	line := []rune("cp -x Pho")
+
+	if got := string(c.paint(prompt, line, 80)); got != string(line) {
+		t.Fatalf("expected nothing painted before a Tab, got %q", got)
+	}
+	if got, _ := c.Do(line, len(line)); len(got) != 0 {
+		t.Fatalf("expected no candidates, got %v", runeSliceStrings(got))
+	}
+	// 15 columns of prompt and 9 of line put the cursor back in column 25.
+	want := "cp -x Pho\n\033[K\033[31mcp: unknown shorthand flag: 'x' in -x\033[0m\033[1A\033[25G"
+	if got := string(c.paint(prompt, line, 80)); got != want {
+		t.Fatalf("painted %q, want %q", got, want)
+	}
+	if got := string(c.paint(prompt, line, 80)); got != string(line) {
+		t.Fatalf("expected the problem to be painted once, got %q", got)
+	}
+
+	var cleared strings.Builder
+	require.NoError(t, c.clearShown(&cleared))
+	require.NoError(t, c.clearShown(&cleared))
+	if cleared.String() != "\033[J" {
+		t.Fatalf("expected one clear after a problem was shown, got %q", cleared.String())
+	}
+}
+
+func TestCompleteProblemTruncatedToWidth(t *testing.T) {
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
+	line := []rune("nosuchcommand ")
+	c.Do(line, len(line))
+	want := "nosuchcommand \n\033[Knosuchcommand: comma\033[1A\033[17G"
+	if got := string(c.paint("$ ", line, 21)); got != want {
+		t.Fatalf("painted %q, want %q", got, want)
+	}
+}
+
+func TestCompleteAfterFlag(t *testing.T) {
+	sh, _ := newTestShell(t)
+	c := &completer{shell: sh, dir: func() string { return home }}
+
+	line := []rune("cp -r Doc")
+	candidates, _ := c.Do(line, len(line))
+	got := runeSliceStrings(candidates)
+	if len(got) != 1 || got[0] != "uments/" {
+		t.Fatalf("expected Documents/, got %v", got)
 	}
 }
 

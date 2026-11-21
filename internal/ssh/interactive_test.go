@@ -154,6 +154,60 @@ func TestSSHInteractiveShell(t *testing.T) {
 	}
 }
 
+// A Tab that cannot complete says why on the row below the line, in the
+// session; cobra would otherwise print it on the server's stderr.
+func TestSSHCompletionProblemShownInSession(t *testing.T) {
+	client := startTestServer(t)
+	sess, err := client.NewSession()
+	require.NoError(t, err)
+	defer sess.Close()
+	require.NoError(t, sess.RequestPty("xterm", 24, 80, gossh.TerminalModes{gossh.ECHO: 1}))
+	stdin, err := sess.StdinPipe()
+	require.NoError(t, err)
+	stdout, err := sess.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, sess.Shell())
+
+	seen := make(chan string, 1)
+	go func() {
+		var all strings.Builder
+		buf := make([]byte, 4096)
+		prompted := false
+		for {
+			n, err := stdout.Read(buf)
+			all.Write(buf[:n])
+			if !prompted && strings.Contains(all.String(), "$ ") {
+				prompted = true
+				seen <- ""
+			}
+			if strings.Contains(all.String(), "\033[1A") {
+				seen <- all.String()
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case <-seen:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the prompt")
+	}
+	// See shellSession: keystrokes during readline's cursor query are lost.
+	time.Sleep(100 * time.Millisecond)
+	_, err = stdin.Write([]byte("cp -x Pho\t"))
+	require.NoError(t, err)
+	select {
+	case got := <-seen:
+		if !strings.Contains(got, "\r\n\033[K\033[31mcp: unknown shorthand flag: 'x' in -x\033[0m\033[1A") {
+			t.Fatalf("expected the problem below the line; got %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the completion problem")
+	}
+}
+
 // shellSession runs an interactive pty session, typing each line once the
 // prompt is up, and returns how the session ended.
 func shellSession(t *testing.T, client *gossh.Client, lines ...string) error {
