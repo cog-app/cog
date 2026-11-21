@@ -88,146 +88,6 @@ func (p *Plugin) resolveBackend(db *sql.DB, backendType RecognitionBackendType) 
 	}
 }
 
-// runRecognition processes pending media through tag and face backends.
-// Each feature has its own backend setting; if both use the same backend type,
-// Analyze is called once and results are split.
-func (p *Plugin) runRecognition(ctx context.Context, db *sql.DB, username string) error {
-	sysDB, err := p.SystemDB()
-	if err != nil {
-		return fmt.Errorf("system db: %w", err)
-	}
-
-	tagBackendType := SettingTagBackend.MustGet(sysDB)
-	faceBackendType := SettingFaceBackend.MustGet(sysDB)
-	if tagBackendType == BackendNone && faceBackendType == BackendNone {
-		return nil
-	}
-
-	// Resolve backends. If both use the same type, share the instance.
-	var tagBackend, faceBackend RecognitionBackend
-	if tagBackendType != BackendNone {
-		tagBackend, err = p.resolveBackend(sysDB, tagBackendType)
-		if err != nil {
-			return fmt.Errorf("tag backend: %w", err)
-		}
-	}
-	if faceBackendType != BackendNone {
-		if faceBackendType == tagBackendType && tagBackend != nil {
-			faceBackend = tagBackend // share instance
-		} else {
-			faceBackend, err = p.resolveBackend(sysDB, faceBackendType)
-			if err != nil {
-				return fmt.Errorf("face backend: %w", err)
-			}
-		}
-	}
-
-	// Eagerly check for init errors.
-	for _, b := range []RecognitionBackend{tagBackend, faceBackend} {
-		if b == nil {
-			continue
-		}
-		if ic, ok := b.(interface{ InitErr() error }); ok {
-			if err := ic.InitErr(); err != nil {
-				return fmt.Errorf("recognition backend init: %w", err)
-			}
-		}
-	}
-
-	// Register active backends so ReleaseMemory RPC can reach them under memory pressure.
-	// Release sessions after this pass to free C-allocated memory.
-	var backends []RecognitionBackend
-	for _, b := range []RecognitionBackend{tagBackend, faceBackend} {
-		if b == nil {
-			continue
-		}
-		backends = append(backends, b)
-	}
-	p.activeBackendsMu.Lock()
-	p.activeBackends = backends
-	p.activeBackendsMu.Unlock()
-	defer func() {
-		for _, b := range backends {
-			if rc, ok := b.(interface{ Release() }); ok {
-				rc.Release()
-			}
-		}
-		p.activeBackendsMu.Lock()
-		p.activeBackends = nil
-		p.activeBackendsMu.Unlock()
-	}()
-
-	p.log.Info("recognition started", "user", username,
-		"tag_backend", tagBackendType, "face_backend", faceBackendType)
-
-	tagMinConf := SettingTagMinConfidence.MustGet(sysDB)
-	faceMinConf := SettingFaceMinConfidence.MustGet(sysDB)
-	shared := tagBackend != nil && tagBackend == faceBackend
-
-	var processed int
-	for m, err := range pendingRecognition(db) {
-		if err != nil {
-			return err
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		imagePath, failure := p.resolveLocalPath(username, m.FilePath)
-		now := p.ctx.Now().Unix()
-
-		var tags []RecognizedTag
-		var faces []DetectedFace
-		switch {
-		case failure != nil:
-			// Recorded below as this image's failure, like a backend's.
-		case shared:
-			// Both features share a backend — call Analyze once.
-			result, err := tagBackend.Analyze(ctx, imagePath)
-			if err != nil {
-				failure = err
-			} else {
-				tags, faces = result.Tags, result.Faces
-			}
-		default:
-			// Different backends — call each independently. One failing
-			// still keeps what the other found.
-			if tagBackend != nil {
-				if result, err := tagBackend.Analyze(ctx, imagePath); err != nil {
-					failure = err
-				} else {
-					tags = result.Tags
-				}
-			}
-			if faceBackend != nil {
-				if result, err := faceBackend.Analyze(ctx, imagePath); err != nil {
-					failure = err
-				} else {
-					faces = result.Faces
-				}
-			}
-		}
-		if failure != nil {
-			p.log.Error("recognize", "path", m.FilePath, "err", failure)
-		}
-
-		if err := storeRecognition(db, m.ID, tags, faces, tagMinConf, faceMinConf, now, failure); err != nil {
-			return fmt.Errorf("store recognition for %s: %w", m.FilePath, err)
-		}
-		if failure != nil {
-			continue
-		}
-		processed++
-		if processed%50 == 0 {
-			p.log.Info("recognition progress", "user", username, "processed", processed)
-		}
-	}
-	if processed > 0 {
-		p.log.Info("recognition complete", "user", username, "processed", processed)
-	}
-	return nil
-}
-
 // execQuerier is what the recognition writes need: a *sql.DB or a *sql.Tx.
 type execQuerier interface {
 	Exec(query string, args ...any) (sql.Result, error)
@@ -239,11 +99,13 @@ type execQuerier interface {
 // transaction, so a crash part way neither loses the state nor stores the
 // tags and faces twice on the next pass.
 func storeRecognition(db *sql.DB, mediaID int64, tags []RecognizedTag, faces []DetectedFace, tagMinConf, faceMinConf float64, now int64, failure error) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin: %w", err)
-	}
-	defer tx.Rollback()
+	return inTx(db, func(tx *sql.Tx) error {
+		return storeRecognitionTx(tx, mediaID, tags, faces, tagMinConf, faceMinConf, now, failure)
+	})
+}
+
+// storeRecognitionTx is storeRecognition within a caller's transaction.
+func storeRecognitionTx(tx *sql.Tx, mediaID int64, tags []RecognizedTag, faces []DetectedFace, tagMinConf, faceMinConf float64, now int64, failure error) error {
 	// What an earlier pass found belongs to the file as it was; a tag
 	// someone added by hand (confidence 1) stays.
 	if _, err := tx.Exec(`DELETE FROM faces WHERE media_id = ?`, mediaID); err != nil {
@@ -263,10 +125,10 @@ func storeRecognition(db *sql.DB, mediaID int64, tags []RecognizedTag, faces []D
 			now, failure.Error(), mediaID); err != nil {
 			return fmt.Errorf("mark media %d failed: %w", mediaID, err)
 		}
-	} else if _, err := tx.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ? WHERE id = ?`, now, mediaID); err != nil {
+	} else if _, err := tx.Exec(`UPDATE media SET recognition_state = 1, recognition_at = ?, recognition_error = '' WHERE id = ?`, now, mediaID); err != nil {
 		return fmt.Errorf("mark media %d recognized: %w", mediaID, err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 func storeTags(db execQuerier, mediaID int64, tags []RecognizedTag, minConf float64) error {

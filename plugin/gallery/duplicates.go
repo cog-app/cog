@@ -1,12 +1,10 @@
 package gallery
 
 import (
-	"context"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -305,85 +303,6 @@ func DuplicateGroupMemberCount(db *sql.DB, groupID int64) (int, error) {
 
 // --- Fingerprint computation ---
 
-// computeFingerprints generates perceptual hashes for unfingerprinted images.
-func (p *Plugin) computeFingerprints(ctx context.Context, db *sql.DB, username string) error {
-	sysDB, err := p.SystemDB()
-	if err != nil {
-		return fmt.Errorf("system db: %w", err)
-	}
-	if !SettingDuplicateDetectionEnabled.MustGet(sysDB) {
-		return nil
-	}
-
-	algorithm := SettingDuplicateAlgorithm.MustGet(sysDB)
-
-	// Check if algorithm changed — invalidate old fingerprints.
-	lastAlgo := SettingDuplicateAlgorithmUsed.MustGet(db)
-	if lastAlgo != "" && lastAlgo != string(algorithm) {
-		p.log.Info("duplicate algorithm changed, clearing fingerprints", "old", lastAlgo, "new", algorithm)
-		if err := ClearAllFingerprints(db); err != nil {
-			return fmt.Errorf("clear fingerprints: %w", err)
-		}
-	}
-	if err := SettingDuplicateAlgorithmUsed.Set(db, string(algorithm)); err != nil {
-		return fmt.Errorf("record duplicate algorithm: %w", err)
-	}
-
-	hasher, err := getHasher(algorithm)
-	if err != nil {
-		return err
-	}
-
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-		WHERE m.fingerprint = '' AND m.mime_type LIKE 'image/%' AND m.width > 0 LIMIT 100`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	items, err := scanMediaRows(rows)
-	if err != nil {
-		return err
-	}
-
-	var computed int
-	for i := range items {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		m := &items[i]
-		id := m.ID
-
-		f, err := p.openMedia(username, m.FilePath)
-		if err != nil {
-			p.log.Warn("fingerprint: open failed", "id", id, "err", err)
-			continue
-		}
-
-		img, _, err := safeimage.Decode(f)
-		f.Close()
-		if err != nil {
-			p.log.Debug("fingerprint: decode failed", "id", id, "err", err)
-			// Mark with a sentinel so we don't retry.
-			if err := UpdateFingerprint(db, id, "-"); err != nil {
-				return fmt.Errorf("mark fingerprint %d undecodable: %w", id, err)
-			}
-			continue
-		}
-
-		hash := hasher.Calculate(img)
-		fp := hex.EncodeToString([]byte(hash))
-		if err := UpdateFingerprint(db, id, fp); err != nil {
-			return fmt.Errorf("update fingerprint %d: %w", id, err)
-		}
-		computed++
-	}
-
-	if computed > 0 {
-		p.log.Info("fingerprints computed", "user", username, "count", computed)
-	}
-	return nil
-}
-
 // --- Duplicate detection ---
 
 // detectDuplicates groups media with similar fingerprints.
@@ -679,39 +598,6 @@ func betterKeep(candidate, current fpEntry) bool {
 		kDate = *current.DateTaken
 	}
 	return cDate < kDate
-}
-
-// laplacianVariance computes the variance of the Laplacian-filtered image,
-// a measure of sharpness. Higher values indicate sharper images.
-func laplacianVariance(img image.Image) float64 {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	if w < 3 || h < 3 {
-		return 0
-	}
-
-	// Apply Laplacian kernel [[0,1,0],[1,-4,1],[0,1,0]] on grayscale.
-	var sum, sumSq float64
-	n := float64((w - 2) * (h - 2))
-	for y := 1; y < h-1; y++ {
-		for x := 1; x < w-1; x++ {
-			c := gray(img, bounds.Min.X+x, bounds.Min.Y+y)
-			u := gray(img, bounds.Min.X+x, bounds.Min.Y+y-1)
-			d := gray(img, bounds.Min.X+x, bounds.Min.Y+y+1)
-			l := gray(img, bounds.Min.X+x-1, bounds.Min.Y+y)
-			r := gray(img, bounds.Min.X+x+1, bounds.Min.Y+y)
-			lap := u + d + l + r - 4*c
-			sum += lap
-			sumSq += lap * lap
-		}
-	}
-	mean := sum / n
-	return sumSq/n - mean*mean
-}
-
-func gray(img image.Image, x, y int) float64 {
-	r, g, b, _ := img.At(x, y).RGBA()
-	return (0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)) / 65535.0
 }
 
 // UpdateQualityScore sets the quality score for a media item.

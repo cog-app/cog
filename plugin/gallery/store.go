@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"iter"
 	"log/slog"
 	"path"
 	"strconv"
@@ -176,34 +175,6 @@ func scanMediaRows(rows *sql.Rows) ([]Media, error) {
 		result = append(result, *m)
 	}
 	return result, rows.Err()
-}
-
-// pendingRecognition returns an iterator over media items pending recognition.
-func pendingRecognition(db *sql.DB) iter.Seq2[Media, error] {
-	return func(yield func(Media, error) bool) {
-		rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-			WHERE m.recognition_state = 0 AND m.mime_type LIKE 'image/%'`)
-		if err != nil {
-			yield(Media{}, err)
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			m, err := scanMedia(rows)
-			if err != nil {
-				if !yield(Media{}, err) {
-					return
-				}
-				continue
-			}
-			if !yield(*m, nil) {
-				return
-			}
-		}
-		if err := rows.Err(); err != nil {
-			yield(Media{}, err)
-		}
-	}
 }
 
 // GetMedia returns a single media item by ID.
@@ -1390,4 +1361,38 @@ func fmtMonthName(key string) string {
 		return key
 	}
 	return t.Format("January 2006")
+}
+
+// Pending counts a user's photos still waiting for each stage of the scan.
+type Pending struct {
+	Metadata, Quality, Fingerprint, OCR, Recognition int
+	Failed                                           int // photos with a stage that failed
+}
+
+// Any reports whether anything is waiting.
+func (p Pending) Any() bool {
+	return p.Metadata+p.Quality+p.Fingerprint+p.OCR+p.Recognition > 0
+}
+
+func (p Pending) String() string {
+	return fmt.Sprintf("metadata=%d quality=%d fingerprint=%d ocr=%d recognition=%d failed=%d",
+		p.Metadata, p.Quality, p.Fingerprint, p.OCR, p.Recognition, p.Failed)
+}
+
+// PendingWork counts what is waiting, in one pass over the media table.
+// A stage that is switched off still counts what it would do.
+func PendingWork(db *sql.DB) (Pending, error) {
+	var p Pending
+	err := db.QueryRow(`SELECT
+		COALESCE(SUM(width = 0), 0),
+		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND quality_score = -1), 0),
+		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND fingerprint = ''), 0),
+		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND ocr_text = ''), 0),
+		COALESCE(SUM(mime_type LIKE 'image/%' AND width > 0 AND recognition_state = 0), 0),
+		COALESCE(SUM(scan_error != '' OR recognition_state = 2), 0)
+		FROM media`).Scan(&p.Metadata, &p.Quality, &p.Fingerprint, &p.OCR, &p.Recognition, &p.Failed)
+	if err != nil {
+		return p, fmt.Errorf("count pending work: %w", err)
+	}
+	return p, nil
 }

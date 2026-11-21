@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	"image/color"
+	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -25,6 +25,7 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 	_ "golang.org/x/image/webp"
 
+	"git.duckfam.us/jj-software/cog/internal/imaging"
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
@@ -448,6 +449,16 @@ func (b *OnnxBackend) InitErr() error {
 }
 
 func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*RecognitionResult, error) {
+	photo, err := decodePhoto(imagePath)
+	if err != nil {
+		return nil, err
+	}
+	return b.AnalyzeImage(ctx, photo)
+}
+
+// AnalyzeImage tags and finds faces in the photo's working copy, and aligns
+// each face from the full-size photo, where a small face still has pixels.
+func (b *OnnxBackend) AnalyzeImage(ctx context.Context, photo *decodedPhoto) (*RecognitionResult, error) {
 	b.init()
 	if b.initErr != nil {
 		return nil, b.initErr
@@ -455,18 +466,8 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	if err := b.ensureSessions(); err != nil {
 		return nil, err
 	}
-
-	f, err := os.Open(imagePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	img, _, err := safeimage.Decode(f)
-	if err != nil {
-		return nil, err
-	}
-
+	img := photo.work
+	imagePath := photo.path
 	result := &RecognitionResult{}
 
 	// MobileNet classification on full image.
@@ -502,7 +503,8 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 	// A face too small to embed is dropped rather than stored: with no
 	// embedding it cannot join anyone, and clustering would make each one a
 	// person of its own.
-	bounds := img.Bounds()
+	full := photo.Full()
+	bounds := full.Bounds()
 	kept := detectedFaces[:0]
 	for i := range detectedFaces {
 		face := &detectedFaces[i]
@@ -516,11 +518,11 @@ func (b *OnnxBackend) Analyze(ctx context.Context, imagePath string) (*Recogniti
 		// Compute alignment once (used by both ArcFace and genderage).
 		var aligned image.Image
 		if len(face.Landmarks) == 5 {
-			aligned = alignFace(img, face.Landmarks)
+			aligned = alignFace(full, face.Landmarks)
 		}
 
 		if b.hasArcface {
-			embedding, err := b.computeFaceEmbedding(aligned, img, face)
+			embedding, err := b.computeFaceEmbedding(aligned, full, face)
 			if err != nil {
 				slog.Warn("onnx arcface", "err", err)
 			} else {
@@ -640,32 +642,38 @@ func (b *OnnxBackend) classifyMultiLabel(output []float32) []RecognizedTag {
 	return tags
 }
 
-// preprocessRaw01 resizes to CHW float32 tensor with values in 0-1 range.
-func preprocessRaw01(img image.Image, targetW, targetH int) []float32 {
-	resized := resizeImage(img, targetW, targetH)
-	tensor := make([]float32, 3*targetH*targetW)
-	for y := range targetH {
-		for x := range targetW {
-			r, g, b, _ := resized.At(x, y).RGBA()
-			tensor[0*targetH*targetW+y*targetW+x] = float32(r) / 65535.0
-			tensor[1*targetH*targetW+y*targetW+x] = float32(g) / 65535.0
-			tensor[2*targetH*targetW+y*targetW+x] = float32(b) / 65535.0
+// chw resizes img to w×h and lays it out as a CHW float32 tensor, each
+// 0–255 channel value mapped by norm(channel, value).
+func chw(img image.Image, w, h int, norm func(c int, v float32) float32) []float32 {
+	r := imaging.Resize(img, w, h)
+	plane := w * h
+	tensor := make([]float32, 3*plane)
+	for y := range h {
+		row := r.Pix[y*r.Stride:]
+		for x := range w {
+			for c := range 3 {
+				tensor[c*plane+y*w+x] = norm(c, float32(row[x*4+c]))
+			}
 		}
 	}
 	return tensor
 }
 
+// preprocessRaw01 resizes to CHW float32 tensor with values in 0-1 range.
+func preprocessRaw01(img image.Image, targetW, targetH int) []float32 {
+	return chw(img, targetW, targetH, func(_ int, v float32) float32 { return v / 255 })
+}
+
 // preprocessRaw01NHWC resizes to NHWC float32 tensor with values in 0-1 range.
 func preprocessRaw01NHWC(img image.Image, targetW, targetH int) []float32 {
-	resized := resizeImage(img, targetW, targetH)
+	r := imaging.Resize(img, targetW, targetH)
 	tensor := make([]float32, targetH*targetW*3)
 	for y := range targetH {
+		row := r.Pix[y*r.Stride:]
 		for x := range targetW {
-			r, g, b, _ := resized.At(x, y).RGBA()
-			idx := (y*targetW + x) * 3
-			tensor[idx] = float32(r) / 65535.0
-			tensor[idx+1] = float32(g) / 65535.0
-			tensor[idx+2] = float32(b) / 65535.0
+			for c := range 3 {
+				tensor[(y*targetW+x)*3+c] = float32(row[x*4+c]) / 255
+			}
 		}
 	}
 	return tensor
@@ -721,81 +729,24 @@ func (b *OnnxBackend) computeFaceEmbedding(aligned, img image.Image, face *Detec
 }
 
 // preprocessImageNet resizes an image and converts to CHW float32 tensor
-// with ImageNet normalization (mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]).
-// Used for MobileNet classification only.
+// with ImageNet normalization. Used for MobileNet classification only.
 func preprocessImageNet(img image.Image, targetW, targetH int) []float32 {
-	resized := resizeImage(img, targetW, targetH)
-
-	tensor := make([]float32, 3*targetH*targetW)
 	mean := [3]float32{0.485, 0.456, 0.406}
 	std := [3]float32{0.229, 0.224, 0.225}
-
-	for y := range targetH {
-		for x := range targetW {
-			r, g, b, _ := resized.At(x, y).RGBA()
-			rf := float32(r) / 65535.0
-			gf := float32(g) / 65535.0
-			bf := float32(b) / 65535.0
-
-			tensor[0*targetH*targetW+y*targetW+x] = (rf - mean[0]) / std[0]
-			tensor[1*targetH*targetW+y*targetW+x] = (gf - mean[1]) / std[1]
-			tensor[2*targetH*targetW+y*targetW+x] = (bf - mean[2]) / std[2]
-		}
-	}
-	return tensor
+	return chw(img, targetW, targetH, func(c int, v float32) float32 { return (v/255 - mean[c]) / std[c] })
 }
 
 // preprocessInsightFace resizes an image and converts to CHW float32 tensor
-// with InsightFace normalization: (pixel - 127.5) / 128.0.
-// Used for ArcFace, genderage, and SCRFD models.
+// with InsightFace normalization: (pixel - 127.5) / 128.0. Used for ArcFace
+// and SCRFD.
 func preprocessInsightFace(img image.Image, targetW, targetH int) []float32 {
-	resized := resizeImage(img, targetW, targetH)
-
-	tensor := make([]float32, 3*targetH*targetW)
-	for y := range targetH {
-		for x := range targetW {
-			r, g, b, _ := resized.At(x, y).RGBA()
-			tensor[0*targetH*targetW+y*targetW+x] = (float32(r)/256.0 - 127.5) / 128.0
-			tensor[1*targetH*targetW+y*targetW+x] = (float32(g)/256.0 - 127.5) / 128.0
-			tensor[2*targetH*targetW+y*targetW+x] = (float32(b)/256.0 - 127.5) / 128.0
-		}
-	}
-	return tensor
+	return chw(img, targetW, targetH, func(_ int, v float32) float32 { return (v - 127.5) / 128 })
 }
 
-// preprocessRaw resizes an image and converts to CHW float32 tensor
-// with raw 0-255 pixel values (no normalization). Used for the genderage model.
+// preprocessRaw resizes an image and converts to CHW float32 tensor with raw
+// 0-255 pixel values. Used for the genderage model.
 func preprocessRaw(img image.Image, targetW, targetH int) []float32 {
-	resized := resizeImage(img, targetW, targetH)
-
-	tensor := make([]float32, 3*targetH*targetW)
-	for y := range targetH {
-		for x := range targetW {
-			r, g, b, _ := resized.At(x, y).RGBA()
-			tensor[0*targetH*targetW+y*targetW+x] = float32(r) / 256.0
-			tensor[1*targetH*targetW+y*targetW+x] = float32(g) / 256.0
-			tensor[2*targetH*targetW+y*targetW+x] = float32(b) / 256.0
-		}
-	}
-	return tensor
-}
-
-// resizeImage performs bilinear interpolation resize.
-func resizeImage(img image.Image, w, h int) image.Image {
-	bounds := img.Bounds()
-	srcW := float64(bounds.Dx())
-	srcH := float64(bounds.Dy())
-
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := range h {
-		for x := range w {
-			// Map to source coordinates (center of pixel).
-			sx := (float64(x)+0.5)*srcW/float64(w) - 0.5
-			sy := (float64(y)+0.5)*srcH/float64(h) - 0.5
-			dst.Set(x, y, bilinearSample(img, sx, sy, bounds))
-		}
-	}
-	return dst
+	return chw(img, targetW, targetH, func(_ int, v float32) float32 { return v })
 }
 
 // bilinearSample interpolates between 4 surrounding pixels at fractional source coordinates.
@@ -987,45 +938,28 @@ func (b *OnnxBackend) detectFacesSCRFD(img image.Image) ([]DetectedFace, error) 
 }
 
 // preprocessSCRFD converts an image to SCRFD's expected format: (pixel-127.5)/128.0, CHW.
-func preprocessSCRFD(img image.Image) []float32 {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	tensor := make([]float32, 3*h*w)
-	for y := range h {
-		for x := range w {
-			r, g, b, _ := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
-			tensor[0*h*w+y*w+x] = (float32(r)/256.0 - 127.5) / 128.0
-			tensor[1*h*w+y*w+x] = (float32(g)/256.0 - 127.5) / 128.0
-			tensor[2*h*w+y*w+x] = (float32(b)/256.0 - 127.5) / 128.0
-		}
-	}
-	return tensor
+func preprocessSCRFD(img *image.RGBA) []float32 {
+	b := img.Rect
+	return preprocessInsightFace(img, b.Dx(), b.Dy())
 }
 
 // letterboxImage resizes an image to fit within targetW×targetH, preserving aspect ratio,
 // and zero-pads to the exact target size. Returns the padded image and mapping parameters.
-func letterboxImage(img image.Image, targetW, targetH int) (image.Image, float64, float64, float64) {
+func letterboxImage(img image.Image, targetW, targetH int) (*image.RGBA, float64, float64, float64) {
 	bounds := img.Bounds()
 	srcW := float64(bounds.Dx())
 	srcH := float64(bounds.Dy())
 
 	scale := math.Min(float64(targetW)/srcW, float64(targetH)/srcH)
-	newW := int(srcW * scale)
-	newH := int(srcH * scale)
+	newW := max(1, int(srcW*scale))
+	newH := max(1, int(srcH*scale))
 	padX := float64(targetW-newW) / 2
 	padY := float64(targetH-newH) / 2
 
-	resized := resizeImage(img, newW, newH)
-
+	resized := imaging.Resize(img, newW, newH)
 	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-	// Zero-fill (black) is the default for NewRGBA.
-	ox := int(padX)
-	oy := int(padY)
-	for y := range newH {
-		for x := range newW {
-			dst.Set(ox+x, oy+y, resized.At(x, y))
-		}
-	}
+	ox, oy := int(padX), int(padY)
+	draw.Draw(dst, image.Rect(ox, oy, ox+newW, oy+newH), resized, image.Point{}, draw.Src)
 	return dst, scale, padX, padY
 }
 

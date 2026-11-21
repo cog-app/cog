@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS media (
     ocr_text TEXT NOT NULL DEFAULT '',
     fingerprint TEXT NOT NULL DEFAULT '',
     quality_score REAL NOT NULL DEFAULT -1,
-    content_key TEXT NOT NULL DEFAULT ''
+    content_key TEXT NOT NULL DEFAULT '',
+    scan_error TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);

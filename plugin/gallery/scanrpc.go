@@ -63,7 +63,7 @@ func (s *ScanRPC) ScanUser(args *ScanUserArgs, result *ScanResult) error {
 	s.startScan()
 
 	go s.runScan(func() ([]string, error) {
-		return s.plugin.scanUser(s.ctx, args.Username)
+		return s.plugin.scanUserFully(s.ctx, args.Username)
 	})
 	return nil
 }

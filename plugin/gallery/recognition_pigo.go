@@ -3,11 +3,10 @@ package gallery
 import (
 	"context"
 	_ "embed"
-	"git.duckfam.us/jj-software/cog/internal/safeimage"
+	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"os"
 	"sync"
 
 	pigo "github.com/esimov/pigo/core"
@@ -44,17 +43,32 @@ func (b *PigoBackend) Analyze(_ context.Context, imagePath string) (*Recognition
 		return nil, b.initErr
 	}
 
-	f, err := os.Open(imagePath)
+	photo, err := decodePhoto(imagePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	img, _, err := safeimage.Decode(f)
+	faces, err := b.detect(photo.work)
 	if err != nil {
 		return nil, err
 	}
+	return &RecognitionResult{Faces: faces}, nil
+}
 
+// AnalyzeImage finds faces in the photo's working copy.
+func (b *PigoBackend) AnalyzeImage(_ context.Context, photo *decodedPhoto) (*RecognitionResult, error) {
+	faces, err := b.detect(photo.work)
+	if err != nil {
+		return nil, err
+	}
+	return &RecognitionResult{Faces: faces}, nil
+}
+
+// detect finds faces in img, in coordinates normalised to its size.
+func (b *PigoBackend) detect(img image.Image) ([]DetectedFace, error) {
+	b.init()
+	if b.initErr != nil {
+		return nil, b.initErr
+	}
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
@@ -90,7 +104,7 @@ func (b *PigoBackend) Analyze(_ context.Context, imagePath string) (*Recognition
 		minScore = 5.0
 	}
 
-	result := &RecognitionResult{}
+	var faces []DetectedFace
 	for _, d := range dets {
 		if d.Q < minScore {
 			continue
@@ -102,7 +116,7 @@ func (b *PigoBackend) Analyze(_ context.Context, imagePath string) (*Recognition
 		w := s / float64(width)
 		h := s / float64(height)
 
-		result.Faces = append(result.Faces, DetectedFace{
+		faces = append(faces, DetectedFace{
 			X:          cx - w/2,
 			Y:          cy - h/2,
 			W:          w,
@@ -110,6 +124,5 @@ func (b *PigoBackend) Analyze(_ context.Context, imagePath string) (*Recognition
 			Confidence: float64(d.Q) / 20.0, // normalize score roughly to 0-1
 		})
 	}
-
-	return result, nil
+	return faces, nil
 }

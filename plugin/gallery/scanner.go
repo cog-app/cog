@@ -3,8 +3,8 @@ package gallery
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
@@ -76,30 +77,38 @@ func isMediaMIME(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/") || strings.HasPrefix(mimeType, "video/")
 }
 
-// scanAllUsersErr scans all user data directories for new/changed media.
+// scanAllUsersErr scans every user's media. Each user's photo analysis
+// stops after analysisBudget so the others get their turn; rounds repeat
+// until no one has photos left, rather than waiting for the next timer.
 func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err error) {
 	usernames, err := p.ctx.UsersOf("files")
 	if err != nil {
 		return nil, err
 	}
-
-	var scanned int
-	for _, username := range usernames {
-		if ctx.Err() != nil {
-			return warnings, ctx.Err()
-		}
-		p.log.Info("scanning user", "user", username)
-		userWarnings, err := p.scanUser(ctx, username)
-		warnings = append(warnings, userWarnings...)
-		if err != nil {
-			p.log.Error("scan user", "user", username, "err", err)
-			warnings = append(warnings, fmt.Sprintf("%s: %v", username, err))
-		}
-		scanned++
+	if len(usernames) == 0 {
+		p.log.Warn("no users with files found to scan")
+		return nil, nil
 	}
 
-	if scanned == 0 {
-		p.log.Warn("no users with files found to scan")
+	pending := usernames
+	for len(pending) > 0 {
+		var next []string
+		for _, username := range pending {
+			if ctx.Err() != nil {
+				return warnings, ctx.Err()
+			}
+			userWarnings, remaining, err := p.scanUser(ctx, username)
+			warnings = append(warnings, userWarnings...)
+			if err != nil {
+				p.log.Error("scan user", "user", username, "err", err)
+				warnings = append(warnings, fmt.Sprintf("%s: %v", username, err))
+				continue
+			}
+			if remaining {
+				next = append(next, username)
+			}
+		}
+		pending = next
 	}
 	return warnings, nil
 }
@@ -110,25 +119,39 @@ func (p *Plugin) ScanAllUsers(ctx context.Context) error {
 	return err
 }
 
-// ScanUser runs the scan pipeline for a single user. Exported for manual trigger.
+// ScanUser runs the scan pipeline for a single user until every photo is
+// analysed. Exported for manual trigger.
 func (p *Plugin) ScanUser(ctx context.Context, username string) error {
-	_, err := p.scanUser(ctx, username)
+	_, err := p.scanUserFully(ctx, username)
 	return err
 }
 
-func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []string, err error) {
+func (p *Plugin) scanUserFully(ctx context.Context, username string) (warnings []string, err error) {
+	for {
+		w, remaining, err := p.scanUser(ctx, username)
+		warnings = append(warnings, w...)
+		if err != nil || !remaining {
+			return warnings, err
+		}
+	}
+}
+
+// scanUser runs one round of the scan pipeline for a user, and reports
+// whether photos were left unanalysed when the round's budget ran out.
+func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []string, remaining bool, err error) {
+	start := time.Now()
 	var galleryDB *sql.DB
 	if p.isWorker {
 		// Worker subprocess: open DB directly to avoid search hook → Bleve flock contention.
 		galleryDB, err = p.directDB(username)
 		if err != nil {
-			return nil, fmt.Errorf("gallery db: %w", err)
+			return nil, false, fmt.Errorf("gallery db: %w", err)
 		}
 		defer galleryDB.Close()
 	} else {
 		galleryDB, err = p.DB(username)
 		if err != nil {
-			return nil, fmt.Errorf("gallery db: %w", err)
+			return nil, false, fmt.Errorf("gallery db: %w", err)
 		}
 	}
 	var filesDB *sql.DB
@@ -137,94 +160,79 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 		// hooks: it runs beside the server, which holds the index files.
 		filesDB, err = p.ctx.PluginDB(username, plugin.OfPlugin("files"), plugin.ReadOnly, plugin.NoHooks)
 		if err != nil {
-			return nil, fmt.Errorf("files db: %w", err)
+			return nil, false, fmt.Errorf("files db: %w", err)
 		}
 		defer filesDB.Close()
 	} else {
 		filesDB, err = p.ctx.PluginDB(username, plugin.OfPlugin("files"))
 		if err != nil {
-			return nil, fmt.Errorf("files db: %w", err)
+			return nil, false, fmt.Errorf("files db: %w", err)
 		}
+	}
+
+	var report scanReport
+	warn := func(stage string, err error) {
+		p.log.Warn(stage, "user", username, "err", err)
+		warnings = append(warnings, fmt.Sprintf("%s: %s: %v", username, stage, err))
 	}
 
 	// Clean up orphaned recognition data from before CASCADE was added.
 	if err := CleanOrphans(galleryDB); err != nil {
-		p.log.Warn("clean orphans", "user", username, "err", err)
+		warn("clean orphans", err)
+	}
+	if err := report.time("discover", func() error { return p.discoverFiles(ctx, galleryDB, filesDB, username) }); err != nil {
+		return warnings, false, fmt.Errorf("discover: %w", err)
+	}
+	if err := report.time("metadata", func() error { return p.extractMetadata(ctx, galleryDB, username) }); err != nil {
+		return warnings, false, fmt.Errorf("metadata: %w", err)
 	}
 
-	// Stage 1: File discovery
-	if err := p.discoverFiles(ctx, galleryDB, filesDB, username); err != nil {
-		return nil, fmt.Errorf("discover: %w", err)
-	}
-
-	// Stage 2: Metadata extraction (EXIF for images)
-	if err := p.extractMetadata(ctx, galleryDB, username); err != nil {
-		return nil, fmt.Errorf("metadata: %w", err)
-	}
-
-	// Load system settings for feature gating.
 	sysDB, err := p.SystemDB()
 	if err != nil {
 		p.log.Warn("system db; using default settings", "err", err)
 		sysDB = nil
 	}
 
-	// Stage 2.5: Pre-generate thumbnails for grid view.
+	// Thumbnails come first, ahead of the slower analysis, so the grid fills
+	// in soon after photos arrive.
 	if sysDB == nil || SettingPreviewGenerationEnabled.MustGet(sysDB) {
-		if err := p.preGenerateThumbnails(ctx, galleryDB, username); err != nil {
-			p.log.Warn("thumbnails", "user", username, "err", err)
+		if err := report.time("thumbnails", func() error { return p.preGenerateThumbnails(ctx, galleryDB, username) }); err != nil {
+			warn("thumbnails", err)
 		}
 	}
 
-	// Stage 2.6: Quality scoring (Laplacian sharpness).
-	if sysDB == nil || SettingQualityScoringEnabled.MustGet(sysDB) {
-		if err := p.computeQualityScores(ctx, galleryDB, username); err != nil {
-			p.log.Warn("quality scores", "user", username, "err", err)
+	cfg, release, err := p.analysisConfig(sysDB, galleryDB)
+	if err != nil {
+		warn("analysis", err)
+	} else {
+		remaining, err = p.analyzePhotos(ctx, galleryDB, username, cfg, time.Now().Add(analysisBudget), &report)
+		release()
+		if err != nil {
+			warn("analysis", err)
 		}
 	}
 
-	// Stage 2.75: Fingerprint computation for duplicate detection.
-	if err := p.computeFingerprints(ctx, galleryDB, username); err != nil {
-		p.log.Warn("fingerprints", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: fingerprints: %v", username, err))
+	if err := report.time("geocode", func() error { return p.reverseGeocode(galleryDB) }); err != nil {
+		warn("geocode", err)
+	}
+	if err := report.time("albums", func() error { return p.generateAutoAlbums(ctx, galleryDB) }); err != nil {
+		return warnings, remaining, fmt.Errorf("auto-albums: %w", err)
+	}
+	if err := report.time("clustering", func() error { return clusterFaces(galleryDB, sysDB) }); err != nil {
+		warn("clustering", err)
+	}
+	if err := report.time("duplicates", func() error { return p.detectDuplicates(galleryDB) }); err != nil {
+		warn("duplicates", err)
 	}
 
-	// Stage 3: OCR text extraction (if tesseract available)
-	if err := p.extractOCR(ctx, galleryDB, username); err != nil {
-		p.log.Warn("ocr", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: ocr: %v", username, err))
+	attrs := append([]any{"user", username, "took", time.Since(start).Round(time.Millisecond), "remaining", remaining}, report.attrs()...)
+	if pending, err := PendingWork(galleryDB); err != nil {
+		warn("pending work", err)
+	} else if pending.Any() {
+		attrs = append(attrs, "pending", pending.String())
 	}
-
-	// Stage 4: Reverse geocoding
-	if err := p.reverseGeocode(galleryDB); err != nil {
-		p.log.Warn("geocode", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: geocode: %v", username, err))
-	}
-
-	// Stage 5: Auto-album generation
-	if err := p.generateAutoAlbums(ctx, galleryDB); err != nil {
-		return warnings, fmt.Errorf("auto-albums: %w", err)
-	}
-
-	// Stage 6: Image recognition (if configured)
-	if err := p.runRecognition(ctx, galleryDB, username); err != nil {
-		p.log.Warn("recognition", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: recognition: %v", username, err))
-	}
-
-	// Stage 7: Face clustering
-	if err := clusterFaces(galleryDB, sysDB); err != nil {
-		p.log.Warn("clustering", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: clustering: %v", username, err))
-	}
-
-	// Stage 8: Duplicate detection
-	if err := p.detectDuplicates(galleryDB); err != nil {
-		p.log.Warn("duplicates", "user", username, "err", err)
-		warnings = append(warnings, fmt.Sprintf("%s: duplicates: %v", username, err))
-	}
-
-	return warnings, nil
+	p.log.Info("scan done", attrs...)
+	return warnings, remaining, nil
 }
 
 // discoverFiles syncs the gallery index with the files plugin database.
@@ -468,63 +476,6 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 	return nil
 }
 
-// extractOCR runs tesseract on images that haven't been OCR'd yet.
-func (p *Plugin) extractOCR(ctx context.Context, db *sql.DB, username string) error {
-	if !TesseractAvailable() {
-		return nil
-	}
-	sysDB, err := p.SystemDB()
-	if err != nil {
-		p.log.Warn("system db; running ocr by default", "err", err)
-	} else if !SettingOCREnabled.MustGet(sysDB) {
-		return nil
-	}
-
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-		WHERE m.ocr_text = '' AND m.mime_type LIKE 'image/%' AND m.width > 0
-		LIMIT 50`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	items, err := scanMediaRows(rows)
-	if err != nil {
-		return err
-	}
-
-	for i := range items {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		m := &items[i]
-		srcPath, err := p.resolveLocalPath(username, m.FilePath)
-		var text string
-		if err == nil {
-			text, err = tesseractOCR(srcPath)
-		}
-		if err != nil {
-			p.log.Warn("ocr failed", "path", m.FilePath, "err", err)
-			// Mark as attempted so we don't retry — store a sentinel.
-			if _, err := db.Exec(`UPDATE media SET ocr_text = ' ' WHERE id = ?`, m.ID); err != nil {
-				return fmt.Errorf("mark %s ocr attempted: %w", m.FilePath, err)
-			}
-			continue
-		}
-		if text == "" {
-			// No text found — store a single space sentinel to avoid re-processing.
-			text = " "
-		}
-
-		if _, err := db.Exec(`UPDATE media SET ocr_text = ? WHERE id = ?`, text, m.ID); err != nil {
-			return fmt.Errorf("store ocr for %s: %w", m.FilePath, err)
-		}
-	}
-
-	return nil
-}
-
 // extractImageMetadata reads EXIF and image dimensions from an image file.
 // A format Go cannot decode leaves the dimensions unset but still reads the
 // EXIF; that is reported as an error along with any failure to read the file.
@@ -541,6 +492,9 @@ func extractImageMetadata(path string, m *Media) error {
 		m.Width = cfg.Width
 		m.Height = cfg.Height
 	} else {
+		// 1×1, as for a video ffprobe cannot read: metadata is not read again
+		// every scan, and the analysis records why the photo fails.
+		m.Width, m.Height = 1, 1
 		decodeErr = fmt.Errorf("dimensions: %w", decodeErr)
 	}
 
@@ -858,45 +812,6 @@ func (p *Plugin) ensureThumbnail(username string, m *Media, size int) (bool, err
 		return false, err
 	}
 	return true, f.Close()
-}
-
-// computeQualityScores calculates Laplacian sharpness scores for unscored images.
-func (p *Plugin) computeQualityScores(ctx context.Context, db *sql.DB, username string) error {
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-		WHERE m.quality_score = -1 AND m.mime_type LIKE 'image/%' AND m.width > 0
-		LIMIT 100`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	items, err := scanMediaRows(rows)
-	if err != nil {
-		return err
-	}
-
-	for i := range items {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		m := &items[i]
-		f, err := p.PreviewPath(username, m, 256)
-		if err != nil {
-			p.log.Debug("quality score: thumbnail", "path", m.FilePath, "err", err)
-			continue
-		}
-		img, _, err := image.Decode(f)
-		f.Close()
-		if err != nil {
-			p.log.Warn("quality score: decode thumbnail", "path", m.FilePath, "err", err)
-			continue
-		}
-		score := laplacianVariance(img)
-		if err := UpdateQualityScore(db, m.ID, score); err != nil {
-			return fmt.Errorf("store quality score for %s: %w", m.FilePath, err)
-		}
-	}
-	return nil
 }
 
 // PreviewPath returns the path for a media thumbnail, using the files plugin for images

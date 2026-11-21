@@ -110,7 +110,6 @@ func TestScanResetsChangedFile(t *testing.T) {
 	require.Equal(t, 800, width)
 }
 
-
 func (e *scanEnv) folderAlbums(t *testing.T) map[string][]string {
 	t.Helper()
 	rows, err := e.db.Query(`SELECT a.auto_key, m.file_path FROM albums a
@@ -148,4 +147,29 @@ func TestScanFolderAlbumsFollowMoves(t *testing.T) {
 	var n int
 	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM albums WHERE album_type = ? AND auto_key = '/Photos/Trip'`, gallery.AlbumFolder).Scan(&n))
 	require.Equal(t, 0, n)
+}
+
+// A photo no stage can read is marked as failed, with why, rather than
+// coming back to every scan.
+func TestScanSettlesUndecodablePhoto(t *testing.T) {
+	e := newScanEnv(t)
+	good := photoJPEG(t, 1, 64, 48)
+	broken := append(append([]byte{}, good[:200]...), make([]byte, 300)...)
+	e.upload(t, "/Photos/good.jpg", good)
+	e.upload(t, "/Photos/broken.jpg", broken)
+	e.scan(t)
+
+	var quality float64
+	var fingerprint, scanErr string
+	require.NoError(t, e.db.QueryRow(`SELECT quality_score, fingerprint, scan_error FROM media WHERE file_path = '/Photos/broken.jpg'`).
+		Scan(&quality, &fingerprint, &scanErr))
+	require.Equal(t, -2.0, quality)
+	require.Equal(t, "-", fingerprint)
+	require.Contains(t, scanErr, "decode")
+
+	pending, err := gallery.PendingWork(e.db)
+	require.NoError(t, err)
+	require.Equal(t, 0, pending.Quality)
+	require.Equal(t, 0, pending.Fingerprint)
+	require.Equal(t, 1, pending.Failed)
 }
