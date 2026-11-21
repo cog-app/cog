@@ -1429,14 +1429,14 @@ templ scanFoldersPreview(folders []string, total int) {
 }
 
 // --- System Settings Page (admin, rendered via RegisterSettingsPage) ---
-templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, workers workersView, csrfToken string) {
+templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, progress ScanProgress, workers workersView, csrfToken string) {
 	<header class="page-header">
 		<div class="page-heading">
 			<h1>Gallery Settings</h1>
 			<p class="page-subtitle">These settings apply to all users.</p>
 		</div>
 	</header>
-	@scanStatusCard(stats, scan, csrfToken)
+	@scanStatusCard(stats, scan, progress, csrfToken)
 	@workersCard(workers, csrfToken)
 	@ui.Card("Tag classification") {
 		<form method="post" action="/admin/plugins/gallery">
@@ -1686,16 +1686,32 @@ templ workersCard(v workersView, csrfToken string) {
 }
 
 // scanStatusCard renders the background scan status card (used as full-page component and HTMX partial).
-templ scanStatusCard(stats RecognitionStats, scan ScanStatus, csrfToken string) {
+templ scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgress, csrfToken string) {
 	<div
 		id="scan-status"
-		if scan.Running {
+		if scan.Running || progress.Active() {
 			hx-get="/apps/gallery/api/scan-status"
 			hx-trigger="every 2s"
 			hx-swap="outerHTML"
 		}
 	>
 		@ui.Card("Background scan") {
+			if progress.Active() {
+				<div class="mb-2">
+					<div class="progress mb-1" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={ strconv.Itoa(int(progress.Percent())) }>
+						<div class="progress-bar" style={ "width:" + strconv.FormatFloat(progress.Percent(), 'f', 1, 64) + "%" }></div>
+					</div>
+					<div class="text-sm">
+						{ strconv.Itoa(progress.Done()) } of { strconv.Itoa(progress.Total) } photos analysed ({ strconv.Itoa(int(progress.Percent())) }%)
+						· going for { shortDuration(progress.Elapsed) }
+						if progress.ETA > 0 {
+							· about { shortDuration(progress.ETA) } left
+						} else {
+							· estimating time left…
+						}
+					</div>
+				</div>
+			}
 			<dl class="kv mb-2">
 				<dt>Status</dt>
 				<dd>

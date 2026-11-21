@@ -1336,8 +1336,13 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
+	progress, err := h.plugin.Progress()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery Settings")
-	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, workersView{Workers: workers, Now: h.plugin.ctx.Now(), Server: serverURL(r)}, plugin.CSRFToken(r)))
+	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, progress, workersView{Workers: workers, Now: h.plugin.ctx.Now(), Server: serverURL(r)}, plugin.CSRFToken(r)))
 }
 
 // WorkersAction adds a remote worker, gives one a new token, or removes one.
@@ -1393,7 +1398,12 @@ func serverURL(r *http.Request) string {
 func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 	stats := h.plugin.AggregateRecognitionStats()
 	scan := h.plugin.GetScanStatus()
-	ui.Render(w, r, scanStatusCard(stats, scan, plugin.CSRFToken(r)))
+	progress, err := h.plugin.Progress()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, scanStatusCard(stats, scan, progress, plugin.CSRFToken(r)))
 }
 
 // UserScanStatusPartial returns a small scan-running banner for the gallery sidebar.

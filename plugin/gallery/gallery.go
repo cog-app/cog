@@ -67,7 +67,8 @@ type Plugin struct {
 	activeBackendsMu sync.Mutex
 	activeBackends   []RecognitionBackend
 
-	hub workerHub
+	hub      workerHub
+	progress progressTracker
 }
 
 // New creates a new Gallery plugin instance.
@@ -306,6 +307,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 		go p.manageInProcessWorker(ctx)
 	}
 	go p.scanTimer(ctx)
+	go p.trackProgress(ctx)
 	return nil
 }
 
