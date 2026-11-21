@@ -1,14 +1,29 @@
 package gallery
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 // DeviceCUDA runs ONNX models on an NVIDIA GPU.
 const DeviceCUDA = "cuda"
 
-// onnxDevice is where ONNX models run: COG_ONNX_DEVICE, a property of the
+// onnxDevices is where ONNX models run: COG_ONNX_DEVICE, a property of the
 // machine rather than of the server's settings, since a worker and its
-// server have different hardware.
-func onnxDevice() string { return os.Getenv("COG_ONNX_DEVICE") }
+// server have different hardware. It is a list: a worker runs an engine for
+// each entry, so "cuda,cuda,cpu" keeps a GPU busy while one engine prepares
+// its next photo, and puts the spare cores to work too. Anything but "cuda"
+// is the CPU.
+func onnxDevices() []string {
+	var out []string
+	for d := range strings.SplitSeq(os.Getenv("COG_ONNX_DEVICE"), ",") {
+		if d = strings.TrimSpace(d); d != DeviceCUDA {
+			d = ""
+		}
+		out = append(out, d)
+	}
+	return out
+}
 
 // onnxLibrary is COG_ONNX_LIBRARY, for a worker whose onnxruntime is not in
 // a system directory, such as the GPU build beside its CUDA libraries.

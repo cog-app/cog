@@ -26,13 +26,10 @@ import (
 
 var anyAddress = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")}
 
-// workerBatch is how many photos a worker leases at once, and
-// workerDecoders how many it downloads and decodes at once: on a GPU,
-// recognising a photo takes less time than decoding one.
-const (
-	workerBatch    = 8
-	workerDecoders = 2
-)
+// workerBatch is how many photos a worker leases at once. It leases the
+// next batch while it still has one queued, so its engines never wait for
+// a round trip.
+const workerBatch = 8
 
 // remoteWorker analyses photos for a server: it leases them, downloads each,
 // runs the same stages the scan would, and sends back what it found.
@@ -48,9 +45,13 @@ type remoteWorker struct {
 	perPhoto atomic.Uint64 // math.Float64bits of seconds per photo, smoothed
 
 	cfg     *workerConfig
-	stages  *analysisConfig
+	stages  *analysisConfig   // what preparing a photo needs; its recognizer is the first engine's
+	engines []*analysisConfig // one per COG_ONNX_DEVICE entry, each with its own models
 	release func()
 	checked map[string]string // model file → the checksum it was found to have
+
+	observed sync.Mutex
+	lastDone time.Time
 }
 
 // runRemoteWorker is `cog gallery worker <server>`. The token comes from
@@ -116,35 +117,74 @@ func (rw *remoteWorker) currentInfo() workerInfo {
 	return info
 }
 
+// run leases and analyses photos until ctx ends. Each pass runs the
+// pipeline under one server configuration; a change of configuration
+// drains it and starts the next.
 func (rw *remoteWorker) run(ctx context.Context) error {
 	go rw.heartbeat(ctx)
-	backoff := time.Second
+	var next *leaseResponse
 	for ctx.Err() == nil {
-		resp, err := rw.lease(ctx)
-		if err == nil {
-			err = rw.configure(ctx, resp.Config)
+		if next == nil {
+			resp, err := rw.leaseRetrying(ctx, true)
+			if err != nil || resp == nil {
+				return err
+			}
+			next = resp
 		}
-		if err == nil {
-			rw.work(ctx, resp.Jobs)
-			backoff = time.Second
+		if err := rw.configure(ctx, next.Config); err != nil {
+			var fatal *fatalError
+			if errors.As(err, &fatal) {
+				return err
+			}
+			next = nil
+			if !rw.pause(ctx, err, time.Minute) {
+				return nil
+			}
 			continue
+		}
+		var err error
+		if next, err = rw.pipeline(ctx, next.Jobs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// leaseRetrying leases photos, waiting for some when wait is set, and tries
+// again while the server is unreachable. It returns nil when ctx ends, and
+// an error only when the server refused the worker.
+func (rw *remoteWorker) leaseRetrying(ctx context.Context, wait bool) (*leaseResponse, error) {
+	backoff := time.Second
+	for {
+		resp, err := rw.lease(ctx, wait)
+		if err == nil {
+			return resp, nil
 		}
 		var fatal *fatalError
 		if errors.As(err, &fatal) {
-			return err
+			return nil, err
 		}
-		if ctx.Err() != nil {
-			break
-		}
-		rw.p.log.Warn("worker", "err", err, "retry in", backoff)
-		rw.noteFailure(err)
-		select {
-		case <-ctx.Done():
-		case <-time.After(backoff):
+		if !rw.pause(ctx, err, backoff) {
+			return nil, nil
 		}
 		backoff = min(backoff*2, time.Minute)
 	}
-	return nil
+}
+
+// pause logs a failure and waits before the next try, reporting false when
+// ctx ended first.
+func (rw *remoteWorker) pause(ctx context.Context, err error, d time.Duration) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	rw.p.log.Warn("worker", "err", err, "retry in", d)
+	rw.noteFailure(err)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 func (rw *remoteWorker) noteFailure(err error) {
@@ -240,20 +280,25 @@ func statusOf(err error) int {
 	return 0
 }
 
-func (rw *remoteWorker) lease(ctx context.Context) (*leaseResponse, error) {
+func (rw *remoteWorker) lease(ctx context.Context, wait bool) (*leaseResponse, error) {
+	req := leaseRequest{Info: rw.currentInfo(), Max: workerBatch}
+	if wait {
+		req.Wait = 25
+	}
 	var resp leaseResponse
-	err := rw.call(ctx, http.MethodPost, workerAPI+"/lease", nil, leaseRequest{Info: rw.currentInfo(), Max: workerBatch, Wait: 25}, &resp)
+	err := rw.call(ctx, http.MethodPost, workerAPI+"/lease", nil, req, &resp)
 	return &resp, err
 }
 
 // configure loads what the server's configuration needs, when it changed:
-// the model files, checked against the server's, and the backends.
+// the model files, checked against the server's, and an engine for each
+// device.
 func (rw *remoteWorker) configure(ctx context.Context, cfg workerConfig) error {
 	if rw.cfg != nil && sameConfig(*rw.cfg, cfg) {
 		return nil
 	}
 	rw.release()
-	rw.release, rw.stages, rw.cfg = func() {}, nil, nil
+	rw.release, rw.stages, rw.engines, rw.cfg = func() {}, nil, nil, nil
 
 	for _, m := range cfg.Models {
 		if err := rw.ensureModel(ctx, m); err != nil {
@@ -268,22 +313,48 @@ func (rw *remoteWorker) configure(ctx context.Context, cfg workerConfig) error {
 		}
 		stages.hasher = h
 	}
-	if cfg.TagBackend != BackendNone || cfg.FaceBackend != BackendNone {
-		rec, backends, err := newRecognizer(cfg.TagBackend, cfg.FaceBackend, rw.backend(cfg))
-		if err != nil {
-			return &fatalError{msg: err.Error()}
+	devices := []string{""}
+	if cfg.usesONNX() {
+		devices = onnxDevices()
+	}
+	cpuEngines := 0
+	for _, d := range devices {
+		if d != DeviceCUDA {
+			cpuEngines++
 		}
-		stages.recognition = rec
-		rw.release = func() {
-			for _, b := range backends {
-				if rc, ok := b.(interface{ Release() }); ok {
-					rc.Release()
-				}
+	}
+	var engines []*analysisConfig
+	var backends []RecognitionBackend
+	release := func() {
+		for _, b := range backends {
+			if rc, ok := b.(interface{ Release() }); ok {
+				rc.Release()
 			}
 		}
 	}
-	rw.stages, rw.cfg = stages, &cfg
-	rw.p.log.Info("worker configured", "tags", cfg.TagBackend, "faces", cfg.FaceBackend, "tag_model", cfg.TagModel, "fingerprints", cfg.Algorithm)
+	for _, device := range devices {
+		engine := *stages
+		if cfg.TagBackend != BackendNone || cfg.FaceBackend != BackendNone {
+			// A GPU engine's threads only run what the GPU cannot; the
+			// CPU engines share the rest.
+			threads := 2
+			if device != DeviceCUDA {
+				threads = max(1, rw.threads/cpuEngines)
+			}
+			rec, bs, err := newRecognizer(cfg.TagBackend, cfg.FaceBackend, rw.backend(cfg, device, threads))
+			if err != nil {
+				release()
+				return &fatalError{msg: err.Error()}
+			}
+			engine.recognition = rec
+			backends = append(backends, bs...)
+		}
+		engines = append(engines, &engine)
+	}
+	stages.recognition = engines[0].recognition
+	rw.stages, rw.engines, rw.release, rw.cfg = stages, engines, release, &cfg
+	rw.p.log.Info("worker configured", "tags", cfg.TagBackend, "faces", cfg.FaceBackend, "tag_model", cfg.TagModel,
+		"fingerprints", cfg.Algorithm, "engines", strings.Join(devices, ","))
 	return nil
 }
 
@@ -293,13 +364,13 @@ func sameConfig(a, b workerConfig) bool {
 	return err1 == nil && err2 == nil && bytes.Equal(ja, jb)
 }
 
-func (rw *remoteWorker) backend(cfg workerConfig) func(RecognitionBackendType) (RecognitionBackend, error) {
+func (rw *remoteWorker) backend(cfg workerConfig, device string, threads int) func(RecognitionBackendType) (RecognitionBackend, error) {
 	return func(t RecognitionBackendType) (RecognitionBackend, error) {
 		switch t {
 		case BackendPigo:
 			return &PigoBackend{}, nil
 		case BackendOnnx:
-			b := &OnnxBackend{ModelsDir: rw.modelsDir, LibraryPath: onnxLibrary(), TagModel: cfg.TagModel, Threads: rw.threads, Device: onnxDevice()}
+			b := &OnnxBackend{ModelsDir: rw.modelsDir, LibraryPath: onnxLibrary(), TagModel: cfg.TagModel, Threads: threads, Device: device}
 			if !b.Available() {
 				return nil, errors.New("onnx backend not available: libonnxruntime.so not found")
 			}
@@ -371,20 +442,16 @@ type prepared struct {
 	err   error
 }
 
-// work runs a batch as a pipeline: downloading and decoding the next photo
-// while one is recognised, and sending results back while the next is.
-func (rw *remoteWorker) work(ctx context.Context, jobs []workerJob) {
-	if len(jobs) == 0 {
-		return
-	}
-	queue := make(chan workerJob, len(jobs))
-	for _, job := range jobs {
-		queue <- job
-	}
-	close(queue)
-	ready := make(chan prepared, workerDecoders)
-	var decoders sync.WaitGroup
-	for range workerDecoders {
+// pipeline analyses jobs and keeps leasing more until the server's
+// configuration changes or ctx ends: decoders download and decode photos
+// into a queue that every engine takes from, and results go back while the
+// next photos are worked on. It returns the lease that brought the new
+// configuration, for the next pass.
+func (rw *remoteWorker) pipeline(ctx context.Context, jobs []workerJob) (*leaseResponse, error) {
+	queue := make(chan workerJob, 2*workerBatch)
+	ready := make(chan prepared, len(rw.engines))
+	var decoders, engines, sends sync.WaitGroup
+	for range rw.decoders() {
 		decoders.Go(func() {
 			for job := range queue {
 				select {
@@ -399,36 +466,102 @@ func (rw *remoteWorker) work(ctx context.Context, jobs []workerJob) {
 		decoders.Wait()
 		close(ready)
 	}()
+	for _, engine := range rw.engines {
+		engines.Go(func() {
+			for pr := range ready {
+				rw.finish(ctx, engine, pr, &sends)
+			}
+		})
+	}
 
-	var sends sync.WaitGroup
-	last := time.Now()
-	for pr := range ready {
-		if pr.err != nil {
-			if ctx.Err() == nil {
-				rw.p.log.Warn("worker download", "path", pr.job.Path, "err", pr.err)
-				rw.noteFailure(pr.err)
+	feed := func(jobs []workerJob) {
+		for _, job := range jobs {
+			select {
+			case queue <- job:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+	feed(jobs)
+	var next *leaseResponse
+	var err error
+	for ctx.Err() == nil {
+		for len(queue) >= workerBatch && ctx.Err() == nil {
+			select {
+			case <-ctx.Done():
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		var resp *leaseResponse
+		resp, err = rw.leaseRetrying(ctx, len(queue) == 0)
+		if err != nil || resp == nil {
+			break
+		}
+		if !sameConfig(*rw.cfg, resp.Config) {
+			next = resp
+			break
+		}
+		if len(resp.Jobs) == 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(2 * time.Second):
 			}
 			continue
 		}
-		rw.p.finishPhoto(ctx, pr.res, pr.photo, pr.path, pr.media, pr.job.Needs, rw.stages, &scanReport{})
-		if err := os.Remove(pr.path); err != nil {
-			rw.p.log.Warn("worker remove download", "path", pr.path, "err", err)
-		}
-		rw.observe(time.Since(last))
-		last = time.Now()
-		result := newWorkerResult(pr.job.ETag, rw.cfg.Algorithm, pr.res)
-		sends.Go(func() { rw.send(ctx, pr.job, result) })
+		feed(resp.Jobs)
 	}
+	close(queue)
+	engines.Wait()
 	sends.Wait()
+	return next, err
 }
 
-func (rw *remoteWorker) observe(d time.Duration) {
-	prev := float64FromBits(rw.perPhoto.Load())
-	next := d.Seconds()
-	if prev > 0 {
-		next = 0.9*prev + 0.1*next
+// decoders is how many photos are downloaded and decoded at once: enough
+// to keep every engine fed, as decoding a photo takes about as long as a
+// GPU takes to recognise one.
+func (rw *remoteWorker) decoders() int {
+	if v := os.Getenv("COG_WORKER_DECODERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+		rw.p.log.Warn("COG_WORKER_DECODERS: want a positive number", "value", v)
 	}
-	rw.perPhoto.Store(float64Bits(next))
+	return max(2, len(rw.engines)+1)
+}
+
+// finish runs one engine's stages on a prepared photo and sends the result.
+func (rw *remoteWorker) finish(ctx context.Context, engine *analysisConfig, pr prepared, sends *sync.WaitGroup) {
+	if pr.err != nil {
+		if ctx.Err() == nil {
+			rw.p.log.Warn("worker download", "path", pr.job.Path, "err", pr.err)
+			rw.noteFailure(pr.err)
+		}
+		return
+	}
+	rw.p.finishPhoto(ctx, pr.res, pr.photo, pr.path, pr.media, pr.job.Needs, engine, &scanReport{})
+	if err := os.Remove(pr.path); err != nil {
+		rw.p.log.Warn("worker remove download", "path", pr.path, "err", err)
+	}
+	rw.observe()
+	result := newWorkerResult(pr.job.ETag, rw.cfg.Algorithm, pr.res)
+	sends.Go(func() { rw.send(ctx, pr.job, result) })
+}
+
+// observe smooths the time between finished photos, whichever engine
+// finished them: the worker's seconds per photo.
+func (rw *remoteWorker) observe() {
+	rw.observed.Lock()
+	defer rw.observed.Unlock()
+	now := time.Now()
+	if !rw.lastDone.IsZero() {
+		next := now.Sub(rw.lastDone).Seconds()
+		if prev := float64FromBits(rw.perPhoto.Load()); prev > 0 {
+			next = 0.95*prev + 0.05*next
+		}
+		rw.perPhoto.Store(float64Bits(next))
+	}
+	rw.lastDone = now
 }
 
 // prepare downloads a leased photo and runs the stages that need only its
