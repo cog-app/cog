@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
-	"git.duckfam.us/jj-software/cog/internal/ssh/shell"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -37,7 +36,10 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 			}
 			cfg := configFromEnv()
 			log, _ := newLogger(cfg)
-			sh := shell.New(username, userFS, p.Plugins.UserCommands(), p.Users.Usernames, p.Search, log)
+			sh, err := cogssh.NewShell(p, p.SSHKeys, log, username, userFS)
+			if err != nil {
+				return err
+			}
 
 			if command != "" {
 				return sh.Run(c.Context(), command, os.Stdin, os.Stdout, os.Stderr)

@@ -471,6 +471,9 @@ func (s *Shell) isCommand(name string) bool {
 	if _, ok := commandIndex()[name]; ok {
 		return true
 	}
+	if name == "su" {
+		return s.switchUser != nil
+	}
 	_, ok := s.pluginCmds[name]
 	return ok
 }

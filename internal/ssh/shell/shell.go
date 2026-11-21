@@ -39,6 +39,8 @@ type Shell struct {
 	termHeight int            // terminal height for SSH pty sessions (0 = unknown)
 	sshMode    bool           // true when running over an SSH channel
 	color      bool           // true during RunInteractive for ANSI color output
+	switchUser SwitchUser     // nil unless the session's user may su
+	suStack    []identity     // who the shell was before each su still open
 }
 
 // SetSSHMode configures the shell for use over an SSH channel with a pty.
@@ -245,7 +247,12 @@ func (s *Shell) RunInteractive(ctx context.Context, stdin io.Reader, stdout, std
 			continue
 		}
 		if errors.Is(err, io.EOF) {
-			return nil
+			if len(s.suStack) == 0 {
+				return nil
+			}
+			// Ctrl-D leaves an su, as it would a nested shell.
+			line = "exit"
+			err = nil
 		}
 		if err != nil {
 			return fmt.Errorf("read line: %w", err)
@@ -347,6 +354,7 @@ type sshStdinMux struct {
 	dataCh chan []byte
 	errCh  chan error
 	buf    []byte // leftover from previous read
+	err    error  // the real stdin's error, once it has ended
 
 	// Runner stdin pipe — the runner gets the read end (*os.File)
 	// so the shell interpreter doesn't spawn an eager-copy goroutine.
@@ -421,6 +429,12 @@ func (m *sshStdinMux) Read(p []byte) (int, error) {
 		return n, nil
 	}
 
+	// Once the real stdin has ended, every read says so: leaving an su
+	// on EOF reads again, and nothing will come.
+	if m.err != nil {
+		return 0, m.err
+	}
+
 	// Block waiting for data from either real stdin or injected.
 	select {
 	case data := <-m.dataCh:
@@ -430,6 +444,7 @@ func (m *sshStdinMux) Read(p []byte) (int, error) {
 		}
 		return n, nil
 	case err := <-m.errCh:
+		m.err = err
 		return 0, err
 	}
 }

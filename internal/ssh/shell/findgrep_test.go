@@ -285,16 +285,16 @@ func TestDf(t *testing.T) {
 	if _, _, status := runStatus(t, sh, "df"); status != 1 {
 		t.Fatalf("df without a space source: status %d, want 1", status)
 	}
-	var asked string
-	sh.SetSpace(func(p string) (int64, int64, error) {
-		asked = p
+	var asked, askedUser string
+	sh.SetSpace(func(username, p string) (int64, int64, error) {
+		asked, askedUser = p, username
 		if p == "/files/unlimited" {
 			return 2048, -1, nil
 		}
 		return 3 << 30, 10 << 30, nil
 	})
 	out, stderr, status := runStatus(t, sh, "df -h")
-	if status != 0 || asked != "/files" {
+	if status != 0 || asked != "/files" || askedUser != "testuser" {
 		t.Fatalf("status %d asked %q: %s", status, asked, stderr)
 	}
 	if !strings.Contains(out, "cog               10G       3.0G       7.0G   30% /files") {

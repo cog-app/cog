@@ -42,8 +42,9 @@ func benchShell(b *testing.B) *shell.Shell {
 	}
 	require.NoError(b, fsys.Put("/files/big.log", &big))
 
-	srv := &Server{providers: env.Providers, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	return srv.newShell("bench", fsys, false, 0, 0)
+	sh, err := NewShell(env.Providers, env.Providers.SSHKeys, slog.New(slog.NewTextHandler(io.Discard, nil)), "bench", fsys)
+	require.NoError(b, err)
+	return sh
 }
 
 func BenchmarkShellTools(b *testing.B) {

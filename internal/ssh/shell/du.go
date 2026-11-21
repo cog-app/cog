@@ -13,9 +13,10 @@ import (
 	"git.duckfam.us/jj-software/cog/vfs"
 )
 
-// SpaceFunc reports, for a path in the session's VFS, what the account it is
+// SpaceFunc reports, for a path in username's VFS, what the account it is
 // charged to holds and that account's quota, or -1 when nothing limits it.
-type SpaceFunc func(path string) (used, quota int64, err error)
+// The shell passes who it acts as, which su changes.
+type SpaceFunc func(username, path string) (used, quota int64, err error)
 
 // SetSpace gives df its source of usage and quotas.
 func (s *Shell) SetSpace(f SpaceFunc) { s.space = f }
@@ -217,7 +218,7 @@ func (s *Shell) newDfCmd() *cobra.Command {
 			failed := false
 			for _, arg := range args {
 				vp := s.toVirtualPath(dir, arg)
-				used, quota, err := s.space(vp)
+				used, quota, err := s.space(s.username, vp)
 				if err != nil {
 					if ferr := out.Flush(); ferr != nil {
 						return ferr
