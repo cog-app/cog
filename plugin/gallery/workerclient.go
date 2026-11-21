@@ -26,9 +26,13 @@ import (
 
 var anyAddress = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")}
 
-// workerBatch is how many photos a worker leases at once: enough to keep
-// the next one downloading and decoding while one is recognised.
-const workerBatch = 4
+// workerBatch is how many photos a worker leases at once, and
+// workerDecoders how many it downloads and decodes at once: on a GPU,
+// recognising a photo takes less time than decoding one.
+const (
+	workerBatch    = 8
+	workerDecoders = 2
+)
 
 // remoteWorker analyses photos for a server: it leases them, downloads each,
 // runs the same stages the scan would, and sends back what it found.
@@ -295,7 +299,7 @@ func (rw *remoteWorker) backend(cfg workerConfig) func(RecognitionBackendType) (
 		case BackendPigo:
 			return &PigoBackend{}, nil
 		case BackendOnnx:
-			b := &OnnxBackend{ModelsDir: rw.modelsDir, TagModel: cfg.TagModel, Threads: rw.threads}
+			b := &OnnxBackend{ModelsDir: rw.modelsDir, TagModel: cfg.TagModel, Threads: rw.threads, Device: onnxDevice()}
 			if !b.Available() {
 				return nil, errors.New("onnx backend not available: libonnxruntime.so not found")
 			}
@@ -373,16 +377,27 @@ func (rw *remoteWorker) work(ctx context.Context, jobs []workerJob) {
 	if len(jobs) == 0 {
 		return
 	}
-	ready := make(chan prepared, 1)
-	go func() {
-		defer close(ready)
-		for _, job := range jobs {
-			select {
-			case ready <- rw.prepare(ctx, job):
-			case <-ctx.Done():
-				return
+	queue := make(chan workerJob, len(jobs))
+	for _, job := range jobs {
+		queue <- job
+	}
+	close(queue)
+	ready := make(chan prepared, workerDecoders)
+	var decoders sync.WaitGroup
+	for range workerDecoders {
+		decoders.Go(func() {
+			for job := range queue {
+				select {
+				case ready <- rw.prepare(ctx, job):
+				case <-ctx.Done():
+					return
+				}
 			}
-		}
+		})
+	}
+	go func() {
+		decoders.Wait()
+		close(ready)
 	}()
 
 	var sends sync.WaitGroup

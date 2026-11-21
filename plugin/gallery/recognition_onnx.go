@@ -101,6 +101,7 @@ type OnnxBackend struct {
 	LibraryPath string   // path to libonnxruntime.so
 	TagModel    TagModel // which tag model to use (mobilenet/joytag/wd14)
 	Threads     int      // threads each model may use; 0 leaves it to onnxruntime
+	Device      string   // "" for the CPU, or DeviceCUDA
 
 	once         sync.Once
 	initErr      error
@@ -412,6 +413,9 @@ func (b *OnnxBackend) sessionOptions() (*ort.SessionOptions, error) {
 		err = errors.Join(opts.SetIntraOpNumThreads(b.Threads), opts.SetInterOpNumThreads(1))
 	}
 	err = errors.Join(err, opts.AddSessionConfigEntry("session.intra_op.allow_spinning", "0"))
+	if err == nil && b.Device == DeviceCUDA {
+		err = appendCUDA(opts)
+	}
 	if err != nil {
 		opts.Destroy()
 		return nil, fmt.Errorf("session options: %w", err)
@@ -421,6 +425,17 @@ func (b *OnnxBackend) sessionOptions() (*ort.SessionOptions, error) {
 
 // Release frees ONNX runtime sessions and their C-allocated memory.
 // Call after a scan batch completes to reclaim the ~GB of model workspace memory.
+// appendCUDA runs a session's models on the first NVIDIA GPU. It needs
+// onnxruntime's GPU build, with CUDA 12 and cuDNN 9 where it can load them.
+func appendCUDA(opts *ort.SessionOptions) error {
+	cuda, err := ort.NewCUDAProviderOptions()
+	if err != nil {
+		return fmt.Errorf("cuda: %w", err)
+	}
+	err = errors.Join(cuda.Update(map[string]string{"device_id": "0"}), opts.AppendExecutionProviderCUDA(cuda))
+	return errors.Join(err, cuda.Destroy())
+}
+
 func (b *OnnxBackend) Release() {
 	b.tagSession.destroy()
 	b.tagSession = nil

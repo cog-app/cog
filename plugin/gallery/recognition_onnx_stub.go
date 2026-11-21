@@ -13,6 +13,7 @@ type OnnxBackend struct {
 	LibraryPath string
 	TagModel    TagModel
 	Threads     int
+	Device      string
 }
 
 func (b *OnnxBackend) Name() string    { return "ONNX (local)" }
