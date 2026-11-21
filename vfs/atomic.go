@@ -54,11 +54,10 @@ func WriteFileAtomic(path string, content io.Reader, perm os.FileMode) error {
 // temporary file nor the result can land outside it, whatever name says or
 // whatever symlinks the tree holds.
 func WriteFileAtomicIn(root *os.Root, name string, content io.Reader, perm os.FileMode) error {
-	var suffix [8]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
+	tmp, err := PartialName(name)
+	if err != nil {
 		return fmt.Errorf("create temporary file: %w", err)
 	}
-	tmp := filepath.Join(filepath.Dir(name), "."+filepath.Base(name)+"."+hex.EncodeToString(suffix[:])+atomicTempSuffix)
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create temporary file: %w", err)
@@ -79,4 +78,14 @@ func WriteFileAtomicIn(root *os.Root, name string, content io.Reader, perm os.Fi
 		return errors.Join(fmt.Errorf("replace file: %w", err), root.Remove(tmp))
 	}
 	return nil
+}
+
+// PartialName returns a name for a file to write beside name and rename
+// over it, which IsPartial recognises.
+func PartialName(name string) (string, error) {
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(name), "."+filepath.Base(name)+"."+hex.EncodeToString(suffix[:])+atomicTempSuffix), nil
 }

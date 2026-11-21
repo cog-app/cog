@@ -20,6 +20,9 @@ var (
 	_ vfs.FS         = (*CollectionFS)(nil)
 	_ vfs.Unwrapper  = (*CollectionFS)(nil)
 	_ vfs.FileOpener = (*CollectionFS)(nil)
+
+	_ vfs.AtomicCreator = (*CollectionFS)(nil)
+	_ vfs.AttrSetter    = (*CollectionFS)(nil)
 )
 
 // CollectionEntry is a file in a collection: its name there, and where it is
@@ -252,20 +255,68 @@ func (c *CollectionFS) OpenFile(p string, flag int, perm os.FileMode) (vfs.File,
 }
 
 func (c *CollectionFS) Put(p string, content io.Reader) error {
-	if t, ok := c.OwnerPath(p); ok {
-		if !c.Modify {
-			return fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
-		}
-		return c.owner.Put(t, content)
-	}
-	dst, err := c.newFile(p)
+	dst, isNew, err := c.writeTarget(p)
 	if err != nil {
 		return err
 	}
 	if err := c.owner.Put(dst, content); err != nil {
 		return err
 	}
-	return c.added(dst)
+	if isNew {
+		return c.added(dst)
+	}
+	return nil
+}
+
+// CreateAtomic creates p where its bytes will go in the owner's files: over
+// their file, or a new one in Folder. Commit decides again by the name it is
+// given, so a file can be committed under another.
+func (c *CollectionFS) CreateAtomic(p string, perm os.FileMode) (vfs.PendingFile, error) {
+	ac, ok := c.owner.(vfs.AtomicCreator)
+	if !ok {
+		return nil, fmt.Errorf("create %s: %w", p, errors.ErrUnsupported)
+	}
+	dst, _, err := c.writeTarget(p)
+	if err != nil {
+		return nil, err
+	}
+	f, err := ac.CreateAtomic(dst, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &collectionPending{PendingFile: f, c: c}, nil
+}
+
+// writeTarget returns where a write of p goes in the owner's files, and
+// whether that is a new file to add to the collection.
+func (c *CollectionFS) writeTarget(p string) (string, bool, error) {
+	if t, ok := c.OwnerPath(p); ok {
+		if !c.Modify {
+			return "", false, fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+		}
+		return t, false, nil
+	}
+	dst, err := c.newFile(p)
+	return dst, true, err
+}
+
+type collectionPending struct {
+	vfs.PendingFile
+	c *CollectionFS
+}
+
+func (f *collectionPending) Commit(p string) error {
+	dst, isNew, err := f.c.writeTarget(p)
+	if err != nil {
+		return errors.Join(err, f.Abort())
+	}
+	if err := f.PendingFile.Commit(dst); err != nil {
+		return err
+	}
+	if isNew {
+		return f.c.added(dst)
+	}
+	return nil
 }
 
 // flatName returns p as the name of a file in the collection.
@@ -385,4 +436,64 @@ func (c *CollectionFS) Rename(oldPath, newPath string) error {
 		return fmt.Errorf("remove %s: %w", from, err)
 	}
 	return nil
+}
+
+func (c *CollectionFS) attrSetter() (vfs.AttrSetter, error) {
+	as, ok := c.owner.(vfs.AttrSetter)
+	if !ok {
+		return nil, fmt.Errorf("owner's files: %w", errors.ErrUnsupported)
+	}
+	return as, nil
+}
+
+// Chmod does nothing: Cog's files have no modes of their own.
+func (c *CollectionFS) Chmod(p string, _ os.FileMode) error {
+	_, err := c.target(p)
+	return err
+}
+
+// Chtimes sets the times of a file the share may change: any, with Modify;
+// otherwise one in Folder, where what was added goes, so a client that keeps
+// a file's time (rsync -a) can add one.
+func (c *CollectionFS) Chtimes(p string, atime, mtime time.Time) error {
+	t, err := c.target(p)
+	if err != nil {
+		return err
+	}
+	if !c.Modify {
+		if !c.canAdd() {
+			return vfs.ErrReadOnly
+		}
+		folder, err := c.Folder()
+		if err != nil {
+			return err
+		}
+		if path.Dir(t) != path.Clean("/"+folder) {
+			return fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+		}
+	}
+	as, err := c.attrSetter()
+	if err != nil {
+		return err
+	}
+	return as.Chtimes(t, atime, mtime)
+}
+
+func (c *CollectionFS) Truncate(p string, size int64) error {
+	if !c.Modify {
+		return vfs.ErrReadOnly
+	}
+	t, err := c.target(p)
+	if err != nil {
+		return err
+	}
+	as, err := c.attrSetter()
+	if err != nil {
+		return err
+	}
+	return as.Truncate(t, size)
+}
+
+func (c *CollectionFS) Link(_, newname string) error {
+	return fmt.Errorf("link %s: %w", newname, errors.ErrUnsupported)
 }

@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,8 +27,35 @@ import (
 // rsync names files relative to the root with slashes. A name is cleaned
 // before use, and one that would climb out of the root is refused.
 type rsyncRoot struct {
-	fsys vfs.FS
-	base string // absolute VFS path of the root
+	fsys    vfs.FS
+	base    string // absolute VFS path of the root
+	pending *pendingFiles
+}
+
+// pendingFiles are the files CreateTemp made with the VFS's atomic create,
+// by the absolute path of the temporary name the receiver was given. No
+// file has that name: renaming it commits the file, removing it discards it.
+type pendingFiles struct {
+	mu    sync.Mutex
+	files map[string]vfs.PendingFile
+}
+
+func (p *pendingFiles) add(name string, f vfs.PendingFile) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.files[name]; ok {
+		return false
+	}
+	p.files[name] = f
+	return true
+}
+
+func (p *pendingFiles) take(name string) vfs.PendingFile {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	f := p.files[name]
+	delete(p.files, name)
+	return f
 }
 
 var (
@@ -49,7 +77,7 @@ func newRsyncRoot(fsys vfs.FS, base string) (rsyncRoot, error) {
 			return rsyncRoot{}, fmt.Errorf("rsync: the file system cannot %s", need.what)
 		}
 	}
-	return rsyncRoot{fsys: fsys, base: path.Clean("/" + base)}, nil
+	return rsyncRoot{fsys: fsys, base: path.Clean("/" + base), pending: &pendingFiles{files: map[string]vfs.PendingFile{}}}, nil
 }
 
 func isA[T any](v any) bool {
@@ -106,9 +134,32 @@ func (r rsyncRoot) openFile(op, name string, flag int, perm fs.FileMode) (vfs.Fi
 	return f, nil
 }
 
-// CreateTemp creates a hidden, randomly named file beside name.
+// CreateTemp creates a file to receive name. Where the VFS can write a file
+// whole, it does, and the temporary name is only a handle for the rename
+// that commits it: a folder that cannot take a file it did not ask for,
+// such as a shared album, then takes a transfer. Elsewhere it is a hidden,
+// randomly named file beside name.
 func (r rsyncRoot) CreateTemp(name string, perm fs.FileMode) (string, rsync.PendingFile, error) {
 	dir, base := path.Split(name)
+	if ac, ok := r.fsys.(vfs.AtomicCreator); ok {
+		target, err := r.abs("create", name)
+		if err != nil {
+			return "", nil, err
+		}
+		f, err := ac.CreateAtomic(target, perm)
+		if err == nil {
+			for range 100 {
+				tmp := dir + "." + base + "." + strconv.FormatUint(rand.Uint64(), 36)
+				if r.pending.add(path.Join(r.base, tmp), f) {
+					return tmp, pendingFile{f}, nil
+				}
+			}
+			return "", nil, errors.Join(&fs.PathError{Op: "create", Path: name, Err: fs.ErrExist}, f.Abort())
+		}
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return "", nil, notExist(name, err)
+		}
+	}
 	for range 100 {
 		tmp := dir + "." + base + "." + strconv.FormatUint(rand.Uint64(), 36)
 		f, err := r.openFile("create", tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, perm)
@@ -138,6 +189,9 @@ func (r rsyncRoot) Rename(oldname, newname string) error {
 	if err != nil {
 		return err
 	}
+	if f := r.pending.take(from); f != nil {
+		return notExist(newname, f.Commit(to))
+	}
 	// The receiver renames only to move a file it received into place,
 	// which is an update of the file there, not a delete and a new file.
 	return notExist(oldname, vfs.Replace(r.fsys, from, to))
@@ -150,6 +204,9 @@ func (r rsyncRoot) Remove(name string) error {
 	}
 	if p == r.base {
 		return &fs.PathError{Op: "remove", Path: name, Err: fs.ErrPermission}
+	}
+	if f := r.pending.take(p); f != nil {
+		return f.Abort()
 	}
 	return notExist(name, r.fsys.Delete(p))
 }
@@ -229,7 +286,7 @@ func (r rsyncRoot) Sub(name string) (rsync.DestRoot, error) {
 	if !fi.IsDir {
 		return nil, &fs.PathError{Op: "sub", Path: name, Err: syscall.ENOTDIR}
 	}
-	return rsyncRoot{fsys: r.fsys, base: p}, nil
+	return rsyncRoot{fsys: r.fsys, base: p, pending: r.pending}, nil
 }
 
 // --- fs.FS, which the sender reads and --delete walks ---

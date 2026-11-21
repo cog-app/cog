@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/internal/volume"
@@ -147,4 +148,72 @@ func TestCollectionFSModify(t *testing.T) {
 	require.NoError(t, m.Delete("/Album/renamed.jpg"))
 	_, err = owner.Stat("/2019/renamed.jpg")
 	require.True(t, err != nil)
+}
+
+func TestAtomicCreate(t *testing.T) {
+	be, _ := fileBackendForTest(t)
+	other, _ := fileBackendForTest(t)
+	require.NoError(t, be.Put("/a.txt", strings.NewReader("old")))
+	m := volume.NewMountFS([]volume.MountEntry{
+		{UserPath: "/", Backend: be},
+		{UserPath: "/other", Backend: other},
+	})
+
+	f, err := m.CreateAtomic("/a.txt", 0o600)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("new"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Equal(t, "old", readString(t, m, "/a.txt"))
+	items, err := m.List("/")
+	require.NoError(t, err)
+	for _, fi := range items {
+		require.True(t, fi.Name == "a.txt" || fi.Name == "other" || vfs.IsPartial(fi.Name), "listed: %s", fi.Name)
+	}
+	require.NoError(t, f.Commit("/a.txt"))
+	require.Equal(t, "new", readString(t, m, "/a.txt"))
+
+	f, err = m.CreateAtomic("/b.txt", 0o600)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("b"))
+	require.NoError(t, err)
+	require.NoError(t, f.Commit("/sub/c.txt"))
+	require.Equal(t, "b", readString(t, m, "/sub/c.txt"))
+
+	f, err = m.CreateAtomic("/d.txt", 0o600)
+	require.NoError(t, err)
+	require.NoError(t, f.Abort())
+	_, err = m.Stat("/d.txt")
+	require.True(t, err != nil)
+
+	f, err = m.CreateAtomic("/e.txt", 0o600)
+	require.NoError(t, err)
+	require.True(t, errors.Is(f.Commit("/other/e.txt"), vfs.ErrCrossMount))
+	items, err = be.List("/")
+	require.NoError(t, err)
+	require.Equal(t, 2, len(items))
+}
+
+func TestCollectionFSAtomicCreate(t *testing.T) {
+	owner, _, m, paths := newWritableCollection(t)
+
+	f, err := m.CreateAtomic("/Album/new.jpg", 0o600)
+	require.NoError(t, err)
+	_, err = f.Write([]byte("new"))
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Equal(t, []string{"/2019/a.jpg"}, *paths)
+	require.NoError(t, f.Commit("/Album/new.jpg"))
+	require.Equal(t, []string{"/2019/a.jpg", "/Up/new.jpg"}, *paths)
+	require.Equal(t, "new", readString(t, owner, "/Up/new.jpg"))
+	require.NoError(t, m.Chtimes("/Album/new.jpg", time.Unix(1, 0), time.Unix(1, 0)))
+	require.True(t, errors.Is(m.Chtimes("/Album/a.jpg", time.Unix(1, 0), time.Unix(1, 0)), vfs.ErrReadOnly))
+
+	f, err = m.CreateAtomic("/Album/tmp.jpg", 0o600)
+	require.NoError(t, err)
+	require.NoError(t, f.Commit("/Album/named.jpg"))
+	require.Equal(t, "/Up/named.jpg", (*paths)[2])
+
+	_, err = m.CreateAtomic("/Album/a.jpg", 0o600)
+	require.True(t, errors.Is(err, vfs.ErrReadOnly))
 }

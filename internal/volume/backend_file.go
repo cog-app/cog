@@ -16,11 +16,12 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ vfs.FS          = (*fileBackend)(nil)
-	_ vfs.FileOpener  = (*fileBackend)(nil)
-	_ vfs.AttrSetter  = (*fileBackend)(nil)
-	_ vfs.DirReader   = (*fileBackend)(nil)
-	_ vfs.LocalRooter = (*fileBackend)(nil)
+	_ vfs.FS            = (*fileBackend)(nil)
+	_ vfs.FileOpener    = (*fileBackend)(nil)
+	_ vfs.AttrSetter    = (*fileBackend)(nil)
+	_ vfs.DirReader     = (*fileBackend)(nil)
+	_ vfs.LocalRooter   = (*fileBackend)(nil)
+	_ vfs.AtomicCreator = (*fileBackend)(nil)
 )
 
 // fileBackend serves a local directory. Every operation goes through an
@@ -165,6 +166,62 @@ func (b *fileBackend) OpenFile(p string, flag int, perm os.FileMode) (vfs.File, 
 		return nil, err
 	}
 	return f, nil
+}
+
+// CreateAtomic writes beside p under a name listings hide, and renames
+// over p on commit.
+func (b *fileBackend) CreateAtomic(p string, _ os.FileMode) (vfs.PendingFile, error) {
+	tmp, err := vfs.PartialName(rel(p))
+	if err != nil {
+		return nil, fmt.Errorf("create temporary file: %w", err)
+	}
+	var f *os.File
+	err = b.with(func(r *os.Root) error {
+		if err := r.MkdirAll(filepath.Dir(tmp), 0700); err != nil {
+			return fmt.Errorf("create parent dirs: %w", err)
+		}
+		var err error
+		f, err = r.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &filePending{File: f, b: b, tmp: tmp}, nil
+}
+
+type filePending struct {
+	*os.File
+	b      *fileBackend
+	tmp    string
+	closed bool
+}
+
+func (f *filePending) Close() error {
+	if f.closed {
+		return nil
+	}
+	f.closed = true
+	return f.File.Close()
+}
+
+func (f *filePending) Commit(p string) error {
+	if err := f.Close(); err != nil {
+		return errors.Join(err, f.Abort())
+	}
+	return f.b.with(func(r *os.Root) error {
+		if err := r.MkdirAll(filepath.Dir(rel(p)), 0700); err != nil {
+			return errors.Join(fmt.Errorf("create parent dirs: %w", err), r.Remove(f.tmp))
+		}
+		if err := r.Rename(f.tmp, rel(p)); err != nil {
+			return errors.Join(fmt.Errorf("replace file: %w", err), r.Remove(f.tmp))
+		}
+		return nil
+	})
+}
+
+func (f *filePending) Abort() error {
+	return errors.Join(f.Close(), f.b.with(func(r *os.Root) error { return r.Remove(f.tmp) }))
 }
 
 // --- vfs.AttrSetter ---

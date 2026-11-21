@@ -9,6 +9,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 func TestSharedAlbum(t *testing.T) {
@@ -178,6 +179,22 @@ func TestSharedAlbumUploads(t *testing.T) {
 	require.True(t, r.StatusCode >= 400, "rename with Add photos: %d", r.StatusCode)
 	aliceFile("/Photos/2019/in.jpg")
 	e.Get(t, "/apps/files/shared", bob.Auth).Status(200).Contains("can add")
+
+	bobFS, err := e.Providers.Shared.Files.FS("bob")
+	require.NoError(t, err)
+	pf, err := bobFS.(vfs.AtomicCreator).CreateAtomic("/Holiday/rsync.jpg", 0o600)
+	require.NoError(t, err)
+	synced := photoJPEG(t, 5, 640, 480)
+	_, err = pf.Write(synced)
+	require.NoError(t, err)
+	require.NoError(t, pf.Close())
+	require.NoError(t, pf.Commit("/Holiday/rsync.jpg"))
+	require.Equal(t, string(synced), aliceFile("/Photos/Holiday/rsync.jpg"))
+	meta, err := e.Providers.Shared.Files.GetByPath("bob", "/Holiday/rsync.jpg")
+	require.NoError(t, err)
+	require.Equal(t, int64(len(synced)), meta.Size)
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_pending WHERE album_id = ? AND file_path = '/Photos/Holiday/rsync.jpg'`, album).Scan(&pending))
+	require.Equal(t, 1, pending)
 
 	e.PostForm(t, "/apps/gallery/albums/"+fmt.Sprint(album)+"/rename", url.Values{
 		"name": {"Holiday"}, "upload_folder": {"Shared/Hol"},

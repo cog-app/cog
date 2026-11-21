@@ -56,6 +56,23 @@ type File interface {
 	Truncate(size int64) error
 }
 
+// AtomicCreator writes a file whole: what is written to the file it returns
+// appears at a path, replacing what is there, only when it is committed.
+type AtomicCreator interface {
+	CreateAtomic(path string, perm os.FileMode) (PendingFile, error)
+}
+
+// PendingFile is a file CreateAtomic is writing. Closing it neither commits
+// nor discards it.
+type PendingFile interface {
+	File
+	// Commit closes the file if it is open and puts it at path: the path it
+	// was created for, or another the FS can move it to in one step.
+	Commit(path string) error
+	// Abort closes the file if it is open and discards it.
+	Abort() error
+}
+
 // AttrSetter supports chmod/chtimes/truncate/link (SFTP Setstat, etc.).
 type AttrSetter interface {
 	Chmod(path string, mode os.FileMode) error
