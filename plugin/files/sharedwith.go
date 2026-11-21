@@ -390,6 +390,27 @@ func (s *Shared) MountVolume(u *user.User, vol *volume.Volume, subpath, userPath
 	return s.Mounts.Create(u.ID, userPath, vol.ID, subpath, perms&plugin.PermWrite == 0)
 }
 
+// MoveMount moves u's mount at oldPath, with the mounts inside it, to
+// newPath; what it holds stays where it is. It reports false when there is
+// no mount at oldPath.
+func (s *Shared) MoveMount(u *user.User, oldPath, newPath string) (bool, error) {
+	oldPath = path.Clean("/" + oldPath)
+	if _, err := s.Mounts.GetByUserPath(u.ID, oldPath); errors.Is(err, mount.ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return true, err
+	}
+	if newPath = path.Clean("/" + newPath); strings.HasPrefix(newPath, oldPath+"/") {
+		return true, fmt.Errorf("%w: %s cannot move inside itself", ErrMountPoint, oldPath)
+	}
+	newPath, err := s.MountPoint(u, newPath)
+	if err != nil {
+		return true, err
+	}
+	_, err = s.Mounts.Move(u.ID, oldPath, newPath)
+	return true, err
+}
+
 // Unmount removes u's mount at userPath, leaving what it held where it is.
 func (s *Shared) Unmount(u *user.User, userPath string) error {
 	userPath = path.Clean("/" + userPath)

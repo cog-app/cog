@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"git.duckfam.us/jj-software/cog/internal/clock"
 )
@@ -223,6 +224,27 @@ func (s *Store) Delete(id string) error {
 	}
 	s.changed()
 	return nil
+}
+
+// Move moves the user's mount at oldPath, and every mount beneath it, to
+// newPath, reporting how many moved.
+func (s *Store) Move(userID, oldPath, newPath string) (int64, error) {
+	prefix := oldPath + "/"
+	n := utf8.RuneCountInString(prefix)
+	res, err := s.db.Exec(`UPDATE mounts SET user_path = ? || substr(user_path, ?)
+		WHERE user_id = ? AND (user_path = ? OR substr(user_path, 1, ?) = ?)`,
+		newPath, utf8.RuneCountInString(oldPath)+1, userID, oldPath, n, prefix)
+	if err != nil {
+		return 0, fmt.Errorf("move mounts at %s: %w", oldPath, err)
+	}
+	moved, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	if moved > 0 {
+		s.changed()
+	}
+	return moved, nil
 }
 
 func (s *Store) DeleteByUser(userID string) error {
