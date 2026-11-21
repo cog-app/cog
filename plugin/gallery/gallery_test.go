@@ -384,28 +384,14 @@ func TestManualAlbumsAreNotUnique(t *testing.T) {
 }
 
 func TestGalleryToggleStar(t *testing.T) {
-	env := cogtest.New(t, gallery.New())
-	alice := env.CreateUser(t, "alice", "pass")
+	e := newScanEnv(t)
+	e.upload(t, "/Photos/star.jpg", photoJPEG(t, 1, 64, 48))
+	e.scan(t)
+	id := e.mediaID(t, "/Photos/star.jpg")
 
-	db, err := env.Providers.Plugins.PluginDB(alice.Username, "gallery")
-	require.NoError(t, err)
-	_, err = db.Exec(fullSchema)
-	require.NoError(t, err)
-
-	now := time.Now().Unix()
-	id, err := gallery.InsertMedia(db, &gallery.Media{
-		FileID: 42, FilePath: "/Photos/star.jpg", FileETag: "abc",
-		MimeType: "image/jpeg", Width: 800, Height: 600, DateIndexed: now,
-	})
-	require.NoError(t, err)
-
-	cookie, csrf := sessionAuth(t, env, alice)
-
-	// Toggle star — the handler needs the files plugin, which isn't available
-	// in this test (gallery is the only plugin). The handler returns 500 in
-	// that case. Verify the endpoint is reachable (not 404).
-	// Files plugin is nil so we get 500, but that proves the route + auth + CSRF all work.
-	env.Post(t, fmt.Sprintf("/apps/gallery/media/%d/star", id), cookie, csrf).Status(500)
+	cookie, csrf := sessionAuth(t, e.Env, e.alice)
+	e.Post(t, fmt.Sprintf("/apps/gallery/media/%d/star", id), cookie, csrf).Status(200).Contains(`aria-pressed="true"`)
+	e.Post(t, fmt.Sprintf("/apps/gallery/media/%d/star", id), cookie, csrf).Status(200).Contains(`aria-pressed="false"`)
 }
 
 func TestGalleryTagMedia(t *testing.T) {

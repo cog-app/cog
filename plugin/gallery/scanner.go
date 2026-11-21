@@ -2,6 +2,8 @@ package gallery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -263,58 +265,155 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 	}
 	fileEntries = filtered
 
-	// Get existing indexed media.
-	existing, err := AllMediaFileIDs(galleryDB)
+	existing, err := IndexedFiles(galleryDB)
 	if err != nil {
 		return err
 	}
 
-	now := p.ctx.Now().Unix()
-	fileIDsSeen := make(map[int64]bool, len(fileEntries))
-
+	var changed, added []fileEntry
+	seen := make(map[int64]bool, len(fileEntries))
 	for _, f := range fileEntries {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		seen[f.ID] = true
+		old, ok := existing[f.ID]
+		switch {
+		case !ok:
+			added = append(added, f)
+		case old.ETag != f.ETag:
+			changed = append(changed, f)
 		}
-		fileIDsSeen[f.ID] = true
-
-		existingETag, exists := existing[f.ID]
-		if exists && existingETag == f.ETag {
-			continue // unchanged
-		}
-
-		if exists {
-			// File changed — update in-place to preserve row ID and associated
-			// faces/media_tags/album_media. Resets metadata + recognition state.
-			if err := ResetMediaByFileID(galleryDB, f.ID, f.Path, f.ETag, f.MimeType, now); err != nil {
-				p.log.Error("reset changed media", "file_id", f.ID, "err", err)
-			}
+	}
+	// A file that left one path and arrived at another under a new file_id
+	// (moved across mounts, or copied and deleted) is the same photo; it is
+	// matched by content so it keeps its faces, tags and albums.
+	vanished := map[string]indexedFile{}
+	var gone []int64
+	for fileID, old := range existing {
+		if seen[fileID] {
 			continue
 		}
-
-		// Insert new media row with minimal info; metadata extraction happens in stage 2.
-		m := &Media{
-			FileID:      f.ID,
-			FilePath:    f.Path,
-			FileETag:    f.ETag,
-			MimeType:    f.MimeType,
-			DateIndexed: now,
-		}
-		if _, err := InsertMedia(galleryDB, m); err != nil {
-			p.log.Error("insert media", "file_id", f.ID, "path", f.Path, "err", err)
+		gone = append(gone, fileID)
+		if old.ContentKey != "" {
+			vanished[old.ContentKey] = old
 		}
 	}
+	if len(changed) == 0 && len(added) == 0 && len(gone) == 0 {
+		return nil
+	}
 
-	// Remove media for deleted files.
-	for fileID := range existing {
-		if !fileIDsSeen[fileID] {
-			if err := DeleteMediaByFileID(galleryDB, fileID); err != nil {
-				p.log.Error("cleanup deleted file", "file_id", fileID, "err", err)
+	now := p.ctx.Now().Unix()
+	var moved, reset, inserted, deleted int
+	err = inTx(galleryDB, func(tx *sql.Tx) error {
+		for _, f := range changed {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			key := p.contentKeyOf(username, f.Path)
+			// A rename gives a file a new etag without changing a byte of it.
+			if key != "" && key == existing[f.ID].ContentKey {
+				if _, err := tx.Exec(`UPDATE media SET file_path = ?, file_etag = ?, mime_type = ? WHERE file_id = ?`,
+					f.Path, f.ETag, f.MimeType, f.ID); err != nil {
+					return fmt.Errorf("move media %s: %w", f.Path, err)
+				}
+				moved++
+				continue
+			}
+			if err := ResetMediaByFileID(tx, f.ID, f.Path, f.ETag, f.MimeType, key, now); err != nil {
+				return fmt.Errorf("reset changed media %s: %w", f.Path, err)
+			}
+			reset++
+		}
+		for _, f := range added {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			var key string
+			if len(vanished) > 0 {
+				key = p.contentKeyOf(username, f.Path)
+				if old, ok := vanished[key]; ok && key != "" {
+					if _, err := tx.Exec(`UPDATE media SET file_id = ?, file_path = ?, file_etag = ?, mime_type = ? WHERE id = ?`,
+						f.ID, f.Path, f.ETag, f.MimeType, old.ID); err != nil {
+						return fmt.Errorf("move media %s: %w", f.Path, err)
+					}
+					delete(vanished, key)
+					moved++
+					continue
+				}
+			}
+			// Metadata extraction fills in the rest.
+			if _, err := InsertMedia(tx, &Media{
+				FileID:      f.ID,
+				FilePath:    f.Path,
+				FileETag:    f.ETag,
+				MimeType:    f.MimeType,
+				DateIndexed: now,
+				ContentKey:  key,
+			}); err != nil {
+				return fmt.Errorf("insert media %s: %w", f.Path, err)
+			}
+			inserted++
+		}
+		// A row matched to a new file above has that file's id by now.
+		for _, fileID := range gone {
+			res, err := tx.Exec(`DELETE FROM media WHERE file_id = ?`, fileID)
+			if err != nil {
+				return fmt.Errorf("forget deleted file %d: %w", fileID, err)
+			}
+			if n, err := res.RowsAffected(); err == nil {
+				deleted += int(n)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-
+	p.log.Info("discovered media", "user", username,
+		"added", inserted, "changed", reset, "moved", moved, "deleted", deleted)
 	return nil
+}
+
+// contentKey identifies a file by its content cheaply: its size and its
+// first and last 256 KiB. An edited photo is re-encoded, so its ends change;
+// reading the whole of a video to hash it would not be cheap.
+func contentKey(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	const span = 256 << 10
+	h := sha256.New()
+	fmt.Fprintf(h, "%d:", info.Size())
+	if _, err := io.Copy(h, io.LimitReader(f, span)); err != nil {
+		return "", err
+	}
+	if info.Size() > 2*span {
+		if _, err := f.Seek(-span, io.SeekEnd); err != nil {
+			return "", err
+		}
+		if _, err := io.Copy(h, f); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)[:16]), nil
+}
+
+// contentKeyOf is the content key of a user's media file, or "" when it
+// cannot be read, which matches nothing.
+func (p *Plugin) contentKeyOf(username, filePath string) string {
+	local, err := p.resolveLocalPath(username, filePath)
+	if err == nil {
+		var key string
+		if key, err = contentKey(local); err == nil {
+			return key
+		}
+	}
+	p.log.Debug("content key", "path", filePath, "err", err)
+	return ""
 }
 
 // extractMetadata reads EXIF data from images that haven't been processed yet.
@@ -338,6 +437,11 @@ func (p *Plugin) extractMetadata(ctx context.Context, db *sql.DB, username strin
 
 		m := &items[i]
 		srcPath, err := p.resolveLocalPath(username, m.FilePath)
+		if err == nil && m.ContentKey == "" {
+			if m.ContentKey, err = contentKey(srcPath); err != nil {
+				p.log.Warn("content key", "path", m.FilePath, "err", err)
+			}
+		}
 		if err == nil {
 			if m.IsVideo() {
 				err = extractVideoMetadata(srcPath, m)
@@ -718,10 +822,10 @@ var errNoFiles = errors.New("gallery: files plugin unavailable")
 // filesPlugin returns the files plugin, or errNoFiles when it is not
 // registered.
 func (p *Plugin) filesPlugin() (*files.Plugin, error) {
-	if p.files == nil {
-		return nil, errNoFiles
+	if fp := p.filesPeer(); fp != nil {
+		return fp, nil
 	}
-	return p.files, nil
+	return nil, errNoFiles
 }
 
 // videoThumbnail returns a cached video thumbnail, generating it if needed.

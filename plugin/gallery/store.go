@@ -57,6 +57,7 @@ type Media struct {
 	OCRText          string
 	Fingerprint      string
 	QualityScore     float64
+	ContentKey       string // see contentKey; empty until the file is read
 }
 
 // IsVideo reports whether this media item is a video.
@@ -149,7 +150,7 @@ var mediaCols = `m.id, m.file_id, m.file_path, m.file_etag, m.mime_type, m.width
 	m.camera_make, m.camera_model, m.lens_model, m.focal_length, m.f_number, m.exposure_time,
 	m.iso, m.flash, m.duration_ms, m.video_codec, m.audio_codec,
 	m.place_name, m.country, m.region, m.city, m.recognition_state, m.recognition_at, m.ocr_text,
-	m.fingerprint, m.quality_score`
+	m.fingerprint, m.quality_score, m.content_key`
 
 func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 	var m Media
@@ -160,7 +161,7 @@ func scanMedia(row interface{ Scan(...any) error }) (*Media, error) {
 		&m.CameraMake, &m.CameraModel, &m.LensModel, &m.FocalLength, &m.FNumber, &m.ExposureTime,
 		&m.ISO, &m.Flash, &m.DurationMs, &m.VideoCodec, &m.AudioCodec,
 		&m.PlaceName, &m.Country, &m.Region, &m.City, &m.RecognitionState, &m.RecognitionAt,
-		&m.OCRText, &m.Fingerprint, &m.QualityScore,
+		&m.OCRText, &m.Fingerprint, &m.QualityScore, &m.ContentKey,
 	)
 	return &m, err
 }
@@ -284,20 +285,20 @@ func VideoMedia(db *sql.DB, limit, offset int) ([]Media, error) {
 }
 
 // InsertMedia inserts a new media row and returns its ID.
-func InsertMedia(db *sql.DB, m *Media) (int64, error) {
+func InsertMedia(db execQuerier, m *Media) (int64, error) {
 	res, err := db.Exec(`INSERT INTO media (
 		file_id, file_path, file_etag, mime_type, width, height, orientation,
 		date_taken, date_indexed, latitude, longitude, altitude,
 		camera_make, camera_model, lens_model, focal_length, f_number, exposure_time,
 		iso, flash, duration_ms, video_codec, audio_codec,
-		place_name, country, region, city, recognition_state, recognition_at, ocr_text
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		place_name, country, region, city, recognition_state, recognition_at, ocr_text, content_key
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.FileID, m.FilePath, m.FileETag, m.MimeType, m.Width, m.Height, m.Orientation,
 		m.DateTaken, m.DateIndexed, m.Latitude, m.Longitude, m.Altitude,
 		m.CameraMake, m.CameraModel, m.LensModel, m.FocalLength, m.FNumber, m.ExposureTime,
 		m.ISO, m.Flash, m.DurationMs, m.VideoCodec, m.AudioCodec,
 		m.PlaceName, m.Country, m.Region, m.City, m.RecognitionState, m.RecognitionAt,
-		m.OCRText,
+		m.OCRText, m.ContentKey,
 	)
 	if err != nil {
 		return 0, err
@@ -313,14 +314,14 @@ func UpdateMediaMetadata(db *sql.DB, m *Media) error {
 		camera_make = ?, camera_model = ?, lens_model = ?, focal_length = ?, f_number = ?,
 		exposure_time = ?, iso = ?, flash = ?, duration_ms = ?, video_codec = ?, audio_codec = ?,
 		place_name = ?, country = ?, region = ?, city = ?,
-		recognition_state = ?, recognition_at = ?, ocr_text = ?
+		recognition_state = ?, recognition_at = ?, ocr_text = ?, content_key = ?
 		WHERE id = ?`,
 		m.FilePath, m.FileETag, m.MimeType, m.Width, m.Height, m.Orientation,
 		m.DateTaken, m.DateIndexed, m.Latitude, m.Longitude, m.Altitude,
 		m.CameraMake, m.CameraModel, m.LensModel, m.FocalLength, m.FNumber,
 		m.ExposureTime, m.ISO, m.Flash, m.DurationMs, m.VideoCodec, m.AudioCodec,
 		m.PlaceName, m.Country, m.Region, m.City,
-		m.RecognitionState, m.RecognitionAt, m.OCRText,
+		m.RecognitionState, m.RecognitionAt, m.OCRText, m.ContentKey,
 		m.ID,
 	)
 	return err
@@ -329,8 +330,8 @@ func UpdateMediaMetadata(db *sql.DB, m *Media) error {
 // ResetMediaByFileID updates a changed file's media row in-place, preserving
 // the row ID (and thus all associated faces/media_tags/album_media).
 // It resets metadata and recognition state so both get re-extracted.
-func ResetMediaByFileID(db *sql.DB, fileID int64, path, etag, mime string, dateIndexed int64) error {
-	_, err := db.Exec(`UPDATE media SET
+func ResetMediaByFileID(db execQuerier, fileID int64, path, etag, mime, contentKey string, dateIndexed int64) error {
+	_, err := db.Exec(`UPDATE media SET content_key = ?, quality_score = -1,
 		file_path = ?, file_etag = ?, mime_type = ?, date_indexed = ?,
 		width = 0, height = 0, orientation = 0,
 		date_taken = NULL, latitude = NULL, longitude = NULL, altitude = NULL,
@@ -339,12 +340,12 @@ func ResetMediaByFileID(db *sql.DB, fileID int64, path, etag, mime string, dateI
 		iso = NULL, flash = NULL, duration_ms = NULL, video_codec = '', audio_codec = '',
 		place_name = '', country = '', region = '', city = '',
 		recognition_state = 0, recognition_at = NULL, ocr_text = '', fingerprint = ''
-		WHERE file_id = ?`, path, etag, mime, dateIndexed, fileID)
+		WHERE file_id = ?`, contentKey, path, etag, mime, dateIndexed, fileID)
 	return err
 }
 
 // DeleteMediaByFileID deletes a media row by its files plugin file_id.
-func DeleteMediaByFileID(db *sql.DB, fileID int64) error {
+func DeleteMediaByFileID(db execQuerier, fileID int64) error {
 	_, err := db.Exec(`DELETE FROM media WHERE file_id = ?`, fileID)
 	return err
 }
@@ -421,21 +422,28 @@ func CleanOrphans(db *sql.DB) error {
 	return err
 }
 
-// AllMediaFileIDs returns a set of file_id -> etag for all indexed media.
-func AllMediaFileIDs(db *sql.DB) (map[int64]string, error) {
-	rows, err := db.Query(`SELECT file_id, file_etag FROM media`)
+// indexedFile is what discovery needs of a media row.
+type indexedFile struct {
+	ID         int64
+	ETag       string
+	ContentKey string
+}
+
+// IndexedFiles returns every media row by its files-plugin file_id.
+func IndexedFiles(db *sql.DB) (map[int64]indexedFile, error) {
+	rows, err := db.Query(`SELECT file_id, id, file_etag, content_key FROM media`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make(map[int64]string)
+	result := make(map[int64]indexedFile)
 	for rows.Next() {
-		var id int64
-		var etag string
-		if err := rows.Scan(&id, &etag); err != nil {
+		var fileID int64
+		var f indexedFile
+		if err := rows.Scan(&fileID, &f.ID, &f.ETag, &f.ContentKey); err != nil {
 			return nil, err
 		}
-		result[id] = etag
+		result[fileID] = f
 	}
 	return result, rows.Err()
 }

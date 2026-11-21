@@ -194,7 +194,7 @@ func (h *Pages) PhotoView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isFavorite := false
-	if h.plugin.files != nil {
+	if h.plugin.filesPeer() != nil {
 		filesDB, err := h.plugin.ctx.PluginDB(plugin.Username(r), plugin.OfPlugin("files"))
 		if err != nil {
 			h.serverError(w, r, err)
@@ -750,11 +750,11 @@ func (h *Pages) DeletePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := fmt.Sprintf("/apps/gallery/photo/%d", id)
-	if h.plugin.files == nil {
+	if h.plugin.filesPeer() == nil {
 		flashRedirect(w, r, "error", "The photo could not be deleted: the files app is not available.", back)
 		return
 	}
-	if err := h.plugin.files.Delete(plugin.Username(r), m.FilePath); err != nil {
+	if err := h.plugin.filesPeer().Delete(plugin.Username(r), m.FilePath); err != nil {
 		flashRedirect(w, r, "error", "The photo could not be deleted: "+err.Error(), back)
 		return
 	}
@@ -1389,7 +1389,7 @@ func (h *Pages) Starred(w http.ResponseWriter, r *http.Request) {
 	}
 	username := plugin.Username(r)
 	var media []Media
-	if h.plugin.files != nil {
+	if h.plugin.filesPeer() != nil {
 		filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 		if err != nil {
 			h.serverError(w, r, err)
@@ -1430,7 +1430,7 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	if h.plugin.files == nil {
+	if h.plugin.filesPeer() == nil {
 		http.Error(w, "files plugin unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -1440,11 +1440,16 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	// Read current state and toggle.
 	var fav int
-	filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav)
+	if err := filesDB.QueryRow(`SELECT favorite FROM files WHERE id = ?`, m.FileID).Scan(&fav); err != nil {
+		httperr.Internal(w, r, fmt.Errorf("read star of %s: %w", m.FilePath, err))
+		return
+	}
 	newFav := fav != 1
-	h.plugin.files.SetFavorite(username, m.FilePath, newFav)
+	if err := h.plugin.filesPeer().SetFavorite(username, m.FilePath, newFav); err != nil {
+		httperr.Internal(w, r, fmt.Errorf("star %s: %w", m.FilePath, err))
+		return
+	}
 
 	// Return updated star button.
 	ui.Render(w, r, ui.Star(newFav, fmt.Sprintf("/apps/gallery/media/%d/star", id)))
@@ -1541,7 +1546,7 @@ func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
 // database failure.
 func (h *Pages) deleteDuplicateFiles(db *sql.DB, username string, members []DuplicateMember) (failed []string, err error) {
 	for _, m := range members {
-		if err := h.plugin.files.Delete(username, m.Media.FilePath); err != nil {
+		if err := h.plugin.filesPeer().Delete(username, m.Media.FilePath); err != nil {
 			h.plugin.log.Warn("delete duplicate", "path", m.Media.FilePath, "err", err)
 			failed = append(failed, path.Base(m.Media.FilePath))
 			continue

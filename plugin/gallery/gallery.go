@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
@@ -46,7 +47,7 @@ type ScanStatus struct {
 type Plugin struct {
 	ctx      plugin.PluginContext
 	log      *slog.Logger
-	files    *files.Plugin
+	files    atomic.Pointer[files.Plugin] // see filesPeer
 	contacts *contacts.Plugin
 	geocoder *Geocoder
 	cancel   context.CancelFunc
@@ -86,12 +87,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterSchema(sqlFS)
 	p.log = ctx.Logger()
 
-	// Obtain the concrete files plugin for operations not on FilesAccess
-	// (DB, Rename, Preview, Upload).
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {
-		if fp, found := priv.PluginByID("files"); found {
-			p.files = fp.(*files.Plugin)
-		}
 		if cp, found := priv.PluginByID("contacts"); found {
 			p.contacts = cp.(*contacts.Plugin)
 		}
@@ -215,6 +211,26 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	}
 
 	return nil
+}
+
+// filesPeer returns the concrete files plugin, for what is not on
+// FilesAccess (Preview, Delete, SetFavorite), or nil when there is none. It
+// is looked up on first use because it may register after this plugin.
+func (p *Plugin) filesPeer() *files.Plugin {
+	if fp := p.files.Load(); fp != nil {
+		return fp
+	}
+	priv, ok := p.ctx.(plugin.PrivilegedContext)
+	if !ok {
+		return nil
+	}
+	found, ok := priv.PluginByID("files")
+	if !ok {
+		return nil
+	}
+	fp := found.(*files.Plugin)
+	p.files.Store(fp)
+	return fp
 }
 
 func (p *Plugin) Start(ctx context.Context) error {
