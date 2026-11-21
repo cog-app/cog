@@ -21,6 +21,9 @@ const (
 	PermReshare                     // 4
 	PermFreeBusy                    // 8
 	PermSchedule                    // 16
+	// PermModify lets a share change and delete what a resource holds,
+	// where PermWrite alone only adds to it.
+	PermModify // 32
 )
 
 // PermissionLevel is a named permission preset that plugins define
@@ -159,13 +162,15 @@ type Collection struct {
 	// List returns the resource's name and where its files are in the
 	// owner's files, or ErrResourceGone.
 	List func(owner, resourceID string) (name string, paths []string, err error)
-	// Folder, when set, lets a share with write permission add files: they
-	// are written to the folder of the owner's files it returns, and each is
+	// Folder, when set, lets a share with PermWrite add files: they are
+	// written to the folder of the owner's files it returns, and each is
 	// passed to Add once it is there.
 	Folder func(owner, resourceID string) (string, error)
 	Add    func(owner, resourceID, path string) error
-	// Remove, when set, lets a share with write permission take a file out
-	// of the resource. The file stays in the owner's files.
+	// Remove takes a file out of the resource, leaving it in the owner's
+	// files. With it, a share with PermModify can change, rename and delete
+	// the owner's files; a renamed file is removed under its old path and
+	// added under its new one.
 	Remove func(owner, resourceID, path string) error
 }
 

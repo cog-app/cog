@@ -645,9 +645,6 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	if err != nil {
 		return err
 	}
-	if ok, err := p.removeFromCollection(db, username, filePath); ok || err != nil {
-		return err
-	}
 	t, ok, err := p.writable(username, filePath)
 	if err != nil {
 		return err
@@ -783,6 +780,35 @@ func (p *Plugin) renameMount(db *sql.DB, u *user.User, oldPath, newPath string) 
 	return meta, true, err
 }
 
+// renameInCollection renames a file in a plugin's collection mounted in
+// username's files: the owner's file, in its folder, which the collection
+// keeps.
+func (p *Plugin) renameInCollection(db *sql.DB, username, oldPath, newPath string, from sharedTarget) (*FileMeta, error) {
+	if from.mountRoot {
+		return nil, errMountPoint
+	}
+	if filepath.Dir(oldPath) != filepath.Dir(newPath) {
+		return nil, vfs.ErrCrossMount
+	}
+	fsys, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fsys.Rename(oldPath, newPath); err != nil {
+		return nil, err
+	}
+	if err := forgetRows(db, oldPath); err != nil {
+		return nil, err
+	}
+	if _, err := p.follow(from.owner, from.path); err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if err := p.recordShared(username, newPath); err != nil {
+		return nil, err
+	}
+	return p.follow(username, newPath)
+}
+
 // renameShared is Rename within a folder shared with username (true): the
 // owner's file is moved, and username's rows follow it. Moving in or out of
 // one is moving between mounts, which a rename cannot.
@@ -797,6 +823,10 @@ func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string) (*F
 	}
 	if !fromShared && !toShared {
 		return nil, false, nil
+	}
+	if fromShared && from.collection {
+		meta, err := p.renameInCollection(db, username, oldPath, newPath, from)
+		return meta, true, err
 	}
 	if !fromShared || !toShared || from.owner != to.owner {
 		return nil, true, vfs.ErrCrossMount

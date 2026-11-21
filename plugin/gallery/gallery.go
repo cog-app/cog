@@ -136,6 +136,11 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 		Type:     albumResourceType,
 		Table:    "albums",
 		IDColumn: "id",
+		PermissionLevels: []plugin.PermissionLevel{
+			{Label: "View", Permissions: plugin.PermRead},
+			{Label: "Add photos", Permissions: plugin.PermRead | plugin.PermWrite},
+			{Label: "Full access", Permissions: plugin.PermRead | plugin.PermWrite | plugin.PermModify},
+		},
 		Collection: &plugin.Collection{
 			List:   p.albumCollection,
 			Folder: p.albumUploadFolder,

@@ -312,9 +312,8 @@ func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEn
 	return e, true, nil
 }
 
-// collectionEntry mounts a plugin's collection of owner's files. A file in
-// it is the owner's, so it cannot be changed through the mount; with write
-// permission, files can be added to the collection and taken out of it.
+// collectionEntry mounts a plugin's collection of owner's files. PermWrite
+// adds files to it; PermModify changes the owner's files in it as well.
 func (r *Resolver) collectionEntry(owner *user.User, m *Mount, perms uint32, depth int) (volume.MountEntry, bool, error) {
 	if r.Collection == nil {
 		return volume.MountEntry{}, false, nil
@@ -332,7 +331,7 @@ func (r *Resolver) collectionEntry(owner *user.User, m *Mount, perms uint32, dep
 	if err != nil {
 		return volume.MountEntry{}, false, fmt.Errorf("files of %s: %w", owner.Username, err)
 	}
-	backend := collectionFS(ownerFS, owner.Username, m.ShareResourceID, c, perms&plugin.PermWrite != 0)
+	backend := collectionFS(ownerFS, owner.Username, m.ShareResourceID, c, perms)
 	return volume.MountEntry{
 		UserPath:   m.UserPath,
 		Backend:    backend,
@@ -342,9 +341,9 @@ func (r *Resolver) collectionEntry(owner *user.User, m *Mount, perms uint32, dep
 	}, true, nil
 }
 
-// collectionFS is the folder of owner's files c lists for the resource
-// id, taking additions and removals when write allows them and c can.
-func collectionFS(ownerFS vfs.FS, owner, id string, c *plugin.Collection, write bool) *volume.CollectionFS {
+// collectionFS is the folder of owner's files c lists for the resource id,
+// writable as far as perms allow and c can.
+func collectionFS(ownerFS vfs.FS, owner, id string, c *plugin.Collection, perms uint32) *volume.CollectionFS {
 	fs := volume.NewCollectionFS(ownerFS, func() ([]string, error) {
 		_, paths, err := c.List(owner, id)
 		if errors.Is(err, plugin.ErrResourceGone) {
@@ -352,14 +351,17 @@ func collectionFS(ownerFS vfs.FS, owner, id string, c *plugin.Collection, write 
 		}
 		return paths, err
 	})
-	if !write {
+	if perms&plugin.PermWrite == 0 {
 		return fs
 	}
 	if c.Folder != nil && c.Add != nil {
 		fs.Folder = func() (string, error) { return c.Folder(owner, id) }
+	}
+	if c.Add != nil {
 		fs.Add = func(p string) error { return c.Add(owner, id, p) }
 	}
-	if c.Remove != nil {
+	if perms&plugin.PermModify != 0 && c.Remove != nil {
+		fs.Modify = true
 		fs.Remove = func(p string) error { return c.Remove(owner, id, p) }
 	}
 	return fs

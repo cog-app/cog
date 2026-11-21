@@ -60,9 +60,10 @@ func CollectionEntries(paths []string) []CollectionEntry {
 const collectionTTL = 2 * time.Second
 
 // CollectionFS is a flat folder of files from someone's tree, as a plugin
-// lists them: an album's photos, say. Its files are the owner's and cannot
-// be changed through it. With Folder and Add set, a new file is written to
-// Folder and added to the collection; with Remove, deleting one takes it out.
+// lists them: an album's photos, say. With Folder and Add set, a new file is
+// written to Folder and added to the collection. Its files are the owner's,
+// and can be changed, renamed and deleted through it only when Modify is set
+// (and, to rename, Remove).
 type CollectionFS struct {
 	owner vfs.FS
 	list  func() ([]string, error)
@@ -70,6 +71,7 @@ type CollectionFS struct {
 	Folder func() (string, error)
 	Add    func(ownerPath string) error
 	Remove func(ownerPath string) error
+	Modify bool
 
 	mu      sync.Mutex
 	entries []CollectionEntry
@@ -81,10 +83,12 @@ func NewCollectionFS(owner vfs.FS, list func() ([]string, error)) *CollectionFS 
 	return &CollectionFS{owner: owner, list: list}
 }
 
-// Writable reports whether files can be added to or removed from c.
+// Writable reports whether anything can be written through c.
 func (c *CollectionFS) Writable() bool {
-	return (c.Folder != nil && c.Add != nil) || c.Remove != nil
+	return c.canAdd() || c.Modify
 }
+
+func (c *CollectionFS) canAdd() bool { return c.Folder != nil && c.Add != nil }
 
 func (c *CollectionFS) invalidate() {
 	c.mu.Lock()
@@ -221,11 +225,16 @@ func (c *CollectionFS) OpenFile(p string, flag int, perm os.FileMode) (vfs.File,
 		}
 		return opener.OpenFile(t, flag, perm)
 	}
+	if t, ok := c.OwnerPath(p); ok {
+		if !c.Modify || flag&os.O_EXCL != 0 {
+			return nil, fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+		}
+		return opener.OpenFile(t, flag, perm)
+	}
 	if flag&os.O_CREATE == 0 {
 		if _, err := c.target(p); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
 	}
 	dst, err := c.newFile(p)
 	if err != nil {
@@ -243,6 +252,12 @@ func (c *CollectionFS) OpenFile(p string, flag int, perm os.FileMode) (vfs.File,
 }
 
 func (c *CollectionFS) Put(p string, content io.Reader) error {
+	if t, ok := c.OwnerPath(p); ok {
+		if !c.Modify {
+			return fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
+		}
+		return c.owner.Put(t, content)
+	}
 	dst, err := c.newFile(p)
 	if err != nil {
 		return err
@@ -253,17 +268,26 @@ func (c *CollectionFS) Put(p string, content io.Reader) error {
 	return c.added(dst)
 }
 
-// newFile returns where in its owner's files a file added as p goes: in
-// Folder, under p's name or, when that is taken there, "name (2).ext".
-func (c *CollectionFS) newFile(p string) (string, error) {
-	if c.Folder == nil || c.Add == nil {
-		return "", vfs.ErrReadOnly
-	}
+// flatName returns p as the name of a file in the collection.
+func flatName(p string) (string, error) {
 	p = path.Clean("/" + p)
 	if p == "/" || path.Dir(p) != "/" {
 		return "", fmt.Errorf("%s: a collection holds no folders: %w", p, vfs.ErrReadOnly)
 	}
-	if _, ok := c.OwnerPath(p); ok {
+	return p[1:], nil
+}
+
+// newFile returns where in its owner's files a file added as p goes: in
+// Folder, under p's name or, when that is taken there, "name (2).ext".
+func (c *CollectionFS) newFile(p string) (string, error) {
+	if !c.canAdd() {
+		return "", vfs.ErrReadOnly
+	}
+	name, err := flatName(p)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := c.OwnerPath(name); ok {
 		return "", fmt.Errorf("%s: %w", p, vfs.ErrReadOnly)
 	}
 	folder, err := c.Folder()
@@ -274,13 +298,16 @@ func (c *CollectionFS) newFile(p string) (string, error) {
 	if err := c.owner.Mkdir(folder); err != nil {
 		return "", fmt.Errorf("create %s: %w", folder, err)
 	}
-	base := p[1:]
+	return c.freePath(folder, name)
+}
+
+func (c *CollectionFS) freePath(folder, base string) (string, error) {
 	ext := path.Ext(base)
 	name := base
 	for n := 2; ; n++ {
 		dst := path.Join(folder, name)
 		_, err := c.owner.Stat(dst)
-		if errors.Is(err, vfs.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+		if isNotExist(err) {
 			return dst, nil
 		}
 		if err != nil {
@@ -288,6 +315,10 @@ func (c *CollectionFS) newFile(p string) (string, error) {
 		}
 		name = strings.TrimSuffix(base, ext) + " (" + strconv.Itoa(n) + ")" + ext
 	}
+}
+
+func isNotExist(err error) bool {
+	return errors.Is(err, vfs.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
 }
 
 // added adds dst, just written, to the collection, or removes it from the
@@ -307,9 +338,9 @@ func (c *CollectionFS) Mkdir(p string) error {
 	return fmt.Errorf("%s: a collection holds no folders: %w", p, vfs.ErrReadOnly)
 }
 
-// Delete takes p out of the collection. Its file stays in the owner's files.
+// Delete deletes the owner's file p.
 func (c *CollectionFS) Delete(p string) error {
-	if c.Remove == nil {
+	if !c.Modify {
 		return vfs.ErrReadOnly
 	}
 	t, err := c.target(p)
@@ -317,7 +348,41 @@ func (c *CollectionFS) Delete(p string) error {
 		return err
 	}
 	defer c.invalidate()
-	return c.Remove(t)
+	return c.owner.Delete(t)
 }
 
-func (c *CollectionFS) Rename(_, _ string) error { return vfs.ErrReadOnly }
+// Rename renames the owner's file in its folder, keeping it in the
+// collection.
+func (c *CollectionFS) Rename(oldPath, newPath string) error {
+	if !c.Modify || c.Remove == nil || c.Add == nil {
+		return vfs.ErrReadOnly
+	}
+	from, err := c.target(oldPath)
+	if err != nil {
+		return err
+	}
+	name, err := flatName(newPath)
+	if err != nil {
+		return err
+	}
+	if _, ok := c.OwnerPath(name); ok {
+		return fmt.Errorf("%s: %w", newPath, fs.ErrExist)
+	}
+	to := path.Join(path.Dir(from), name)
+	if _, err := c.owner.Stat(to); err == nil {
+		return fmt.Errorf("%s: %w", to, fs.ErrExist)
+	} else if !isNotExist(err) {
+		return err
+	}
+	defer c.invalidate()
+	if err := c.owner.Rename(from, to); err != nil {
+		return err
+	}
+	if err := c.Add(to); err != nil {
+		return errors.Join(fmt.Errorf("add %s: %w", to, err), c.owner.Rename(to, from))
+	}
+	if err := c.Remove(from); err != nil {
+		return fmt.Errorf("remove %s: %w", from, err)
+	}
+	return nil
+}

@@ -11,6 +11,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"git.duckfam.us/jj-software/cog/internal/user"
+	"git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/ui"
 	"git.duckfam.us/jj-software/cog/vfs"
 )
@@ -271,6 +272,8 @@ func sharedAccess(e *SharedEntry) string {
 	switch {
 	case e.IsStorage():
 		return "storage"
+	case e.Kind == SharedCollection && e.Writable() && e.Perms&plugin.PermModify == 0:
+		return "can add"
 	case e.Writable():
 		return "can edit"
 	}

@@ -172,11 +172,12 @@ func TestSharedAlbumUploads(t *testing.T) {
 		album, e.mediaID(t, "/Photos/Holiday/new.jpg")).Scan(&inAlbum))
 	require.Equal(t, 1, inAlbum)
 
-	e.Delete(t, "/api/files/delete?path="+url.QueryEscape("/Holiday/in.jpg"), bob.Auth).Status(204)
-	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_media WHERE album_id = ? AND media_id = ?`,
-		album, e.mediaID(t, "/Photos/2019/in.jpg")).Scan(&inAlbum))
-	require.Equal(t, 0, inAlbum)
+	r = e.Delete(t, "/api/files/delete?path="+url.QueryEscape("/Holiday/in.jpg"), bob.Auth)
+	require.True(t, r.StatusCode >= 400, "delete with Add photos: %d", r.StatusCode)
+	r = e.PostJSON(t, "/api/files/rename", map[string]string{"old_path": "/Holiday/in.jpg", "new_path": "/Holiday/x.jpg"}, bob.Auth)
+	require.True(t, r.StatusCode >= 400, "rename with Add photos: %d", r.StatusCode)
 	aliceFile("/Photos/2019/in.jpg")
+	e.Get(t, "/apps/files/shared", bob.Auth).Status(200).Contains("can add")
 
 	e.PostForm(t, "/apps/gallery/albums/"+fmt.Sprint(album)+"/rename", url.Values{
 		"name": {"Holiday"}, "upload_folder": {"Shared/Hol"},
@@ -184,4 +185,56 @@ func TestSharedAlbumUploads(t *testing.T) {
 	later := photoJPEG(t, 4, 640, 480)
 	upload("/Holiday/later.jpg", string(later)).Status(201)
 	require.Equal(t, string(later), aliceFile("/Shared/Hol/later.jpg"))
+}
+
+func TestSharedAlbumFullAccess(t *testing.T) {
+	e := newScanEnv(t)
+	bob := e.CreateUser(t, "bob", "pass")
+	e.upload(t, "/Photos/2019/in.jpg", photoJPEG(t, 1, 640, 480))
+	e.scan(t)
+	res, err := e.db.Exec(`INSERT INTO albums (name) VALUES ('Holiday')`)
+	require.NoError(t, err)
+	album, err := res.LastInsertId()
+	require.NoError(t, err)
+	_, err = e.db.Exec(`INSERT INTO album_media (album_id, media_id) VALUES (?, ?)`, album, e.mediaID(t, "/Photos/2019/in.jpg"))
+	require.NoError(t, err)
+	aliceCookie, aliceCSRF := sessionAuth(t, e.Env, e.alice)
+	e.PostForm(t, "/api/shares/create", url.Values{
+		"resource_type": {"gallery:album"}, "resource_id": {fmt.Sprint(album)},
+		"subject_type": {"USER"}, "subject_id": {bob.ID},
+		"permissions": {fmt.Sprint(plugin.PermRead | plugin.PermWrite | plugin.PermModify)},
+	}, aliceCookie, aliceCSRF).Status(200)
+	bobCookie, bobCSRF := sessionAuth(t, e.Env, bob)
+	e.PostForm(t, "/apps/files/shared/alice/Holiday", url.Values{"action": {"mount"}, "path": {"/Holiday"}},
+		bobCookie, bobCSRF, cogtest.StopRedirect).Status(303)
+	e.Get(t, "/apps/files/shared", bob.Auth).Status(200).Contains("can edit")
+	_, err = e.Providers.Shared.Files.ReconcileTree(context.Background(), "bob", "/Holiday")
+	require.NoError(t, err)
+	aliceFS, err := e.Providers.Shared.Files.FS("alice")
+	require.NoError(t, err)
+
+	edited := photoJPEG(t, 2, 640, 480)
+	e.PostText(t, "/api/files/upload?path="+url.QueryEscape("/Holiday/in.jpg"), string(edited), bob.Auth).Status(201)
+	data, err := aliceFS.ReadFile("/Photos/2019/in.jpg")
+	require.NoError(t, err)
+	require.Equal(t, string(edited), string(data))
+
+	e.PostJSON(t, "/api/files/rename", map[string]string{"old_path": "/Holiday/in.jpg", "new_path": "/Holiday/beach.jpg"}, bob.Auth).Status(200)
+	data, err = aliceFS.ReadFile("/Photos/2019/beach.jpg")
+	require.NoError(t, err)
+	require.Equal(t, string(edited), string(data))
+	e.Get(t, "/api/files/download?path="+url.QueryEscape("/Holiday/beach.jpg"), bob.Auth).Status(200).Equals(string(edited))
+	e.scan(t)
+	var inAlbum int
+	require.NoError(t, e.db.QueryRow(`SELECT count(*) FROM album_media WHERE album_id = ? AND media_id = ?`,
+		album, e.mediaID(t, "/Photos/2019/beach.jpg")).Scan(&inAlbum))
+	require.Equal(t, 1, inAlbum)
+
+	e.Delete(t, "/api/files/delete?path="+url.QueryEscape("/Holiday/beach.jpg"), bob.Auth).Status(204)
+	_, err = aliceFS.Stat("/Photos/2019/beach.jpg")
+	require.True(t, err != nil, "the photo is deleted")
+	trash, err := e.Providers.Shared.Files.ListTrash("alice")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(trash))
+	require.Equal(t, "/Photos/2019/beach.jpg", trash[0].OriginalPath)
 }

@@ -66,6 +66,7 @@ const (
 	PermReshare  = cogplugin.PermReshare
 	PermFreeBusy = cogplugin.PermFreeBusy
 	PermSchedule = cogplugin.PermSchedule
+	PermModify   = cogplugin.PermModify
 )
 
 const (
