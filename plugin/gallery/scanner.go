@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,9 +92,10 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 		return nil, nil
 	}
 
-	pending := p.ownersFirst(usernames)
+	order, recipientsOf := p.ownersFirst(usernames)
+	pending := order
 	for len(pending) > 0 {
-		var next []string
+		again := map[string]bool{}
 		for _, username := range pending {
 			if ctx.Err() != nil {
 				return warnings, ctx.Err()
@@ -106,10 +108,15 @@ func (p *Plugin) scanAllUsersErr(ctx context.Context) (warnings []string, err er
 				continue
 			}
 			if remaining {
-				next = append(next, username)
+				again[username] = true
+				// What the owner finds in each round reaches those they
+				// share with in the next, not only once the owner is done.
+				for _, r := range recipientsOf[username] {
+					again[r] = true
+				}
 			}
 		}
-		pending = next
+		pending = slices.DeleteFunc(slices.Clone(order), func(u string) bool { return !again[u] })
 	}
 	return warnings, nil
 }

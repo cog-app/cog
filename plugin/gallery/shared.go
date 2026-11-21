@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
+	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/plugin"
 )
 
@@ -308,33 +310,46 @@ func adoptMedia(tx *sql.Tx, ownerDB *sql.DB, r sharedRow, m *ownerMedia) error {
 	return faces.Err()
 }
 
-// ownersFirst orders users so those with photos shared from someone else's
-// gallery come last, and copy what their owners' scans found in the same
-// round.
-func (p *Plugin) ownersFirst(usernames []string) []string {
+// ownersFirst orders users so those with a folder of someone else's in
+// their files come after the owners, and copy what their owners' scans
+// found in the same round. It also returns, by owner, who has their folders.
+func (p *Plugin) ownersFirst(usernames []string) ([]string, map[string][]string) {
 	var owners, recipients []string
+	recipientsOf := map[string][]string{}
 	for _, u := range usernames {
-		shared, err := p.hasShared(u)
+		from, err := p.sharedOwners(u)
 		if err != nil {
 			p.log.Error("order scan", "user", u, "err", err)
 		}
-		if shared {
-			recipients = append(recipients, u)
-		} else {
+		if len(from) == 0 {
 			owners = append(owners, u)
+			continue
+		}
+		recipients = append(recipients, u)
+		for _, o := range from {
+			recipientsOf[o] = append(recipientsOf[o], u)
 		}
 	}
-	return append(owners, recipients...)
+	return append(owners, recipients...), recipientsOf
 }
 
-func (p *Plugin) hasShared(username string) (bool, error) {
-	db, err := p.ctx.PluginDB(username, plugin.ReadOnly, plugin.NoHooks)
+// sharedOwners returns whose folders are mounted in username's files.
+func (p *Plugin) sharedOwners(username string) ([]string, error) {
+	fsys, err := p.ctx.UserVFS(username)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	var shared bool
-	err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM media WHERE shared_from != '')`).Scan(&shared)
-	return shared, errors.Join(err, db.Close())
+	mfs, ok := fsys.(interface{ Mounts() []volume.MountEntry })
+	if !ok {
+		return nil, nil
+	}
+	var owners []string
+	for _, m := range mfs.Mounts() {
+		if m.ShareOwner != "" && m.ShareOwner != username && !slices.Contains(owners, m.ShareOwner) {
+			owners = append(owners, m.ShareOwner)
+		}
+	}
+	return owners, nil
 }
 
 // sharedMedia returns the owner's row of m when m is in a folder shared with

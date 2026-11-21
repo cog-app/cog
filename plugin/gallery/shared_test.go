@@ -115,3 +115,36 @@ func TestScanCopiesSharedPhotosFromOwner(t *testing.T) {
 	require.NoError(t, bobDB.QueryRow(`SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE m.shared_from = 'alice'`).Scan(&faces))
 	require.Equal(t, 2, faces)
 }
+
+// A recipient is scanned after the owner from the first round, before any
+// photo has been copied: going first, they would read the photos themselves.
+func TestScanOrdersOwnersBeforeRecipients(t *testing.T) {
+	e := newShareEnv(t)
+	order, recipientsOf := e.g.OwnersFirst([]string{"bob", "alice"})
+	require.Equal(t, []string{"alice", "bob"}, order)
+	require.Equal(t, []string{"bob"}, recipientsOf["alice"])
+}
+
+// Faces a recipient's gallery found before the folder was shared give way
+// to the owner's, even while the owner has yet to look for any.
+func TestSharedPhotoDropsRecipientsOwnFaces(t *testing.T) {
+	e := newShareEnv(t)
+	e.scanBob(t)
+	var bobID int64
+	require.NoError(t, e.bobDB.QueryRow(`SELECT id FROM media WHERE file_path = '/Photos/Alice/Photos/a.jpg'`).Scan(&bobID))
+	_, err := e.bobDB.Exec(`UPDATE media SET recognition_state = 1, recognition_at = 500 WHERE id = ?`, bobID)
+	require.NoError(t, err)
+	_, err = e.bobDB.Exec(`INSERT INTO faces (media_id, x, y, w, h, confidence) VALUES (?, 0.1, 0.1, 0.2, 0.2, 0.9)`, bobID)
+	require.NoError(t, err)
+
+	e.scan(t)
+	e.scanBob(t)
+
+	var faces, state int
+	var from string
+	require.NoError(t, e.bobDB.QueryRow(`SELECT (SELECT COUNT(*) FROM faces WHERE media_id = ?), recognition_state, shared_from FROM media WHERE id = ?`,
+		bobID, bobID).Scan(&faces, &state, &from))
+	require.Equal(t, 0, faces)
+	require.Equal(t, 0, state)
+	require.Equal(t, "alice", from) // so bob's analysis leaves it to hers
+}
