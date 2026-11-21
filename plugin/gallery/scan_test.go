@@ -173,3 +173,28 @@ func TestScanSettlesUndecodablePhoto(t *testing.T) {
 	require.Equal(t, 0, pending.Fingerprint)
 	require.Equal(t, 1, pending.Failed)
 }
+
+// withOrientation inserts an EXIF APP1 segment carrying an orientation tag
+// after a JPEG's SOI marker.
+func withOrientation(jpg []byte, orientation uint16) []byte {
+	tiff := []byte("II*\x00\x08\x00\x00\x00\x01\x00\x12\x01\x03\x00\x01\x00\x00\x00")
+	tiff = append(tiff, byte(orientation), byte(orientation>>8), 0, 0, 0, 0, 0, 0)
+	app1 := append([]byte("Exif\x00\x00"), tiff...)
+	out := append([]byte{}, jpg[:2]...)
+	out = append(out, 0xff, 0xe1, byte((len(app1)+2)>>8), byte(len(app1)+2))
+	out = append(out, app1...)
+	return append(out, jpg[2:]...)
+}
+
+// A photo stored on its side is measured upright, as its thumbnail and
+// face boxes are.
+func TestScanStoresUprightDimensions(t *testing.T) {
+	e := newScanEnv(t)
+	e.upload(t, "/Photos/portrait.jpg", withOrientation(photoJPEG(t, 1, 400, 300), 6))
+	e.scan(t)
+	var w, h, o int
+	require.NoError(t, e.db.QueryRow(`SELECT width, height, orientation FROM media`).Scan(&w, &h, &o))
+	require.Equal(t, 6, o)
+	require.Equal(t, 300, w)
+	require.Equal(t, 400, h)
+}

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/imaging"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -503,6 +504,8 @@ func extractImageMetadata(path string, m *Media) error {
 		return fmt.Errorf("rewind for exif: %w", err)
 	}
 	readEXIF(f, m)
+	// Dimensions are stored upright, like the thumbnails and face boxes.
+	m.Width, m.Height = imaging.OrientedSize(m.Width, m.Height, m.Orientation)
 	return decodeErr
 }
 
