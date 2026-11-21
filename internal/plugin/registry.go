@@ -554,6 +554,16 @@ func (r *Registry) ResourceDefByType(fullType string) (ResourceDef, bool) {
 	return def, ok
 }
 
+// Collection returns the resource type fullType as a folder of its owner's
+// files, when it can be mounted as one.
+func (r *Registry) Collection(fullType string) (*cogplugin.Collection, bool) {
+	def, ok := r.ResourceDefByType(fullType)
+	if !ok || def.Collection == nil || def.Collection.List == nil {
+		return nil, false
+	}
+	return def.Collection, true
+}
+
 // ResourceDefs returns all resource definitions across all plugins.
 func (r *Registry) ResourceDefs() map[string][]ResourceDef {
 	defs := make(map[string][]ResourceDef)

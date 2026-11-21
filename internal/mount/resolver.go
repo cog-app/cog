@@ -29,6 +29,9 @@ type Resolver struct {
 	// or "" when it is not there any more: a shared folder is named by its
 	// ID, and its path changes when it is moved.
 	DirPath func(owner, resourceID string) (string, error)
+	// Collection returns a plugin resource type a share mount may mount as
+	// a folder of its owner's files.
+	Collection func(resourceType string) (*plugin.Collection, bool)
 
 	mu    sync.Mutex
 	cache map[string]cachedFS // by username
@@ -267,13 +270,19 @@ func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEn
 		return volume.MountEntry{}, false, fmt.Errorf("owner of shared folder: %w", err)
 	}
 	// Only the owner's shares count: the folder is found in their files.
-	decision, err := r.access.Shares.CheckAccessGrantedBy(u.ID, SharedDirType, m.ShareResourceID,
+	decision, err := r.access.Shares.CheckAccessGrantedBy(u.ID, m.ShareResourceType, m.ShareResourceID,
 		func(id string) (bool, error) { return id == owner.ID, nil })
 	if err != nil {
 		return volume.MountEntry{}, false, fmt.Errorf("check access to shared folder: %w", err)
 	}
 	perms := decision.EffectivePerms
-	if perms&plugin.PermRead == 0 || r.DirPath == nil {
+	if perms&plugin.PermRead == 0 {
+		return volume.MountEntry{}, false, nil
+	}
+	if m.ShareResourceType != SharedDirType {
+		return r.collectionEntry(owner, m, perms, depth)
+	}
+	if r.DirPath == nil {
 		return volume.MountEntry{}, false, nil
 	}
 	dir, err := r.DirPath(owner.Username, m.ShareResourceID)
@@ -301,4 +310,59 @@ func (r *Resolver) shareEntry(u *user.User, m *Mount, depth int) (volume.MountEn
 	e.ShareOwnerPath = dir
 	e.Reshare = perms&plugin.PermReshare != 0
 	return e, true, nil
+}
+
+// collectionEntry mounts a plugin's collection of owner's files. PermWrite
+// adds files to it; PermModify changes the owner's files in it as well.
+func (r *Resolver) collectionEntry(owner *user.User, m *Mount, perms uint32, depth int) (volume.MountEntry, bool, error) {
+	if r.Collection == nil {
+		return volume.MountEntry{}, false, nil
+	}
+	c, ok := r.Collection(m.ShareResourceType)
+	if !ok {
+		return volume.MountEntry{}, false, nil
+	}
+	if _, _, err := c.List(owner.Username, m.ShareResourceID); errors.Is(err, plugin.ErrResourceGone) {
+		return volume.MountEntry{}, false, nil
+	} else if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("%s %s of %s: %w", m.ShareResourceType, m.ShareResourceID, owner.Username, err)
+	}
+	ownerFS, err := r.userFS(owner.Username, depth+1)
+	if err != nil {
+		return volume.MountEntry{}, false, fmt.Errorf("files of %s: %w", owner.Username, err)
+	}
+	backend := collectionFS(ownerFS, owner.Username, m.ShareResourceID, c, perms)
+	return volume.MountEntry{
+		UserPath:   m.UserPath,
+		Backend:    backend,
+		ReadOnly:   !backend.Writable(),
+		ChargeTo:   owner.Username,
+		ShareOwner: owner.Username,
+	}, true, nil
+}
+
+// collectionFS is the folder of owner's files c lists for the resource id,
+// writable as far as perms allow and c can.
+func collectionFS(ownerFS vfs.FS, owner, id string, c *plugin.Collection, perms uint32) *volume.CollectionFS {
+	fs := volume.NewCollectionFS(ownerFS, func() ([]string, error) {
+		_, paths, err := c.List(owner, id)
+		if errors.Is(err, plugin.ErrResourceGone) {
+			return nil, nil
+		}
+		return paths, err
+	})
+	if perms&plugin.PermWrite == 0 {
+		return fs
+	}
+	if c.Folder != nil && c.Add != nil {
+		fs.Folder = func() (string, error) { return c.Folder(owner, id) }
+	}
+	if c.Add != nil {
+		fs.Add = func(p string) error { return c.Add(owner, id, p) }
+	}
+	if perms&plugin.PermModify != 0 && c.Remove != nil {
+		fs.Modify = true
+		fs.Remove = func(p string) error { return c.Remove(owner, id, p) }
+	}
+	return fs
 }

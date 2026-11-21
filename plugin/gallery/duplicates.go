@@ -72,8 +72,9 @@ func UpdateFingerprint(db *sql.DB, mediaID int64, fingerprint string) error {
 }
 
 // ClearAllFingerprints resets all fingerprints (e.g. when algorithm changes).
+// Those copied from another user's gallery follow when the owner's change.
 func ClearAllFingerprints(db *sql.DB) error {
-	_, err := db.Exec(`UPDATE media SET fingerprint = ''`)
+	_, err := db.Exec(`UPDATE media SET fingerprint = '' WHERE shared_from = ''`)
 	return err
 }
 

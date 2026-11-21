@@ -44,6 +44,8 @@ templ sharedPage(pd ui.PageData, owners []SharedOwner) {
 												@volumeIcon()
 											} else if e.File != nil {
 												@fileIcon(e.File.MimeType, e.File.IsDir, "")
+											} else if e.Kind == SharedCollection {
+												@fileIcon("", true, "")
 											}
 										</span>
 										<span class="files-name-text">

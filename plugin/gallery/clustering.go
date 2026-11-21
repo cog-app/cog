@@ -42,6 +42,10 @@ func faceQuality(confidence, widthPx, heightPx float64, landmarks [][2]float64, 
 
 // clusterFaces assigns unassigned faces to existing people or creates new clusters.
 // If sysDB is non-nil, the threshold is read from system settings.
+// followedClause is true of a face f, on photo m, whose person is the owner's
+// of a people list shared with the user: clustering leaves it be.
+const followedClause = `(f.owner_face_id IS NOT NULL AND m.shared_from IN (SELECT linked_from FROM people WHERE linked_from != ''))`
+
 func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	threshold := defaultClusterThreshold
 	agePenaltyWeight := 0.0
@@ -71,7 +75,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	rows, err := db.Query(`SELECT f.id, f.media_id, f.embedding, f.estimated_age,
 		COALESCE(m.date_taken, m.date_indexed), f.quality, f.confidence, f.w * m.width, f.h * m.height
 		FROM faces f JOIN media m ON m.id = f.media_id
-		WHERE f.person_id IS NULL AND f.embedding IS NOT NULL`)
+		WHERE f.person_id IS NULL AND f.embedding IS NOT NULL AND NOT ` + followedClause)
 	if err != nil {
 		return err
 	}
@@ -167,8 +171,8 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	// Faces without embeddings (e.g. Pigo-only, no ArcFace) can't be clustered.
 	// Create a separate person for each so the user can merge manually.
 	var noEmbFaceIDs []int64
-	noEmbRows, err := db.Query(`SELECT id FROM faces
-		WHERE person_id IS NULL AND embedding IS NULL`)
+	noEmbRows, err := db.Query(`SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+		WHERE f.person_id IS NULL AND f.embedding IS NULL AND NOT ` + followedClause)
 	if err != nil {
 		return err
 	}

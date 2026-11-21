@@ -462,6 +462,10 @@ func (p *Plugin) upload(username, filePath string, content io.Reader, pre Precon
 	body.Settle(size)
 	w.Done()
 	recorded = true
+	// A file added to a collection mounted here is the owner's as well.
+	if err := p.recordShared(username, filePath); err != nil {
+		p.log.Warn("record uploaded file for its owner; reconcile will", "path", filePath, "err", err)
+	}
 
 	p.logActivity(username, "file_created", username+" uploaded "+name, strconv.FormatInt(id, 10), filePath)
 	return &FileMeta{
@@ -790,6 +794,35 @@ func (p *Plugin) renameMount(db *sql.DB, u *user.User, oldPath, newPath string) 
 	return meta, true, err
 }
 
+// renameInCollection renames a file in a plugin's collection mounted in
+// username's files: the owner's file, in its folder, which the collection
+// keeps.
+func (p *Plugin) renameInCollection(db *sql.DB, username, oldPath, newPath string, from sharedTarget) (*FileMeta, error) {
+	if from.mountRoot {
+		return nil, errMountPoint
+	}
+	if filepath.Dir(oldPath) != filepath.Dir(newPath) {
+		return nil, vfs.ErrCrossMount
+	}
+	fsys, err := p.userFS(username)
+	if err != nil {
+		return nil, err
+	}
+	if err := fsys.Rename(oldPath, newPath); err != nil {
+		return nil, err
+	}
+	if err := forgetRows(db, oldPath); err != nil {
+		return nil, err
+	}
+	if _, err := p.follow(from.owner, from.path); err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if err := p.recordShared(username, newPath); err != nil {
+		return nil, err
+	}
+	return p.follow(username, newPath)
+}
+
 // renameShared is Rename within a folder shared with username (true): the
 // owner's file is moved, and username's rows follow it. Moving in or out of
 // one is moving between mounts, which a rename cannot.
@@ -804,6 +837,10 @@ func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string, mov
 	}
 	if !fromShared && !toShared {
 		return nil, false, nil
+	}
+	if fromShared && from.collection {
+		meta, err := p.renameInCollection(db, username, oldPath, newPath, from)
+		return meta, true, err
 	}
 	if !fromShared || !toShared || from.owner != to.owner {
 		return nil, true, vfs.ErrCrossMount
@@ -1066,6 +1103,47 @@ func (p *Plugin) reconcile(db *sql.DB, username, dirPath string) error {
 		}
 	}
 	return nil
+}
+
+// ReconcileTree brings the index of dir and everything beneath it in step
+// with the disk, as listing each folder would. The index otherwise learns
+// of a file on a mounted volume only when someone opens its folder, so
+// whatever reads the index for whole trees - the gallery - would miss most
+// of a volume nobody browses. It returns how many folders it read.
+func (p *Plugin) ReconcileTree(ctx context.Context, username, dir string) (int, error) {
+	db, err := p.DB(username)
+	if err != nil {
+		return 0, err
+	}
+	queue := []string{normalizePath(dir)}
+	var read int
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return read, err
+		}
+		d := queue[0]
+		queue = queue[1:]
+		if err := p.reconcile(db, username, d); err != nil {
+			return read, err
+		}
+		read++
+		rows, err := db.Query(`SELECT path FROM files WHERE parent_path = ? AND is_dir = 1`, d)
+		if err != nil {
+			return read, fmt.Errorf("list folders of %s: %w", d, err)
+		}
+		for rows.Next() {
+			var sub string
+			if err := rows.Scan(&sub); err != nil {
+				rows.Close()
+				return read, fmt.Errorf("list folders of %s: %w", d, err)
+			}
+			queue = append(queue, sub)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return read, fmt.Errorf("list folders of %s: %w", d, err)
+		}
+	}
+	return read, nil
 }
 
 func getByID(db *sql.DB, id int64) (*FileMeta, error) {

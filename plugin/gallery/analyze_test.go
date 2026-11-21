@@ -41,3 +41,10 @@ func TestDecodedPhotoWorkCopy(t *testing.T) {
 	require.Equal(t, image.Rect(0, 0, 768, 1024), d.work.Rect)
 	require.Equal(t, image.Rect(0, 0, 3000, 4000), d.Full().Bounds())
 }
+
+func TestScanRoots(t *testing.T) {
+	require.Equal(t, []string{"/InstantUpload", "/Photos"}, scanRoots([]string{"Photos/", "InstantUpload/", "Photos/2024/"}))
+	require.Equal(t, []string{"/Photos"}, scanRoots([]string{"Photos/*.jpg"}))
+	require.Equal(t, []string{"/"}, scanRoots([]string{"*.jpg", "Photos/"}))
+	require.Equal(t, []string{"/Photo", "/Photos"}, scanRoots([]string{"Photos/", "Photo/"}))
+}

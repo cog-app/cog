@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS media (
     fingerprint TEXT NOT NULL DEFAULT '',
     quality_score REAL NOT NULL DEFAULT -1,
     content_key TEXT NOT NULL DEFAULT '',
-    scan_error TEXT NOT NULL DEFAULT ''
+    scan_error TEXT NOT NULL DEFAULT '',
+    shared_from TEXT NOT NULL DEFAULT '' -- the owner whose gallery analyses this photo, for one in a folder shared with the user
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);
@@ -53,7 +54,18 @@ CREATE TABLE IF NOT EXISTS albums (
     cover_media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    -- Where photos added through a share of the album go; '' is a folder
+    -- named after it in the first scan folder.
+    upload_folder TEXT NOT NULL DEFAULT ''
+);
+
+-- Files added to an album through a share before a scan has made them
+-- media; the scan moves them into album_media.
+CREATE TABLE IF NOT EXISTS album_pending (
+    album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    PRIMARY KEY (album_id, file_path)
 );
 
 -- Only automatic albums are keyed: every manual album (album_type 0) has an
@@ -98,8 +110,13 @@ CREATE TABLE IF NOT EXISTS people (
     representative_face_id INTEGER,
     visible INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    contact_uid TEXT NOT NULL DEFAULT ''
+    contact_uid TEXT NOT NULL DEFAULT '',
+    linked_from TEXT NOT NULL DEFAULT '', -- the owner of a shared people list this person mirrors
+    linked_id INTEGER                     -- and their id there
 );
+-- The people list as one row, so the sharing system has something to name.
+CREATE TABLE IF NOT EXISTS people_lists (id INTEGER PRIMARY KEY);
+INSERT OR IGNORE INTO people_lists (id) VALUES (1);
 
 CREATE TABLE IF NOT EXISTS faces (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +129,8 @@ CREATE TABLE IF NOT EXISTS faces (
     embedding BLOB,
     confidence REAL NOT NULL DEFAULT 0.0,
     estimated_age REAL NOT NULL DEFAULT -1,
-    quality REAL NOT NULL DEFAULT -1 -- see faceQuality; -1 for faces stored before it
+    quality REAL NOT NULL DEFAULT -1, -- see faceQuality; -1 for faces stored before it
+    owner_face_id INTEGER -- the face this was copied from, on a photo shared from another gallery
 );
 
 CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);

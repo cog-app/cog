@@ -51,6 +51,16 @@ func flashRedirect(w http.ResponseWriter, r *http.Request, kind, msg, target str
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
+// peopleError answers a change to a shared person that was refused with a
+// flash back at back, and any other error as a server error.
+func peopleError(w http.ResponseWriter, r *http.Request, err error, back string) {
+	if errors.Is(err, errPeopleReadOnly) || errors.Is(err, errMergeShared) {
+		flashRedirect(w, r, "error", err.Error(), back)
+		return
+	}
+	httperr.Internal(w, r, err)
+}
+
 // photoDay is one day of the timeline: its heading and its photos.
 type photoDay struct {
 	Label string
@@ -100,8 +110,15 @@ func (h *Pages) Albums(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	var shared []SharedAlbum
+	if u := plugin.UserFromContext(r.Context()); u != nil {
+		if shared, err = h.plugin.sharedAlbums(u.ID); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+	}
 	plugin.SetTitle(w, "Albums")
-	ui.Render(w, r, albumsPage(r.URL.Path, albums, plugin.CSRFToken(r)))
+	ui.Render(w, r, albumsPage(r.URL.Path, albums, shared, plugin.CSRFToken(r)))
 }
 
 // AlbumView renders a single album.
@@ -148,8 +165,16 @@ func (h *Pages) AlbumView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var uploads albumUploads
+	if album.AlbumType == AlbumManual {
+		if err := db.QueryRow(`SELECT upload_folder FROM albums WHERE id = ?`, id).Scan(&uploads.Folder); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		uploads.Default = defaultUploadFolder(db, album.Name)
+	}
 	plugin.SetTitle(w, album.Name)
-	ui.Render(w, r, albumViewPage(r.URL.Path, album, media, candidates, plugin.CSRFToken(r)))
+	ui.Render(w, r, albumViewPage(r.URL.Path, album, media, candidates, uploads, plugin.CSRFToken(r)))
 }
 
 // PhotoView renders the detail view for a single photo.
@@ -695,6 +720,16 @@ func (h *Pages) RenameAlbum(w http.ResponseWriter, r *http.Request) {
 		flashRedirect(w, r, "error", "The album could not be renamed: "+err.Error(), back)
 		return
 	}
+	if _, ok := r.PostForm["upload_folder"]; ok {
+		folder := strings.TrimSpace(r.PostFormValue("upload_folder"))
+		if folder != "" {
+			folder = path.Clean("/" + folder)
+		}
+		if _, err := db.Exec(`UPDATE albums SET upload_folder = ? WHERE id = ?`, folder, id); err != nil {
+			flashRedirect(w, r, "error", "The album's folder could not be saved: "+err.Error(), back)
+			return
+		}
+	}
 	flashRedirect(w, r, "success", "Saved “"+name+"”.", back)
 }
 
@@ -784,8 +819,8 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid merge target", http.StatusBadRequest)
 			return
 		}
-		if err := MergePeopleRows(db, targetID, id); err != nil {
-			httperr.Internal(w, r, err)
+		if err := h.plugin.mergePeople(db, plugin.Username(r), targetID, id); err != nil {
+			peopleError(w, r, err, fmt.Sprintf("/apps/gallery/person/%d", id))
 			return
 		}
 		http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
@@ -814,7 +849,9 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 			httperr.Internal(w, r, err)
 			return
 		}
-		if err := NamePersonRow(db, id, card.FN); err != nil {
+		// Contacts are the user's own; a list they may not change keeps
+		// its name for the person.
+		if err := h.plugin.renamePerson(db, username, id, card.FN); err != nil && !errors.Is(err, errPeopleReadOnly) {
 			httperr.Internal(w, r, err)
 			return
 		}
@@ -827,8 +864,8 @@ func (h *Pages) NamePerson(w http.ResponseWriter, r *http.Request) {
 
 	// Plain name set — also link/create a contact if the contacts plugin is available.
 	name := r.FormValue("name")
-	if err := NamePersonRow(db, id, name); err != nil {
-		httperr.Internal(w, r, err)
+	if err := h.plugin.renamePerson(db, username, id, name); err != nil {
+		peopleError(w, r, err, fmt.Sprintf("/apps/gallery/person/%d", id))
 		return
 	}
 	if name != "" && h.plugin.contacts != nil {
@@ -854,8 +891,8 @@ func (h *Pages) MergePeople(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source_id required", http.StatusBadRequest)
 		return
 	}
-	if err := MergePeopleRows(db, targetID, sourceID); err != nil {
-		httperr.Internal(w, r, err)
+	if err := h.plugin.mergePeople(db, plugin.Username(r), targetID, sourceID); err != nil {
+		peopleError(w, r, err, fmt.Sprintf("/apps/gallery/person/%d", sourceID))
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", targetID), http.StatusSeeOther)
@@ -971,8 +1008,8 @@ func (h *Pages) HidePerson(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := HidePersonRow(db, id); err != nil {
-		httperr.Internal(w, r, err)
+	if err := h.plugin.hidePerson(db, plugin.Username(r), id); err != nil {
+		peopleError(w, r, err, fmt.Sprintf("/apps/gallery/person/%d", id))
 		return
 	}
 	http.Redirect(w, r, "/apps/gallery/people", http.StatusSeeOther)
@@ -995,8 +1032,8 @@ func (h *Pages) RemoveFaceFromPerson(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "face_id required", http.StatusBadRequest)
 		return
 	}
-	if _, err := CreatePersonFromFace(db, faceID); err != nil {
-		httperr.Internal(w, r, err)
+	if _, err := h.plugin.newPersonFromFace(db, plugin.Username(r), faceID); err != nil {
+		peopleError(w, r, err, fmt.Sprintf("/apps/gallery/person/%d", personID))
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)
@@ -1072,8 +1109,8 @@ func (h *Pages) DeleteFaceAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "face_id required", http.StatusBadRequest)
 		return
 	}
-	if err := DeleteFace(db, faceID); err != nil {
-		httperr.Internal(w, r, err)
+	if err := h.plugin.deleteFace(db, plugin.Username(r), faceID); err != nil {
+		peopleError(w, r, err, fmt.Sprintf("/apps/gallery/photo/%d", mediaID))
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/photo/%d", mediaID), http.StatusSeeOther)
@@ -1091,9 +1128,9 @@ func (h *Pages) CreatePersonFromFaceAction(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	personID, err := CreatePersonFromFace(db, faceID)
+	personID, err := h.plugin.newPersonFromFace(db, plugin.Username(r), faceID)
 	if err != nil {
-		httperr.Internal(w, r, err)
+		peopleError(w, r, err, "/apps/gallery/people")
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/apps/gallery/person/%d", personID), http.StatusSeeOther)

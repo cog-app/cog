@@ -424,7 +424,7 @@ templ timelinePage(activePath string, days []photoDay) {
 }
 
 // --- Albums ---
-templ albumsPage(activePath string, albums []Album, csrfToken string) {
+templ albumsPage(activePath string, albums []Album, shared []SharedAlbum, csrfToken string) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader("Albums", nil) {
 			<button type="button" class="btn btn-primary" data-modal-open="gallery-new-album">
@@ -439,22 +439,15 @@ templ albumsPage(activePath string, albums []Album, csrfToken string) {
 		} else {
 			<div class="gallery-albums">
 				for _, a := range albums {
-					<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/album/%d", a.ID)) } class="gallery-album">
-						if a.CoverMediaID != nil {
-							<span class="gallery-thumb">
-								<img src={ thumbURL(*a.CoverMediaID, 256) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
-							</span>
-						} else {
-							<span class="gallery-thumb is-empty"></span>
-						}
-						<span class="gallery-album-name">{ a.Name }</span>
-						<span class="gallery-album-meta">
-							{ plural(a.MediaCount, "item", "items") }
-							if a.AlbumType > 0 {
-								{ " · " + a.AlbumTypeName() }
-							}
-						</span>
-					</a>
+					@albumCard(&a, fmt.Sprintf("/apps/gallery/album/%d", a.ID), coverThumb(&a, ""), "")
+				}
+			</div>
+		}
+		if len(shared) > 0 {
+			<h2 class="gallery-day-title">Shared with you</h2>
+			<div class="gallery-albums">
+				for _, a := range shared {
+					@albumCard(&a.Album, sharedAlbumURL(a.Owner, a.ID), coverThumb(&a.Album, a.Owner), "From "+a.Owner)
 				}
 			</div>
 		}
@@ -471,6 +464,73 @@ templ albumsPage(activePath string, albums []Album, csrfToken string) {
 	}
 }
 
+// coverThumb is an album's cover thumbnail, from the owner's gallery when
+// the album is shared, or "" when the album is empty.
+func coverThumb(a *Album, owner string) string {
+	if a.CoverMediaID == nil {
+		return ""
+	}
+	if owner != "" {
+		return sharedThumbURL(owner, a.ID, *a.CoverMediaID, 256)
+	}
+	return thumbURL(*a.CoverMediaID, 256)
+}
+
+templ albumCard(a *Album, href, cover, from string) {
+	<a href={ templ.SafeURL(href) } class="gallery-album">
+		if cover != "" {
+			<span class="gallery-thumb">
+				<img src={ cover } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+			</span>
+		} else {
+			<span class="gallery-thumb is-empty"></span>
+		}
+		<span class="gallery-album-name">{ a.Name }</span>
+		<span class="gallery-album-meta">
+			{ plural(a.MediaCount, "item", "items") }
+			if a.AlbumType > 0 {
+				{ " · " + a.AlbumTypeName() }
+			}
+			if from != "" {
+				{ " · " + from }
+			}
+		</span>
+	</a>
+}
+
+templ sharedAlbumPage(activePath string, album SharedAlbum, media []Media) {
+	@galleryLayout(activePath) {
+		@ui.PageHeader(album.Name, []ui.Crumb{{Label: "Albums", URL: "/apps/gallery/albums"}}) {
+			<span class="badge badge-outline">{ "Shared by " + album.Owner }</span>
+			<a class="btn" href={ templ.SafeURL("/apps/files/shared/" + url.PathEscape(album.Owner) + "/" + url.PathEscape(album.Name)) }>Add to my files</a>
+		}
+		if album.Description != "" {
+			<p class="gallery-description">{ album.Description }</p>
+		}
+		if len(media) == 0 {
+			<div class="card">
+				@ui.EmptyState("This album is empty", "Nothing has been added to it yet.")
+			</div>
+		} else {
+			<div class="gallery-grid">
+				for _, m := range media {
+					<a href={ templ.SafeURL(sharedThumbURL(album.Owner, album.ID, m.ID, 1024)) } class="gallery-thumb" title={ m.FileName() } target="_blank">
+						<img src={ sharedThumbURL(album.Owner, album.ID, m.ID, 256) } alt={ m.FileName() } loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
+						if m.IsVideo() {
+							<span class="gallery-play" aria-hidden="true">
+								@playIcon()
+							</span>
+							if m.DurationMs != nil {
+								<span class="gallery-duration">{ formatDuration(m.DurationMs) }</span>
+							}
+						}
+					</a>
+				}
+			</div>
+		}
+	}
+}
+
 templ albumFields(idPrefix, name, description string) {
 	<div class="modal-body">
 		<div class="form-group">
@@ -481,10 +541,11 @@ templ albumFields(idPrefix, name, description string) {
 			<label for={ idPrefix + "-description" }>Description <span class="text-muted">(optional)</span></label>
 			<textarea class="form-control" id={ idPrefix + "-description" } name="description" rows="3">{ description }</textarea>
 		</div>
+		{ children... }
 	</div>
 }
 
-templ albumViewPage(activePath string, album *Album, media []Media, candidates []Media, csrfToken string) {
+templ albumViewPage(activePath string, album *Album, media []Media, candidates []Media, uploads albumUploads, csrfToken string) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader(album.Name, []ui.Crumb{{Label: "Albums", URL: "/apps/gallery/albums"}}) {
 			if album.AlbumType == AlbumManual {
@@ -553,7 +614,13 @@ templ albumViewPage(activePath string, album *Album, media []Media, candidates [
 			@ui.Modal("gallery-rename-album", "Rename album") {
 				<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/rename", album.ID)) }>
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					@albumFields("rename-album", album.Name, album.Description)
+					@albumFields("rename-album", album.Name, album.Description) {
+						<div class="form-group mb-0 mt-2">
+							<label for="rename-album-upload-folder">Folder for photos added by others <span class="text-muted">(optional)</span></label>
+							<input class="form-control" type="text" id="rename-album-upload-folder" name="upload_folder" value={ uploads.Folder } placeholder={ uploads.Default } autocomplete="off" aria-describedby="rename-album-upload-folder-help"/>
+							<p class="form-help" id="rename-album-upload-folder-help">{ "When you share the album with permission to edit, the photos people add go here in your files. Leave it empty to use " + uploads.Default + "." }</p>
+						</div>
+					}
 					<div class="modal-footer">
 						<button type="button" class="btn" data-modal-close>Cancel</button>
 						<button type="submit" class="btn btn-primary">Save</button>
@@ -912,7 +979,9 @@ templ photoViewPage(v photoView, csrfToken string) {
 // --- People ---
 templ peoplePage(activePath string, people []Person, allCount, unnamedCount int, unnamedOnly bool, admin bool) {
 	@galleryLayout(activePath) {
-		@ui.PageHeader("People", nil)
+		@ui.PageHeader("People", nil) {
+			<cog-share-button resource="people" resource-id="1" share-title="People" btn-class="btn">Share</cog-share-button>
+		}
 		if allCount > 0 {
 			<nav class="gallery-segmented" aria-label="Filter people">
 				@segmentLink("/apps/gallery/people", "All", allCount, !unnamedOnly)

@@ -755,5 +755,8 @@ func PermissionNames(perms uint32) []string {
 	if perms&plugin.PermReshare != 0 {
 		names = append(names, "reshare")
 	}
+	if perms&plugin.PermModify != 0 {
+		names = append(names, "modify")
+	}
 	return names
 }

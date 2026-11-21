@@ -28,6 +28,9 @@ type sharedTarget struct {
 	path      string
 	readOnly  bool // the share does not let username write
 	mountRoot bool // path is the mount point itself
+	// collection: path is in a plugin's collection of the owner's files,
+	// which can be changed through it only with modify.
+	collection, modify bool
 }
 
 // shared reports whether path is in a folder shared with username and
@@ -56,6 +59,15 @@ func (p *Plugin) shared(username, path string) (sharedTarget, bool, error) {
 			t.mountRoot = mountPath == normalizePath(path)
 		}
 	}
+	if en, ok := fsys.(interface {
+		Entry(string) (volume.MountEntry, error)
+	}); ok {
+		if e, err := en.Entry(path); err == nil {
+			if c, ok := e.Backend.(*volume.CollectionFS); ok {
+				t.collection, t.modify = true, c.Modify
+			}
+		}
+	}
 	return t, true, nil
 }
 
@@ -66,7 +78,7 @@ func (p *Plugin) writable(username, path string) (sharedTarget, bool, error) {
 	if err != nil || !ok {
 		return t, ok, err
 	}
-	if t.readOnly {
+	if t.readOnly || (t.collection && !t.modify) {
 		return t, true, vfs.ErrReadOnly
 	}
 	return t, true, nil

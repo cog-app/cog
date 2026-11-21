@@ -156,6 +156,8 @@ var (
 	_ vfs.FileOpener = (*recordedFS)(nil)
 	_ vfs.DirReader  = (*recordedFS)(nil)
 	_ vfs.AttrSetter = (*recordedFS)(nil)
+
+	_ vfs.AtomicCreator = (*recordedFS)(nil)
 )
 
 func (f *recordedFS) List(path string) ([]vfs.FileInfo, error) {
@@ -405,6 +407,60 @@ func (f *recordedFS) OpenFile(path string, flag int, perm os.FileMode) (vfs.File
 		h.end = 0
 	}
 	return h, nil
+}
+
+// CreateAtomic creates path to be written whole, held to the quota as it is
+// written and recorded where it is committed.
+func (f *recordedFS) CreateAtomic(path string, perm os.FileMode) (vfs.PendingFile, error) {
+	path = normalizePath(path)
+	t, err := f.tree()
+	if err != nil {
+		return nil, err
+	}
+	ac, ok := t.(vfs.AtomicCreator)
+	if !ok {
+		return nil, fmt.Errorf("create %s: %w", path, errors.ErrUnsupported)
+	}
+	w, err := f.p.beginWrite(f.username, path)
+	if err != nil {
+		return nil, err
+	}
+	file, err := ac.CreateAtomic(path, perm)
+	if err != nil {
+		w.Abandon()
+		return nil, err
+	}
+	return &recordedPending{recordedFile: &recordedFile{File: file, fs: f, tree: t, w: w, path: path}, pending: file}, nil
+}
+
+// recordedPending is a file CreateAtomic is writing through recordedFS.
+// Nothing is recorded until it is committed.
+type recordedPending struct {
+	*recordedFile
+	pending vfs.PendingFile
+}
+
+func (h *recordedPending) Close() error { return h.pending.Close() }
+
+func (h *recordedPending) Commit(path string) error {
+	path = normalizePath(path)
+	if err := h.pending.Commit(path); err != nil {
+		h.w.Abandon()
+		return err
+	}
+	defer h.w.Done()
+	if _, err := h.fs.p.record(h.fs.db, h.tree, path); err != nil {
+		return err
+	}
+	if err := h.fs.p.recordDirs(h.fs.db, h.tree, filepath.Dir(path)); err != nil {
+		return err
+	}
+	return h.fs.p.recordShared(h.fs.username, path)
+}
+
+func (h *recordedPending) Abort() error {
+	defer h.w.Abandon()
+	return h.pending.Abort()
 }
 
 // recordedFile is a file open for writing through recordedFS.

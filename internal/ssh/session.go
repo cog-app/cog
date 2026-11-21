@@ -334,7 +334,7 @@ func (l *linkingFS) Symlink(target, link string) error {
 		return fmt.Errorf("%s: %w", target, err)
 	}
 	switch {
-	case e.Kind == files.SharedFolder:
+	case e.Kind == files.SharedFolder || e.Kind == files.SharedCollection:
 		_, err = l.shared.MountFolder(l.user, e, userPath)
 	case e.IsStorage():
 		_, err = l.shared.AddArea(l.user, e.Volume, userPath)
