@@ -4,12 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"log/slog"
+	"slices"
+	"strings"
 
 	"github.com/ajdnik/imghash"
 	"github.com/ajdnik/imghash/hashtype"
@@ -220,26 +224,68 @@ func DeleteDuplicateGroup(db *sql.DB, groupID int64) error {
 	return err
 }
 
-// RemoveDuplicateMember removes a single member from a group.
+// RemoveDuplicateMember takes a member out of its group and remembers it is
+// not a duplicate of the others, so the next scan does not put it back.
 func RemoveDuplicateMember(db *sql.DB, groupID, mediaID int64) error {
-	_, err := db.Exec(`DELETE FROM duplicate_members WHERE group_id = ? AND media_id = ?`, groupID, mediaID)
-	return err
+	return inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO duplicate_exclusions (media_a, media_b)
+			SELECT MIN(?1, media_id), MAX(?1, media_id) FROM duplicate_members
+			WHERE group_id = ?2 AND media_id != ?1`, mediaID, groupID); err != nil {
+			return fmt.Errorf("exclude media %d from group %d: %w", mediaID, groupID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM duplicate_members WHERE group_id = ? AND media_id = ?`, groupID, mediaID); err != nil {
+			return fmt.Errorf("remove media %d from group %d: %w", mediaID, groupID, err)
+		}
+		return nil
+	})
 }
 
-// SetKeepMember sets a member as the keep item, clearing others.
+// DismissDuplicateGroup removes a group and remembers that none of its
+// members are duplicates of each other.
+func DismissDuplicateGroup(db *sql.DB, groupID int64) error {
+	return inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO duplicate_exclusions (media_a, media_b)
+			SELECT a.media_id, b.media_id FROM duplicate_members a
+			JOIN duplicate_members b ON b.group_id = a.group_id AND a.media_id < b.media_id
+			WHERE a.group_id = ?`, groupID); err != nil {
+			return fmt.Errorf("exclude group %d: %w", groupID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM duplicate_groups WHERE id = ?`, groupID); err != nil {
+			return fmt.Errorf("dismiss group %d: %w", groupID, err)
+		}
+		return nil
+	})
+}
+
+// SetKeepMember makes a member its group's keep item, and remembers the
+// choice for when the group is rebuilt.
 func SetKeepMember(db *sql.DB, groupID, mediaID int64) error {
-	_, err := db.Exec(`UPDATE duplicate_members SET is_keep = 0 WHERE group_id = ?`, groupID)
+	return inTx(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM duplicate_keeps WHERE media_id IN
+			(SELECT media_id FROM duplicate_members WHERE group_id = ?)`, groupID); err != nil {
+			return fmt.Errorf("clear keep of group %d: %w", groupID, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO duplicate_keeps (media_id) VALUES (?)`, mediaID); err != nil {
+			return fmt.Errorf("keep media %d: %w", mediaID, err)
+		}
+		if _, err := tx.Exec(`UPDATE duplicate_members SET is_keep = (media_id = ?) WHERE group_id = ?`, mediaID, groupID); err != nil {
+			return fmt.Errorf("keep media %d in group %d: %w", mediaID, groupID, err)
+		}
+		return nil
+	})
+}
+
+// inTx runs fn in a transaction, committing if it succeeds.
+func inTx(db *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := db.Begin()
 	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback()
+	if err := fn(tx); err != nil {
 		return err
 	}
-	_, err = db.Exec(`UPDATE duplicate_members SET is_keep = 1 WHERE group_id = ? AND media_id = ?`, groupID, mediaID)
-	return err
-}
-
-// ClearDuplicateGroups removes all duplicate groups and members.
-func ClearDuplicateGroups(db *sql.DB) error {
-	_, err := db.Exec(`DELETE FROM duplicate_groups`)
-	return err
+	return tx.Commit()
 }
 
 // DuplicateGroupCount returns the number of duplicate groups.
@@ -361,44 +407,35 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 		return nil
 	}
 
-	maxDist := SettingDuplicateDistance.MustGet(sysDB)
+	return rebuildDuplicateGroups(db, SettingDuplicateDistance.MustGet(sysDB), p.log)
+}
 
-	// Load all valid fingerprints.
-	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed, quality_score
-		FROM media WHERE fingerprint != '' AND fingerprint != '-'`)
+// rebuildDuplicateGroups groups photos whose fingerprints are within maxDist
+// of each other, honouring what people decided about earlier groups.
+func rebuildDuplicateGroups(db *sql.DB, maxDist int, log *slog.Logger) error {
+	entries, err := loadFingerprints(db)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
-	var entries []fpEntry
-	for rows.Next() {
-		var e fpEntry
-		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Width, &e.Height, &e.DateTaken, &e.DateIndexed, &e.QualityScore); err != nil {
-			return err
-		}
-		entries = append(entries, e)
+	excluded, err := loadDuplicateExclusions(db)
+	if err != nil {
+		return err
 	}
-	if err := rows.Err(); err != nil {
+	kept, err := loadDuplicateKeeps(db)
+	if err != nil {
 		return err
 	}
 
-	if len(entries) < 2 {
-		return nil
-	}
-
-	// Decode fingerprints to binary hashes.
 	hashes := make([]hashtype.Binary, len(entries))
 	for i, e := range entries {
 		b, err := hex.DecodeString(e.Fingerprint)
 		if err != nil {
-			p.log.Warn("duplicates: bad fingerprint, skipping", "id", e.ID, "err", err)
+			log.Warn("duplicates: bad fingerprint, skipping", "id", e.ID, "err", err)
 			continue
 		}
 		hashes[i] = hashtype.Binary(b)
 	}
 
-	// Union-find for grouping.
 	parent := make([]int, len(entries))
 	for i := range parent {
 		parent[i] = i
@@ -410,93 +447,227 @@ func (p *Plugin) detectDuplicates(db *sql.DB) error {
 		}
 		return parent[x]
 	}
-	union := func(a, b int) {
-		ra, rb := find(a), find(b)
-		if ra != rb {
-			parent[ra] = rb
-		}
-	}
-
-	// O(n²) comparison.
-	for i := 0; i < len(entries); i++ {
-		if hashes[i] == nil {
-			continue
-		}
-		for j := i + 1; j < len(entries); j++ {
-			if hashes[j] == nil {
-				continue
-			}
-			if len(hashes[i]) != len(hashes[j]) {
-				continue
-			}
-			dist := similarity.Hamming(hashes[i], hashes[j])
-			if int(dist) <= maxDist {
-				union(i, j)
-			}
-		}
-	}
-
-	// Build groups.
-	groups := map[int][]int{} // root → member indices
 	for i := range entries {
 		if hashes[i] == nil {
 			continue
 		}
-		root := find(i)
-		groups[root] = append(groups[root], i)
+		for j := i + 1; j < len(entries); j++ {
+			if hashes[j] == nil || len(hashes[i]) != len(hashes[j]) {
+				continue
+			}
+			if int(similarity.Hamming(hashes[i], hashes[j])) > maxDist {
+				continue
+			}
+			if excluded[pairKey(entries[i].ID, entries[j].ID)] {
+				continue
+			}
+			if ri, rj := find(i), find(j); ri != rj {
+				parent[ri] = rj
+			}
+		}
 	}
 
-	// Clear old groups and insert new ones.
-	if err := ClearDuplicateGroups(db); err != nil {
-		return fmt.Errorf("clear groups: %w", err)
+	byRoot := map[int][]int{}
+	for i := range entries {
+		if hashes[i] != nil {
+			byRoot[find(i)] = append(byRoot[find(i)], i)
+		}
 	}
-
-	for _, members := range groups {
+	var groups []duplicateGroup
+	for _, members := range byRoot {
 		if len(members) < 2 {
 			continue
 		}
-
-		// Select keep: highest quality, then resolution, then oldest date.
 		keepIdx := members[0]
 		for _, idx := range members[1:] {
+			if kept[entries[idx].ID] != kept[entries[keepIdx].ID] {
+				if kept[entries[idx].ID] {
+					keepIdx = idx
+				}
+				continue
+			}
 			if betterKeep(entries[idx], entries[keepIdx]) {
 				keepIdx = idx
 			}
 		}
-
-		groupID, err := InsertDuplicateGroup(db)
-		if err != nil {
-			return fmt.Errorf("insert group: %w", err)
-		}
-
+		g := duplicateGroup{keep: entries[keepIdx].ID}
 		for _, idx := range members {
-			isKeep := idx == keepIdx
 			dist := 0.0
-			if hashes[idx] != nil && hashes[keepIdx] != nil && len(hashes[idx]) == len(hashes[keepIdx]) {
+			if len(hashes[idx]) == len(hashes[keepIdx]) {
 				dist = float64(similarity.Hamming(hashes[idx], hashes[keepIdx]))
 			}
-			if err := AddDuplicateMember(db, groupID, entries[idx].ID, isKeep, dist); err != nil {
-				return fmt.Errorf("add member: %w", err)
+			g.members = append(g.members, duplicateMemberRow{mediaID: entries[idx].ID, distance: dist})
+		}
+		groups = append(groups, g)
+	}
+	return replaceDuplicateGroups(db, groups)
+}
+
+type duplicateMemberRow struct {
+	mediaID  int64
+	distance float64
+}
+
+type duplicateGroup struct {
+	keep    int64
+	members []duplicateMemberRow
+}
+
+func pairKey(a, b int64) [2]int64 {
+	if a > b {
+		a, b = b, a
+	}
+	return [2]int64{a, b}
+}
+
+func loadFingerprints(db *sql.DB) ([]fpEntry, error) {
+	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed, quality_score
+		FROM media WHERE fingerprint != '' AND fingerprint != '-'`)
+	if err != nil {
+		return nil, fmt.Errorf("load fingerprints: %w", err)
+	}
+	defer rows.Close()
+	var entries []fpEntry
+	for rows.Next() {
+		var e fpEntry
+		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Width, &e.Height, &e.DateTaken, &e.DateIndexed, &e.QualityScore); err != nil {
+			return nil, fmt.Errorf("load fingerprints: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func loadDuplicateExclusions(db *sql.DB) (map[[2]int64]bool, error) {
+	rows, err := db.Query(`SELECT media_a, media_b FROM duplicate_exclusions`)
+	if err != nil {
+		return nil, fmt.Errorf("load duplicate exclusions: %w", err)
+	}
+	defer rows.Close()
+	out := map[[2]int64]bool{}
+	for rows.Next() {
+		var a, b int64
+		if err := rows.Scan(&a, &b); err != nil {
+			return nil, fmt.Errorf("load duplicate exclusions: %w", err)
+		}
+		out[[2]int64{a, b}] = true
+	}
+	return out, rows.Err()
+}
+
+func loadDuplicateKeeps(db *sql.DB) (map[int64]bool, error) {
+	rows, err := db.Query(`SELECT media_id FROM duplicate_keeps`)
+	if err != nil {
+		return nil, fmt.Errorf("load duplicate keeps: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("load duplicate keeps: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// replaceDuplicateGroups makes the stored groups the given ones in one
+// transaction. A group whose members are unchanged keeps its row, so a page
+// open on it survives a scan.
+func replaceDuplicateGroups(db *sql.DB, groups []duplicateGroup) error {
+	return inTx(db, func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT group_id, media_id FROM duplicate_members ORDER BY group_id, media_id`)
+		if err != nil {
+			return fmt.Errorf("load duplicate groups: %w", err)
+		}
+		existing := map[string]int64{}
+		var (
+			cur  int64 = -1
+			key  strings.Builder
+			stop error
+		)
+		flush := func() {
+			if cur >= 0 {
+				existing[key.String()] = cur
+			}
+			key.Reset()
+		}
+		for rows.Next() {
+			var g, m int64
+			if stop = rows.Scan(&g, &m); stop != nil {
+				break
+			}
+			if g != cur {
+				flush()
+				cur = g
+			}
+			fmt.Fprintf(&key, "%d,", m)
+		}
+		flush()
+		if err := errors.Join(stop, rows.Err(), rows.Close()); err != nil {
+			return fmt.Errorf("load duplicate groups: %w", err)
+		}
+
+		keepIDs := map[int64]bool{}
+		for _, g := range groups {
+			ids := make([]int64, len(g.members))
+			for i, m := range g.members {
+				ids[i] = m.mediaID
+			}
+			slices.Sort(ids)
+			var k strings.Builder
+			for _, id := range ids {
+				fmt.Fprintf(&k, "%d,", id)
+			}
+			groupID, ok := existing[k.String()]
+			if ok {
+				keepIDs[groupID] = true
+				if _, err := tx.Exec(`UPDATE duplicate_members SET is_keep = (media_id = ?) WHERE group_id = ?`, g.keep, groupID); err != nil {
+					return fmt.Errorf("update group %d: %w", groupID, err)
+				}
+				continue
+			}
+			res, err := tx.Exec(`INSERT INTO duplicate_groups DEFAULT VALUES`)
+			if err != nil {
+				return fmt.Errorf("insert group: %w", err)
+			}
+			if groupID, err = res.LastInsertId(); err != nil {
+				return fmt.Errorf("insert group: %w", err)
+			}
+			keepIDs[groupID] = true
+			for _, m := range g.members {
+				if _, err := tx.Exec(`INSERT INTO duplicate_members (group_id, media_id, is_keep, distance) VALUES (?, ?, ?, ?)`,
+					groupID, m.mediaID, m.mediaID == g.keep, m.distance); err != nil {
+					return fmt.Errorf("add member: %w", err)
+				}
 			}
 		}
-	}
-
-	return nil
+		for _, groupID := range existing {
+			if keepIDs[groupID] {
+				continue
+			}
+			if _, err := tx.Exec(`DELETE FROM duplicate_groups WHERE id = ?`, groupID); err != nil {
+				return fmt.Errorf("delete group %d: %w", groupID, err)
+			}
+		}
+		return nil
+	})
 }
 
 // betterKeep returns true if candidate is a better keep choice than current.
-// Prefers: highest quality score → highest resolution → oldest date.
+// Prefers: highest resolution → clearly sharper → oldest date. Resolution
+// comes first because sharpness is measured on a downscaled copy, where a
+// small copy of a photo looks as sharp as its original.
 func betterKeep(candidate, current fpEntry) bool {
-	// Quality score: higher is better, -1 means unscored (worst).
-	cq, kq := candidate.QualityScore, current.QualityScore
-	if cq != kq {
-		return cq > kq
-	}
-	// Resolution tiebreaker.
 	cPx := candidate.Width * candidate.Height
 	kPx := current.Width * current.Height
 	if cPx != kPx {
 		return cPx > kPx
+	}
+	cq, kq := candidate.QualityScore, current.QualityScore
+	if cq > kq*1.1 || kq > cq*1.1 {
+		return cq > kq
 	}
 	// Oldest date tiebreaker.
 	cDate := candidate.DateIndexed

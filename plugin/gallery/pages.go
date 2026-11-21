@@ -1727,7 +1727,7 @@ func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := DeleteDuplicateGroup(db, groupID); err != nil {
+	if err := DismissDuplicateGroup(db, groupID); err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}

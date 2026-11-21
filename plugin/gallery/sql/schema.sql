@@ -145,3 +145,16 @@ CREATE TABLE IF NOT EXISTS duplicate_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_duplicate_members_media ON duplicate_members(media_id);
+
+-- Decisions about duplicates outlive the groups, which each scan rebuilds:
+-- a pair someone said is not a duplicate, and the copy they chose to keep.
+CREATE TABLE IF NOT EXISTS duplicate_exclusions (
+    media_a INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    media_b INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    PRIMARY KEY (media_a, media_b),
+    CHECK (media_a < media_b)
+);
+
+CREATE TABLE IF NOT EXISTS duplicate_keeps (
+    media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE
+);
