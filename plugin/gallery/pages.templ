@@ -555,9 +555,10 @@ templ timelineScript() {
 			// labelled. Days are in order, so a binary search finds it.
 			var scrubber = document.querySelector("[data-scrubber]");
 			var current = scrubber.querySelector("[data-scrubber-current]");
-			var sections = null, active = null, ticking = false;
+			var sections = null, active = null, ticking = false, drag = null, dragged = false;
 			function update() {
 				ticking = false;
+				if (drag) return;
 				sections = sections || timeline.querySelectorAll(".gallery-day");
 				var line = 80, lo = 0, hi = sections.length - 1, found = 0;
 				while (lo <= hi) {
@@ -592,15 +593,78 @@ templ timelineScript() {
 			}, { passive: true });
 			update();
 
-			// A month already on the page scrolls into view; any other
-			// follows its link to the timeline starting there.
-			scrubber.addEventListener("click", function (e) {
-				var tick = e.target.closest(".gallery-scrubber-month");
-				if (!tick) return;
-				var sec = timeline.querySelector('.gallery-day[data-month="' + tick.dataset.month + '"]');
-				if (!sec) return;
+			// Dragging the rail works like a scrollbar. The point under the
+			// pointer names a month and how far through it (each month spans
+			// its share of the rail); a month on the page scrolls there as the
+			// pointer moves, and letting go over any other opens the timeline
+			// at it.
+			var ticks = scrubber.querySelectorAll(".gallery-scrubber-month");
+			function at(y) {
+				var tick = ticks[0];
+				for (var i = 1; i < ticks.length && ticks[i].getBoundingClientRect().top <= y; i++) tick = ticks[i];
+				var r = tick.getBoundingClientRect();
+				return { tick: tick, f: r.height > 0 ? Math.min(1, Math.max(0, (y - r.top) / r.height)) : 0 };
+			}
+			// seek scrolls to the point f of the way through a month's loaded
+			// days, and reports whether the month is on the page.
+			function seek(tick, f) {
+				var secs = timeline.querySelectorAll('.gallery-day[data-month="' + tick.dataset.month + '"]');
+				if (!secs.length) return false;
+				var top = secs[0].getBoundingClientRect().top;
+				var end = secs[secs.length - 1].getBoundingClientRect().bottom;
+				window.scrollTo({ top: top + f * (end - top) + window.scrollY });
+				return true;
+			}
+			function show(p, y) {
+				if (active) active.classList.remove("is-active");
+				active = p.tick;
+				active.classList.add("is-active");
+				current.hidden = false;
+				current.textContent = p.tick.getAttribute("aria-label");
+				current.style.top = (y - scrubber.getBoundingClientRect().top) + "px";
+			}
+			function move(e) {
+				var p = at(e.clientY);
+				show(p, e.clientY);
+				drag = p;
+				seek(p.tick, p.f);
+			}
+			scrubber.addEventListener("pointerdown", function (e) {
+				if (e.button !== 0 || !ticks.length) return;
 				e.preventDefault();
-				window.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY });
+				scrubber.setPointerCapture(e.pointerId);
+				scrubber.classList.add("is-dragging");
+				move(e);
+			});
+			scrubber.addEventListener("pointermove", function (e) {
+				if (drag) move(e);
+			});
+			function release(cancelled) {
+				if (!drag) return;
+				var p = drag;
+				drag = null;
+				// The click that follows comes in the same task.
+				dragged = true;
+				setTimeout(function () { dragged = false; }, 0);
+				scrubber.classList.remove("is-dragging");
+				if (!cancelled && !seek(p.tick, p.f)) {
+					window.location.href = p.tick.href;
+					return;
+				}
+				active = null;
+				update();
+			}
+			scrubber.addEventListener("pointerup", function (e) { release(false); });
+			scrubber.addEventListener("pointercancel", function (e) { release(true); });
+			// The click that ends a drag has been handled; a click from the
+			// keyboard scrolls to a month on the page or follows the link.
+			scrubber.addEventListener("click", function (e) {
+				if (dragged) {
+					e.preventDefault();
+					return;
+				}
+				var tick = e.target.closest(".gallery-scrubber-month");
+				if (tick && seek(tick, 0)) e.preventDefault();
 			});
 		})();
 	</script>

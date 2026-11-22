@@ -190,6 +190,25 @@ func (b *Browser) Click(t testing.TB, sel string) {
 	}
 }
 
+// Drag presses the left button at one point of the viewport, moves to
+// another in steps, and releases there.
+func (b *Browser) Drag(t testing.TB, x0, y0, x1, y1 float64) {
+	t.Helper()
+	m := b.tp().Mouse
+	if err := m.MoveTo(proto.Point{X: x0, Y: y0}); err != nil {
+		t.Fatalf("webtest: drag: %v", err)
+	}
+	if err := m.Down(proto.InputMouseButtonLeft, 1); err != nil {
+		t.Fatalf("webtest: drag: %v", err)
+	}
+	if err := m.MoveLinear(proto.Point{X: x1, Y: y1}, 10); err != nil {
+		t.Fatalf("webtest: drag: %v", err)
+	}
+	if err := m.Up(proto.InputMouseButtonLeft, 1); err != nil {
+		t.Fatalf("webtest: drag: %v", err)
+	}
+}
+
 // ClickText finds a visible element in <body> containing the given text and clicks it.
 func (b *Browser) ClickText(t testing.TB, text string) {
 	t.Helper()

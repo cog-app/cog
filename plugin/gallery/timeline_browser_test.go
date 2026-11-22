@@ -86,4 +86,39 @@ func TestBrowserTimelineScroll(t *testing.T) {
 			t.Errorf("after loading above, the scrubber says %q", got)
 		}
 	})
+
+	// Dragging the rail scrolls through the months already on the page
+	// without leaving it, and the label follows the pointer.
+	t.Run("DragsThroughLoadedMonths", func(t *testing.T) {
+		b := eng.Start(t)
+		b.Login(t, "scroll", "pass")
+		b.Navigate(t, "/apps/gallery/")
+		b.WaitText(t, "Timeline")
+		waitTrue(t, b, "every photo", `(window.scrollTo(0, document.documentElement.scrollHeight),
+			!document.querySelector("[data-timeline-more]"))`)
+		b.Eval(t, `window.scrollTo(0, 0)`)
+		url := b.URL(t)
+		pts, ok := b.Eval(t, `[
+			document.querySelector("[data-scrubber]").getBoundingClientRect().right - 8,
+			document.querySelector('.gallery-scrubber-month[data-month="2024-03"]').getBoundingClientRect().top + 2,
+			document.querySelector('.gallery-scrubber-month[data-month="2024-01"]').getBoundingClientRect().top +
+				document.querySelector('.gallery-scrubber-month[data-month="2024-01"]').getBoundingClientRect().height / 2,
+		]`).([]any)
+		if !ok || len(pts) != 3 {
+			t.Fatalf("rail points: %v", pts)
+		}
+		f := func(i int) float64 { return pts[i].(float64) }
+		b.Drag(t, f(0), f(1), f(0), f(2))
+		waitTrue(t, b, "the scrubber to reach January",
+			`document.querySelector("[data-scrubber-current]")?.textContent === "January 2024"`)
+		// Half way through January's span is half way through its days.
+		top := b.Eval(t, `document.querySelector('.gallery-day[data-month="2024-01"]').getBoundingClientRect().top < 0 &&
+			[...document.querySelectorAll('.gallery-day[data-month="2024-01"]')].pop().getBoundingClientRect().bottom > 0`)
+		if top != true {
+			t.Error("after dragging to the middle of January, January is not on screen")
+		}
+		if got := b.URL(t); got != url {
+			t.Errorf("dragging over loaded months left the page for %s", got)
+		}
+	})
 }
