@@ -419,6 +419,17 @@ func (s *Store) UpsertItem(it Item) (int64, bool, error) {
 	if err != nil {
 		return 0, false, fmt.Errorf("upsert item select existing: %w", err)
 	}
+	// Fill what an earlier fetch could not: the guard makes a re-fetch that has
+	// nothing new write nothing, so it records no change for sync.
+	_, err = s.db.Exec(`
+		UPDATE items SET
+			thumbnail_url = CASE WHEN thumbnail_url = '' THEN ? ELSE thumbnail_url END,
+			duration_sec  = CASE WHEN duration_sec = 0  THEN ? ELSE duration_sec  END
+		WHERE id = ? AND ((thumbnail_url = '' AND ? != '') OR (duration_sec = 0 AND ? > 0))`,
+		it.ThumbnailURL, it.DurationSec, id, it.ThumbnailURL, it.DurationSec)
+	if err != nil {
+		return 0, false, fmt.Errorf("upsert item fill: %w", err)
+	}
 	return id, false, nil
 }
 

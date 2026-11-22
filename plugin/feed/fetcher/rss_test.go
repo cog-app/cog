@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 	"git.duckfam.us/jj-software/cog/plugin/feed"
 	"git.duckfam.us/jj-software/cog/plugin/feed/fetcher"
@@ -116,4 +117,50 @@ func TestRSSEtag304(t *testing.T) {
 	if len(out.Items) != 0 {
 		t.Fatalf("expected 0 items on 304, got %d", len(out.Items))
 	}
+}
+
+func TestRSSThumbnailsAndDurations(t *testing.T) {
+	body, err := os.ReadFile("testdata/sample-images.xml")
+	require.NoError(t, err)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	out, err := fetcher.Fetch(context.Background(), feed.Subscription{Kind: "rss", URL: srv.URL})
+	require.NoError(t, err)
+	require.Equal(t, 4, len(out.Items))
+
+	for i, want := range []struct {
+		title, thumb string
+		dur          int64
+	}{
+		{"Episode With Art", "https://example.com/art.jpg", 3725},
+		{"Episode With Art", "https://example.com/art.jpg", 3725},
+		{"Bare Episode", "", 0},
+		{"Article", "https://example.com/posts/pic.png", 0},
+	} {
+		it := out.Items[i]
+		assert.Equal(t, want.title, it.Title, i)
+		assert.Equal(t, want.thumb, it.ThumbnailURL, i)
+		assert.Equal(t, want.dur, it.DurationSec, i)
+	}
+}
+
+// A relative entry link resolves against the feed URL before it is the base
+// for the entry's relative images.
+func TestRSSThumbnailRelativeLink(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"
+			xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>x</title>
+			<item><title>T</title><link>/posts/1</link><guid>g</guid>
+			<content:encoded>&lt;img src="a.jpg"&gt;</content:encoded></item>
+			</channel></rss>`))
+	}))
+	defer srv.Close()
+
+	out, err := fetcher.Fetch(context.Background(), feed.Subscription{Kind: "rss", URL: srv.URL + "/feed.xml"})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(out.Items))
+	assert.Equal(t, srv.URL+"/posts/a.jpg", out.Items[0].ThumbnailURL)
 }

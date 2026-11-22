@@ -116,6 +116,14 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 			content = sanitizer.Sanitize(content)
 		}
 
+		// The entry link may be relative to the feed.
+		base := resolveAgainst(sub.URL, itemURL)
+		thumbnail := itemImage(entry, base)
+		var duration int64
+		if entry.ITunesExt != nil {
+			duration = parseITunesDuration(entry.ITunesExt.Duration)
+		}
+
 		// One item per enclosure. The first is the entry: it carries the
 		// entry's GUID and body (an episode's show notes), so an episode and
 		// its notes are one item with one read state. Any further enclosure
@@ -130,14 +138,16 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 				guid = enclosureGUID(entryGUID, enc.URL)
 			}
 			it := feed.Item{
-				GUID:        guid,
-				Type:        enclosureMediaType(enc.Type),
-				Title:       title,
-				Author:      author,
-				URL:         itemURL,
-				MediaURL:    enc.URL,
-				MediaMIME:   enc.Type,
-				PublishedAt: publishedAt,
+				GUID:         guid,
+				Type:         enclosureMediaType(enc.Type),
+				Title:        title,
+				Author:       author,
+				URL:          itemURL,
+				MediaURL:     enc.URL,
+				MediaMIME:    enc.Type,
+				PublishedAt:  publishedAt,
+				ThumbnailURL: thumbnail,
+				DurationSec:  duration,
 			}
 			if !media {
 				it.ContentHTML = content
@@ -149,13 +159,15 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 		// An entry without media is an article, if it has a body.
 		if !media && content != "" {
 			items = append(items, feed.Item{
-				GUID:        entryGUID,
-				Type:        "text",
-				Title:       title,
-				Author:      author,
-				URL:         itemURL,
-				ContentHTML: content,
-				PublishedAt: publishedAt,
+				GUID:         entryGUID,
+				Type:         "text",
+				Title:        title,
+				Author:       author,
+				URL:          itemURL,
+				ContentHTML:  content,
+				PublishedAt:  publishedAt,
+				ThumbnailURL: thumbnail,
+				DurationSec:  duration,
 			})
 		}
 	}
@@ -184,4 +196,21 @@ func enclosureMediaType(mimeType string) string {
 func enclosureGUID(entryGUID, encURL string) string {
 	h := sha256.Sum256([]byte(encURL))
 	return entryGUID + "#" + hex.EncodeToString(h[:6])
+}
+
+// resolveAgainst resolves ref against base, answering base when ref is empty
+// and ref unchanged when either does not parse.
+func resolveAgainst(base, ref string) string {
+	if ref == "" {
+		return base
+	}
+	r, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	b, err := url.Parse(base)
+	if err != nil {
+		return ref
+	}
+	return b.ResolveReference(r).String()
 }

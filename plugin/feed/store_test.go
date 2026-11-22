@@ -658,3 +658,100 @@ func TestPlaybackLastWriterWinsByWhenItPlayed(t *testing.T) {
 		t.Fatalf("update after a fast clock lost: %+v", pb)
 	}
 }
+
+func newStoreDB(t *testing.T) (*feed.Store, *sql.DB) {
+	t.Helper()
+	env := cogtest.New(t, feed.New())
+	u := env.CreateUser(t, "u", "pass")
+	raw, ok := env.Providers.Plugins.Plugin(feed.PluginID)
+	if !ok {
+		t.Fatal("feed plugin not registered")
+	}
+	db, err := raw.(*feed.Plugin).DB(u.User.Username)
+	require.NoError(t, err)
+	return feed.NewStore(db), db
+}
+
+func upsertSub(t *testing.T, s *feed.Store) int64 {
+	t.Helper()
+	subID, err := s.CreateSubscription(feed.Subscription{
+		Kind: "rss", URL: "https://x/feed.xml", PollIntervalSec: 1800,
+	})
+	require.NoError(t, err)
+	return subID
+}
+
+func TestUpsertItemFillsEmptyThumbnail(t *testing.T) {
+	s := newStore(t)
+	subID := upsertSub(t, s)
+	it := feed.Item{SubscriptionID: subID, GUID: "g", Type: "text", Title: "T"}
+	id, inserted, err := s.UpsertItem(it)
+	require.NoError(t, err)
+	require.True(t, inserted)
+
+	it.ThumbnailURL, it.DurationSec = "https://x/a.jpg", 3725
+	id2, inserted2, err := s.UpsertItem(it)
+	require.NoError(t, err)
+	require.False(t, inserted2)
+	require.Equal(t, id, id2)
+
+	got, err := s.GetItem(id)
+	require.NoError(t, err)
+	require.Equal(t, "https://x/a.jpg", got.ThumbnailURL)
+	require.Equal(t, 3725, int(got.DurationSec))
+}
+
+func TestUpsertItemKeepsThumbnail(t *testing.T) {
+	s := newStore(t)
+	subID := upsertSub(t, s)
+	it := feed.Item{SubscriptionID: subID, GUID: "g", Type: "text", Title: "T",
+		ThumbnailURL: "https://x/a.jpg", DurationSec: 100}
+	id, _, err := s.UpsertItem(it)
+	require.NoError(t, err)
+
+	it.ThumbnailURL, it.DurationSec = "https://x/b.jpg", 200
+	_, _, err = s.UpsertItem(it)
+	require.NoError(t, err)
+
+	got, err := s.GetItem(id)
+	require.NoError(t, err)
+	require.Equal(t, "https://x/a.jpg", got.ThumbnailURL)
+	require.Equal(t, 100, int(got.DurationSec))
+}
+
+func TestUpsertItemNoOpWritesNothing(t *testing.T) {
+	s, db := newStoreDB(t)
+	subID := upsertSub(t, s)
+	it := feed.Item{SubscriptionID: subID, GUID: "g", Type: "text", Title: "T",
+		ThumbnailURL: "https://x/a.jpg", DurationSec: 100}
+	_, _, err := s.UpsertItem(it)
+	require.NoError(t, err)
+
+	// A trigger of our own counts updates, so the check does not depend on
+	// the search drainer emptying the change queue underneath it.
+	_, err = db.Exec(`
+		CREATE TABLE upd_count (n INTEGER);
+		CREATE TRIGGER upd_count_t AFTER UPDATE ON items BEGIN
+			INSERT INTO upd_count VALUES (1);
+		END;`)
+	require.NoError(t, err)
+
+	_, _, err = s.UpsertItem(it) // identical
+	require.NoError(t, err)
+	it.ThumbnailURL, it.DurationSec = "", 0 // nothing to fill with
+	_, _, err = s.UpsertItem(it)
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t, db.QueryRow(`SELECT count(*) FROM upd_count`).Scan(&n))
+	require.Equal(t, 0, n)
+
+	// Empty stored values and empty given values: still nothing to write.
+	it2 := feed.Item{SubscriptionID: subID, GUID: "g2", Type: "text", Title: "T"}
+	_, _, err = s.UpsertItem(it2)
+	require.NoError(t, err)
+	_, _, err = s.UpsertItem(it2)
+	require.NoError(t, err)
+	require.NoError(t, db.QueryRow(`SELECT count(*) FROM upd_count`).Scan(&n))
+	require.Equal(t, 0, n)
+}
