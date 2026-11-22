@@ -3674,6 +3674,23 @@ a.gallery-thumb:focus-visible {
 .gallery-scrubber:hover .gallery-scrubber-current {
   visibility: hidden;
 }
+/* Dragging the rail scrubs through time like a scrollbar: the label follows
+   the pointer, and the page must not scroll under a finger instead. */
+.gallery-scrubber {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.gallery-scrubber.is-dragging {
+  cursor: grabbing;
+}
+.gallery-scrubber.is-dragging .gallery-scrubber-current {
+  visibility: visible;
+  opacity: 1;
+}
+.gallery-scrubber.is-dragging .gallery-scrubber-month::after {
+  display: none;
+}
 
 /* Albums and duplicate groups: a cover with its name under it. */
 .gallery-albums {
@@ -4343,8 +4360,8 @@ html:has(dialog.gallery-lightbox[open]) {
   .gallery-scrubber-year {
     display: none;
   }
-  /* The label would cover the page; it shows while scrolling. */
-  .gallery-scrubber:not(.is-scrolling) .gallery-scrubber-current {
+  /* The label would cover the page; it shows while scrolling or dragging. */
+  .gallery-scrubber:not(.is-scrolling):not(.is-dragging) .gallery-scrubber-current {
     opacity: 0;
   }
   /* Phones: three photos to a row, close together, like a camera roll. */

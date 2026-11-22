@@ -1150,7 +1150,7 @@ func timelineScript() templ.Component {
 			templ_7745c5c3_Var39 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<script type=\"text/javascript\">\n\t\t(function () {\n\t\t\tvar timeline = document.querySelector(\"[data-timeline]\");\n\t\t\tif (!timeline) return;\n\n\t\t\t// --- Infinite scroll ------------------------------------------\n\t\t\t// A marker loads its run of days once it is within a screen or\n\t\t\t// two of the viewport. Days loaded above keep the photos being\n\t\t\t// looked at where they are: the page scrolls by what was added\n\t\t\t// (the timeline opts out of the browser's scroll anchoring, so\n\t\t\t// the two do not both apply).\n\t\t\tvar observer = new IntersectionObserver(function (entries) {\n\t\t\t\tentries.forEach(function (e) {\n\t\t\t\t\tif (e.isIntersecting) load(e.target);\n\t\t\t\t});\n\t\t\t}, { rootMargin: \"1500px 0px\" });\n\t\t\tfunction watch(root) {\n\t\t\t\tif (root.matches && root.matches(\"[data-timeline-more]\")) observer.observe(root);\n\t\t\t\troot.querySelectorAll(\"[data-timeline-more]\").forEach(function (el) { observer.observe(el); });\n\t\t\t}\n\t\t\tfunction load(el) {\n\t\t\t\tif (el.dataset.loading) return;\n\t\t\t\tel.dataset.loading = \"1\";\n\t\t\t\tobserver.unobserve(el);\n\t\t\t\tfetch(el.dataset.src, { credentials: \"same-origin\" }).then(function (res) {\n\t\t\t\t\tif (!res.ok) throw new Error(el.dataset.src + \": \" + res.status + \" \" + res.statusText);\n\t\t\t\t\treturn res.text();\n\t\t\t\t}).then(function (html) {\n\t\t\t\t\tvar tpl = document.createElement(\"template\");\n\t\t\t\t\ttpl.innerHTML = html;\n\t\t\t\t\tvar nodes = Array.prototype.slice.call(tpl.content.children);\n\t\t\t\t\tvar height = document.documentElement.scrollHeight;\n\t\t\t\t\tel.replaceWith(tpl.content);\n\t\t\t\t\tif (el.dataset.timelineMore === \"after\") {\n\t\t\t\t\t\twindow.scrollBy(0, document.documentElement.scrollHeight - height);\n\t\t\t\t\t}\n\t\t\t\t\tnodes.forEach(watch);\n\t\t\t\t\tsections = null;\n\t\t\t\t\tupdate();\n\t\t\t\t}).catch(function (err) {\n\t\t\t\t\tconsole.error(\"gallery timeline:\", err);\n\t\t\t\t\tdelete el.dataset.loading;\n\t\t\t\t\tel.textContent = \"Couldn’t load more photos. \";\n\t\t\t\t\tvar retry = document.createElement(\"button\");\n\t\t\t\t\tretry.type = \"button\";\n\t\t\t\t\tretry.className = \"btn btn-sm\";\n\t\t\t\t\tretry.textContent = \"Try again\";\n\t\t\t\t\tretry.addEventListener(\"click\", function () {\n\t\t\t\t\t\tel.innerHTML = '<span class=\"spinner-sm\"></span>';\n\t\t\t\t\t\tload(el);\n\t\t\t\t\t});\n\t\t\t\t\tel.appendChild(retry);\n\t\t\t\t});\n\t\t\t}\n\t\t\t// A page that starts partway down the timeline (a month picked on\n\t\t\t// the scrubber) opens with that month at the top, so the days\n\t\t\t// that load above it stay out of view.\n\t\t\tvar first = timeline.querySelector(\".gallery-day\");\n\t\t\tif (first && timeline.querySelector('[data-timeline-more=\"after\"]')) {\n\t\t\t\twindow.scrollTo(0, first.getBoundingClientRect().top + window.scrollY);\n\t\t\t}\n\t\t\twatch(timeline);\n\n\t\t\t// --- Scrubber --------------------------------------------------\n\t\t\t// The month of the day at the top of the screen is the one\n\t\t\t// labelled. Days are in order, so a binary search finds it.\n\t\t\tvar scrubber = document.querySelector(\"[data-scrubber]\");\n\t\t\tvar current = scrubber.querySelector(\"[data-scrubber-current]\");\n\t\t\tvar sections = null, active = null, ticking = false;\n\t\t\tfunction update() {\n\t\t\t\tticking = false;\n\t\t\t\tsections = sections || timeline.querySelectorAll(\".gallery-day\");\n\t\t\t\tvar line = 80, lo = 0, hi = sections.length - 1, found = 0;\n\t\t\t\twhile (lo <= hi) {\n\t\t\t\t\tvar mid = (lo + hi) >> 1;\n\t\t\t\t\tif (sections[mid].getBoundingClientRect().top <= line) {\n\t\t\t\t\t\tfound = mid;\n\t\t\t\t\t\tlo = mid + 1;\n\t\t\t\t\t} else {\n\t\t\t\t\t\thi = mid - 1;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar sec = sections[found];\n\t\t\t\tvar tick = sec ? scrubber.querySelector('[data-month=\"' + sec.dataset.month + '\"]') : null;\n\t\t\t\tif (tick === active) return;\n\t\t\t\tif (active) active.classList.remove(\"is-active\");\n\t\t\t\tactive = tick;\n\t\t\t\tcurrent.hidden = !tick;\n\t\t\t\tif (!tick) return;\n\t\t\t\ttick.classList.add(\"is-active\");\n\t\t\t\tcurrent.textContent = tick.getAttribute(\"aria-label\");\n\t\t\t\tcurrent.style.top = tick.style.top;\n\t\t\t}\n\t\t\t// Phones show the label only while scrolling (see the CSS).\n\t\t\tvar idle = 0;\n\t\t\twindow.addEventListener(\"scroll\", function () {\n\t\t\t\tscrubber.classList.add(\"is-scrolling\");\n\t\t\t\tclearTimeout(idle);\n\t\t\t\tidle = setTimeout(function () { scrubber.classList.remove(\"is-scrolling\"); }, 1500);\n\t\t\t\tif (ticking) return;\n\t\t\t\tticking = true;\n\t\t\t\trequestAnimationFrame(update);\n\t\t\t}, { passive: true });\n\t\t\tupdate();\n\n\t\t\t// A month already on the page scrolls into view; any other\n\t\t\t// follows its link to the timeline starting there.\n\t\t\tscrubber.addEventListener(\"click\", function (e) {\n\t\t\t\tvar tick = e.target.closest(\".gallery-scrubber-month\");\n\t\t\t\tif (!tick) return;\n\t\t\t\tvar sec = timeline.querySelector('.gallery-day[data-month=\"' + tick.dataset.month + '\"]');\n\t\t\t\tif (!sec) return;\n\t\t\t\te.preventDefault();\n\t\t\t\twindow.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY });\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<script type=\"text/javascript\">\n\t\t(function () {\n\t\t\tvar timeline = document.querySelector(\"[data-timeline]\");\n\t\t\tif (!timeline) return;\n\n\t\t\t// --- Infinite scroll ------------------------------------------\n\t\t\t// A marker loads its run of days once it is within a screen or\n\t\t\t// two of the viewport. Days loaded above keep the photos being\n\t\t\t// looked at where they are: the page scrolls by what was added\n\t\t\t// (the timeline opts out of the browser's scroll anchoring, so\n\t\t\t// the two do not both apply).\n\t\t\tvar observer = new IntersectionObserver(function (entries) {\n\t\t\t\tentries.forEach(function (e) {\n\t\t\t\t\tif (e.isIntersecting) load(e.target);\n\t\t\t\t});\n\t\t\t}, { rootMargin: \"1500px 0px\" });\n\t\t\tfunction watch(root) {\n\t\t\t\tif (root.matches && root.matches(\"[data-timeline-more]\")) observer.observe(root);\n\t\t\t\troot.querySelectorAll(\"[data-timeline-more]\").forEach(function (el) { observer.observe(el); });\n\t\t\t}\n\t\t\tfunction load(el) {\n\t\t\t\tif (el.dataset.loading) return;\n\t\t\t\tel.dataset.loading = \"1\";\n\t\t\t\tobserver.unobserve(el);\n\t\t\t\tfetch(el.dataset.src, { credentials: \"same-origin\" }).then(function (res) {\n\t\t\t\t\tif (!res.ok) throw new Error(el.dataset.src + \": \" + res.status + \" \" + res.statusText);\n\t\t\t\t\treturn res.text();\n\t\t\t\t}).then(function (html) {\n\t\t\t\t\tvar tpl = document.createElement(\"template\");\n\t\t\t\t\ttpl.innerHTML = html;\n\t\t\t\t\tvar nodes = Array.prototype.slice.call(tpl.content.children);\n\t\t\t\t\tvar height = document.documentElement.scrollHeight;\n\t\t\t\t\tel.replaceWith(tpl.content);\n\t\t\t\t\tif (el.dataset.timelineMore === \"after\") {\n\t\t\t\t\t\twindow.scrollBy(0, document.documentElement.scrollHeight - height);\n\t\t\t\t\t}\n\t\t\t\t\tnodes.forEach(watch);\n\t\t\t\t\tsections = null;\n\t\t\t\t\tupdate();\n\t\t\t\t}).catch(function (err) {\n\t\t\t\t\tconsole.error(\"gallery timeline:\", err);\n\t\t\t\t\tdelete el.dataset.loading;\n\t\t\t\t\tel.textContent = \"Couldn’t load more photos. \";\n\t\t\t\t\tvar retry = document.createElement(\"button\");\n\t\t\t\t\tretry.type = \"button\";\n\t\t\t\t\tretry.className = \"btn btn-sm\";\n\t\t\t\t\tretry.textContent = \"Try again\";\n\t\t\t\t\tretry.addEventListener(\"click\", function () {\n\t\t\t\t\t\tel.innerHTML = '<span class=\"spinner-sm\"></span>';\n\t\t\t\t\t\tload(el);\n\t\t\t\t\t});\n\t\t\t\t\tel.appendChild(retry);\n\t\t\t\t});\n\t\t\t}\n\t\t\t// A page that starts partway down the timeline (a month picked on\n\t\t\t// the scrubber) opens with that month at the top, so the days\n\t\t\t// that load above it stay out of view.\n\t\t\tvar first = timeline.querySelector(\".gallery-day\");\n\t\t\tif (first && timeline.querySelector('[data-timeline-more=\"after\"]')) {\n\t\t\t\twindow.scrollTo(0, first.getBoundingClientRect().top + window.scrollY);\n\t\t\t}\n\t\t\twatch(timeline);\n\n\t\t\t// --- Scrubber --------------------------------------------------\n\t\t\t// The month of the day at the top of the screen is the one\n\t\t\t// labelled. Days are in order, so a binary search finds it.\n\t\t\tvar scrubber = document.querySelector(\"[data-scrubber]\");\n\t\t\tvar current = scrubber.querySelector(\"[data-scrubber-current]\");\n\t\t\tvar sections = null, active = null, ticking = false, drag = null, dragged = false;\n\t\t\tfunction update() {\n\t\t\t\tticking = false;\n\t\t\t\tif (drag) return;\n\t\t\t\tsections = sections || timeline.querySelectorAll(\".gallery-day\");\n\t\t\t\tvar line = 80, lo = 0, hi = sections.length - 1, found = 0;\n\t\t\t\twhile (lo <= hi) {\n\t\t\t\t\tvar mid = (lo + hi) >> 1;\n\t\t\t\t\tif (sections[mid].getBoundingClientRect().top <= line) {\n\t\t\t\t\t\tfound = mid;\n\t\t\t\t\t\tlo = mid + 1;\n\t\t\t\t\t} else {\n\t\t\t\t\t\thi = mid - 1;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tvar sec = sections[found];\n\t\t\t\tvar tick = sec ? scrubber.querySelector('[data-month=\"' + sec.dataset.month + '\"]') : null;\n\t\t\t\tif (tick === active) return;\n\t\t\t\tif (active) active.classList.remove(\"is-active\");\n\t\t\t\tactive = tick;\n\t\t\t\tcurrent.hidden = !tick;\n\t\t\t\tif (!tick) return;\n\t\t\t\ttick.classList.add(\"is-active\");\n\t\t\t\tcurrent.textContent = tick.getAttribute(\"aria-label\");\n\t\t\t\tcurrent.style.top = tick.style.top;\n\t\t\t}\n\t\t\t// Phones show the label only while scrolling (see the CSS).\n\t\t\tvar idle = 0;\n\t\t\twindow.addEventListener(\"scroll\", function () {\n\t\t\t\tscrubber.classList.add(\"is-scrolling\");\n\t\t\t\tclearTimeout(idle);\n\t\t\t\tidle = setTimeout(function () { scrubber.classList.remove(\"is-scrolling\"); }, 1500);\n\t\t\t\tif (ticking) return;\n\t\t\t\tticking = true;\n\t\t\t\trequestAnimationFrame(update);\n\t\t\t}, { passive: true });\n\t\t\tupdate();\n\n\t\t\t// Dragging the rail works like a scrollbar. The point under the\n\t\t\t// pointer names a month and how far through it (each month spans\n\t\t\t// its share of the rail); a month on the page scrolls there as the\n\t\t\t// pointer moves, and letting go over any other opens the timeline\n\t\t\t// at it.\n\t\t\tvar ticks = scrubber.querySelectorAll(\".gallery-scrubber-month\");\n\t\t\tfunction at(y) {\n\t\t\t\tvar tick = ticks[0];\n\t\t\t\tfor (var i = 1; i < ticks.length && ticks[i].getBoundingClientRect().top <= y; i++) tick = ticks[i];\n\t\t\t\tvar r = tick.getBoundingClientRect();\n\t\t\t\treturn { tick: tick, f: r.height > 0 ? Math.min(1, Math.max(0, (y - r.top) / r.height)) : 0 };\n\t\t\t}\n\t\t\t// seek scrolls to the point f of the way through a month's loaded\n\t\t\t// days, and reports whether the month is on the page.\n\t\t\tfunction seek(tick, f) {\n\t\t\t\tvar secs = timeline.querySelectorAll('.gallery-day[data-month=\"' + tick.dataset.month + '\"]');\n\t\t\t\tif (!secs.length) return false;\n\t\t\t\tvar top = secs[0].getBoundingClientRect().top;\n\t\t\t\tvar end = secs[secs.length - 1].getBoundingClientRect().bottom;\n\t\t\t\twindow.scrollTo({ top: top + f * (end - top) + window.scrollY });\n\t\t\t\treturn true;\n\t\t\t}\n\t\t\tfunction show(p, y) {\n\t\t\t\tif (active) active.classList.remove(\"is-active\");\n\t\t\t\tactive = p.tick;\n\t\t\t\tactive.classList.add(\"is-active\");\n\t\t\t\tcurrent.hidden = false;\n\t\t\t\tcurrent.textContent = p.tick.getAttribute(\"aria-label\");\n\t\t\t\tcurrent.style.top = (y - scrubber.getBoundingClientRect().top) + \"px\";\n\t\t\t}\n\t\t\tfunction move(e) {\n\t\t\t\tvar p = at(e.clientY);\n\t\t\t\tshow(p, e.clientY);\n\t\t\t\tdrag = p;\n\t\t\t\tseek(p.tick, p.f);\n\t\t\t}\n\t\t\tscrubber.addEventListener(\"pointerdown\", function (e) {\n\t\t\t\tif (e.button !== 0 || !ticks.length) return;\n\t\t\t\te.preventDefault();\n\t\t\t\tscrubber.setPointerCapture(e.pointerId);\n\t\t\t\tscrubber.classList.add(\"is-dragging\");\n\t\t\t\tmove(e);\n\t\t\t});\n\t\t\tscrubber.addEventListener(\"pointermove\", function (e) {\n\t\t\t\tif (drag) move(e);\n\t\t\t});\n\t\t\tfunction release(cancelled) {\n\t\t\t\tif (!drag) return;\n\t\t\t\tvar p = drag;\n\t\t\t\tdrag = null;\n\t\t\t\t// The click that follows comes in the same task.\n\t\t\t\tdragged = true;\n\t\t\t\tsetTimeout(function () { dragged = false; }, 0);\n\t\t\t\tscrubber.classList.remove(\"is-dragging\");\n\t\t\t\tif (!cancelled && !seek(p.tick, p.f)) {\n\t\t\t\t\twindow.location.href = p.tick.href;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tactive = null;\n\t\t\t\tupdate();\n\t\t\t}\n\t\t\tscrubber.addEventListener(\"pointerup\", function (e) { release(false); });\n\t\t\tscrubber.addEventListener(\"pointercancel\", function (e) { release(true); });\n\t\t\t// The click that ends a drag has been handled; a click from the\n\t\t\t// keyboard scrolls to a month on the page or follows the link.\n\t\t\tscrubber.addEventListener(\"click\", function (e) {\n\t\t\t\tif (dragged) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar tick = e.target.closest(\".gallery-scrubber-month\");\n\t\t\t\tif (tick && seek(tick, 0)) e.preventDefault();\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1298,7 +1298,7 @@ func albumsPage(activePath string, albums []Album, shared []SharedAlbum, csrfTok
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 639, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 703, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 				if templ_7745c5c3_Err != nil {
@@ -1372,7 +1372,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 		var templ_7745c5c3_Var46 templ.SafeURL
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(href))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 663, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 727, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
@@ -1390,7 +1390,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(cover)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 666, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 730, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -1413,7 +1413,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 671, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 735, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -1426,7 +1426,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(plural(a.MediaCount, "item", "items"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 673, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 737, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -1440,7 +1440,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(" · " + a.AlbumTypeName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 675, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 739, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1455,7 +1455,7 @@ func albumCard(a *Album, href, cover, from string) templ.Component {
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(" · " + from)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 678, Col: 19}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 742, Col: 19}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1522,7 +1522,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs("Shared by " + album.Owner)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 687, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 751, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1535,7 +1535,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 				var templ_7745c5c3_Var56 templ.SafeURL
 				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/files/shared/" + url.PathEscape(album.Owner) + "/" + url.PathEscape(album.Name)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 688, Col: 126}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 752, Col: 126}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 				if templ_7745c5c3_Err != nil {
@@ -1563,7 +1563,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(album.Description)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 691, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 755, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
@@ -1604,7 +1604,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 					var templ_7745c5c3_Var58 templ.SafeURL
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(sharedThumbURL(album.Owner, album.ID, m.ID, 1024)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 700, Col: 79}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 764, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 					if templ_7745c5c3_Err != nil {
@@ -1617,7 +1617,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 					var templ_7745c5c3_Var59 string
 					templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(m.FileName())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 700, Col: 124}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 764, Col: 124}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 					if templ_7745c5c3_Err != nil {
@@ -1630,7 +1630,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 					var templ_7745c5c3_Var60 string
 					templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(sharedThumbURL(album.Owner, album.ID, m.ID, 256))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 701, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 765, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 					if templ_7745c5c3_Err != nil {
@@ -1643,7 +1643,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 					var templ_7745c5c3_Var61 string
 					templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(m.FileName())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 701, Col: 86}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 765, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 					if templ_7745c5c3_Err != nil {
@@ -1674,7 +1674,7 @@ func sharedAlbumPage(activePath string, album SharedAlbum, media []Media) templ.
 							var templ_7745c5c3_Var62 string
 							templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(m.DurationMs))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 707, Col: 69}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 771, Col: 69}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 							if templ_7745c5c3_Err != nil {
@@ -1734,7 +1734,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(idPrefix + "-name")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 720, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 784, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1747,7 +1747,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(idPrefix + "-name")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 721, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 785, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1760,7 +1760,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 721, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 785, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
@@ -1773,7 +1773,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(idPrefix + "-description")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 724, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 788, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1786,7 +1786,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var68 string
 		templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(idPrefix + "-description")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 725, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 789, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 		if templ_7745c5c3_Err != nil {
@@ -1799,7 +1799,7 @@ func albumFields(idPrefix, name, description string) templ.Component {
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 725, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 789, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1882,7 +1882,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var73 string
 					templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(album.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 739, Col: 84}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 803, Col: 84}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 					if templ_7745c5c3_Err != nil {
@@ -1895,7 +1895,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var74 string
 					templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(album.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 739, Col: 111}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 803, Col: 111}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 					if templ_7745c5c3_Err != nil {
@@ -1937,7 +1937,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var75 string
 					templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(album.AlbumTypeName() + " album")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 756, Col: 72}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 820, Col: 72}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 					if templ_7745c5c3_Err != nil {
@@ -1966,7 +1966,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 				var templ_7745c5c3_Var76 string
 				templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(album.Description)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 760, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 824, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 				if templ_7745c5c3_Err != nil {
@@ -2034,7 +2034,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var78 templ.SafeURL
 					templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/add", album.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 775, Col: 100}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 839, Col: 100}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 					if templ_7745c5c3_Err != nil {
@@ -2047,7 +2047,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var79 string
 					templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 776, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 840, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 					if templ_7745c5c3_Err != nil {
@@ -2075,7 +2075,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 							var templ_7745c5c3_Var80 string
 							templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(m.FileName())
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 783, Col: 71}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 847, Col: 71}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 							if templ_7745c5c3_Err != nil {
@@ -2088,7 +2088,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 							var templ_7745c5c3_Var81 string
 							templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.ID, 10))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 784, Col: 84}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 848, Col: 84}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 							if templ_7745c5c3_Err != nil {
@@ -2101,7 +2101,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 							var templ_7745c5c3_Var82 string
 							templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(m.FileName())
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 784, Col: 112}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 848, Col: 112}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 							if templ_7745c5c3_Err != nil {
@@ -2114,7 +2114,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 							var templ_7745c5c3_Var83 string
 							templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(m.ID, 256))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 785, Col: 40}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 849, Col: 40}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 							if templ_7745c5c3_Err != nil {
@@ -2173,7 +2173,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var85 templ.SafeURL
 					templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/rename", album.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 798, Col: 103}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 862, Col: 103}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 					if templ_7745c5c3_Err != nil {
@@ -2186,7 +2186,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var86 string
 					templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 799, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 863, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 					if templ_7745c5c3_Err != nil {
@@ -2215,7 +2215,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 						var templ_7745c5c3_Var88 string
 						templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(uploads.Folder)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 803, Col: 122}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 867, Col: 122}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 						if templ_7745c5c3_Err != nil {
@@ -2228,7 +2228,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 						var templ_7745c5c3_Var89 string
 						templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(uploads.Default)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 803, Col: 154}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 867, Col: 154}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 						if templ_7745c5c3_Err != nil {
@@ -2241,7 +2241,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 						var templ_7745c5c3_Var90 string
 						templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs("When you share the album with permission to edit, the photos people add go here in your files. Leave it empty to use " + uploads.Default + ".")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 804, Col: 210}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 868, Col: 210}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 						if templ_7745c5c3_Err != nil {
@@ -2290,7 +2290,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var92 templ.SafeURL
 					templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/delete", album.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 814, Col: 103}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 878, Col: 103}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 					if templ_7745c5c3_Err != nil {
@@ -2303,7 +2303,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var93 string
 					templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 815, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 879, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 					if templ_7745c5c3_Err != nil {
@@ -2316,7 +2316,7 @@ func albumViewPage(activePath string, album *Album, media []Media, candidates []
 					var templ_7745c5c3_Var94 string
 					templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs("Delete the album “" + album.Name + "”?")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 817, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 881, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 					if templ_7745c5c3_Err != nil {
@@ -2389,7 +2389,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("album-photo-%d-menu", m.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 846, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 910, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 			if templ_7745c5c3_Err != nil {
@@ -2402,7 +2402,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var97 string
 			templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs("Actions for " + m.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 847, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 911, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 			if templ_7745c5c3_Err != nil {
@@ -2423,7 +2423,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var98 string
 			templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("album-photo-%d-menu", m.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 852, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 916, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 			if templ_7745c5c3_Err != nil {
@@ -2441,7 +2441,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var99 templ.SafeURL
 				templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/cover", album.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 854, Col: 104}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 918, Col: 104}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 				if templ_7745c5c3_Err != nil {
@@ -2454,7 +2454,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var100 string
 				templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 855, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 919, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 				if templ_7745c5c3_Err != nil {
@@ -2467,7 +2467,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var101 string
 				templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 856, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 920, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 				if templ_7745c5c3_Err != nil {
@@ -2500,7 +2500,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var102 templ.SafeURL
 				templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/remove", album.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 869, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 933, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 				if templ_7745c5c3_Err != nil {
@@ -2513,7 +2513,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var103 string
 				templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs("Remove “" + m.FileName() + "” from “" + album.Name + "”? It stays in your gallery.")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 870, Col: 114}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 934, Col: 114}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 				if templ_7745c5c3_Err != nil {
@@ -2526,7 +2526,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var104 string
 				templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 874, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 938, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 				if templ_7745c5c3_Err != nil {
@@ -2539,7 +2539,7 @@ func albumTile(album *Album, m Media, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var105 string
 				templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 875, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 939, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 				if templ_7745c5c3_Err != nil {
@@ -2665,7 +2665,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var109 templ.SafeURL
 			templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(downloadURL(v.Media)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 920, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 984, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 			if templ_7745c5c3_Err != nil {
@@ -2678,7 +2678,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var110 string
 			templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 920, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 984, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 			if templ_7745c5c3_Err != nil {
@@ -2712,7 +2712,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var111 templ.SafeURL
 				templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/albums/%d/add", a.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 931, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 995, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 				if templ_7745c5c3_Err != nil {
@@ -2725,7 +2725,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var112 string
 				templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 932, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 996, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 				if templ_7745c5c3_Err != nil {
@@ -2738,7 +2738,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var113 string
 				templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(v.Media.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 933, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 997, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 				if templ_7745c5c3_Err != nil {
@@ -2751,7 +2751,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var114 string
 				templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(photoURL(v.Media.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 934, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 998, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
 				if templ_7745c5c3_Err != nil {
@@ -2764,7 +2764,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var115 string
 				templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 935, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 999, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 				if templ_7745c5c3_Err != nil {
@@ -2796,7 +2796,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var116 templ.SafeURL
 			templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete", v.Media.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 947, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1011, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 			if templ_7745c5c3_Err != nil {
@@ -2809,7 +2809,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var117 string
 			templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs("Move “" + v.Media.FileName() + "” to the trash? It leaves the gallery and every album.")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 947, Col: 212}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1011, Col: 212}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
 			if templ_7745c5c3_Err != nil {
@@ -2822,7 +2822,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var118 string
 			templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 948, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1012, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 			if templ_7745c5c3_Err != nil {
@@ -2858,7 +2858,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var119 string
 			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.JoinStringErrs(downloadURL(v.Media))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 959, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1023, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var119))
 			if templ_7745c5c3_Err != nil {
@@ -2871,7 +2871,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var120 string
 			templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.MimeType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 959, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1023, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 			if templ_7745c5c3_Err != nil {
@@ -2889,7 +2889,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var121 string
 			templ_7745c5c3_Var121, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(photoFrameStyle(v.Media))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 962, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1026, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var121))
 			if templ_7745c5c3_Err != nil {
@@ -2902,7 +2902,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var122 string
 			templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(v.Media.ID, 1024))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 964, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1028, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var122))
 			if templ_7745c5c3_Err != nil {
@@ -2915,7 +2915,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var123 string
 			templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 964, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1028, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 			if templ_7745c5c3_Err != nil {
@@ -2934,7 +2934,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var124 templ.SafeURL
 					templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 969, Col: 81}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1033, Col: 81}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 					if templ_7745c5c3_Err != nil {
@@ -2947,7 +2947,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var125 string
 					templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.JoinStringErrs(faceTitle(f))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 971, Col: 28}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1035, Col: 28}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var125))
 					if templ_7745c5c3_Err != nil {
@@ -2960,7 +2960,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var126 string
 					templ_7745c5c3_Var126, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(faceBoxStyle(f))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 972, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1036, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
 					if templ_7745c5c3_Err != nil {
@@ -2978,7 +2978,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var127 string
 					templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinStringErrs(faceTitle(f))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 976, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1040, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 					if templ_7745c5c3_Err != nil {
@@ -2991,7 +2991,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var128 string
 					templ_7745c5c3_Var128, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(faceBoxStyle(f))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 976, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1040, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 					if templ_7745c5c3_Err != nil {
@@ -3020,7 +3020,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var129 templ.SafeURL
 			templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(v.Newer)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 983, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1047, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 			if templ_7745c5c3_Err != nil {
@@ -3066,7 +3066,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var130 templ.SafeURL
 			templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(v.Older)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 997, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1061, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
 			if templ_7745c5c3_Err != nil {
@@ -3121,7 +3121,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var132 string
 			templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1013, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1077, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 			if templ_7745c5c3_Err != nil {
@@ -3134,7 +3134,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var133 string
 			templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Media.Width))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1015, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1079, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
 			if templ_7745c5c3_Err != nil {
@@ -3147,7 +3147,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var134 string
 			templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Media.Height))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1015, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1079, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
 			if templ_7745c5c3_Err != nil {
@@ -3165,7 +3165,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var135 string
 				templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinStringErrs(time.Unix(*v.Media.DateTaken, 0).UTC().Format("Jan 2, 2006 3:04 PM"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1018, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1082, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
 				if templ_7745c5c3_Err != nil {
@@ -3184,7 +3184,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var136 string
 				templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(strings.TrimSpace(v.Media.CameraMake + " " + v.Media.CameraModel))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1022, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1086, Col: 77}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 				if templ_7745c5c3_Err != nil {
@@ -3203,7 +3203,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var137 string
 				templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.LensModel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1026, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1090, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
 				if templ_7745c5c3_Err != nil {
@@ -3222,7 +3222,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var138 string
 				templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", *v.Media.FNumber))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1030, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1094, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
 				if templ_7745c5c3_Err != nil {
@@ -3241,7 +3241,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var139 string
 				templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.ExposureTime)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1034, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1098, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
 				if templ_7745c5c3_Err != nil {
@@ -3260,7 +3260,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var140 string
 				templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(*v.Media.ISO))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1038, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1102, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 				if templ_7745c5c3_Err != nil {
@@ -3279,7 +3279,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var141 string
 				templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f mm", *v.Media.FocalLength))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1042, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1106, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 				if templ_7745c5c3_Err != nil {
@@ -3298,7 +3298,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var142 string
 				templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.PlaceName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1046, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1110, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 				if templ_7745c5c3_Err != nil {
@@ -3317,7 +3317,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var143 string
 				templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(v.Media.DurationMs))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1050, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1114, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 				if templ_7745c5c3_Err != nil {
@@ -3335,7 +3335,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var144 string
 					templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.VideoCodec)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1053, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1117, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 					if templ_7745c5c3_Err != nil {
@@ -3355,7 +3355,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var145 string
 				templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.Fingerprint)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1058, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1122, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
 				if templ_7745c5c3_Err != nil {
@@ -3401,7 +3401,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var147 templ.SafeURL
 					templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1067, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1131, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
 					if templ_7745c5c3_Err != nil {
@@ -3414,7 +3414,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var148 string
 					templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1067, Col: 89}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1131, Col: 89}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 					if templ_7745c5c3_Err != nil {
@@ -3427,7 +3427,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var149 templ.SafeURL
 					templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/remove-tag", v.Media.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1068, Col: 112}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1132, Col: 112}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 					if templ_7745c5c3_Err != nil {
@@ -3440,7 +3440,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var150 string
 					templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1069, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1133, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
 					if templ_7745c5c3_Err != nil {
@@ -3453,7 +3453,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var151 string
 					templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(t.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1070, Col: 79}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1134, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 					if templ_7745c5c3_Err != nil {
@@ -3466,7 +3466,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var152 string
 					templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs("Remove tag " + t.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1071, Col: 86}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1135, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 					if templ_7745c5c3_Err != nil {
@@ -3497,7 +3497,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var153 templ.SafeURL
 			templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/tags", v.Media.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1079, Col: 127}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1143, Col: 127}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
 			if templ_7745c5c3_Err != nil {
@@ -3510,7 +3510,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var154 string
 			templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1080, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1144, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
 			if templ_7745c5c3_Err != nil {
@@ -3551,7 +3551,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var156 string
 					templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(f.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1091, Col: 55}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1155, Col: 55}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 					if templ_7745c5c3_Err != nil {
@@ -3564,7 +3564,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var157 string
 					templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.JoinStringErrs(faceTitle(f))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1092, Col: 60}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1156, Col: 60}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var157))
 					if templ_7745c5c3_Err != nil {
@@ -3582,7 +3582,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var158 templ.SafeURL
 						templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1094, Col: 86}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1158, Col: 86}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var158))
 						if templ_7745c5c3_Err != nil {
@@ -3595,7 +3595,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var159 string
 						templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(f.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1094, Col: 97}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1158, Col: 97}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
 						if templ_7745c5c3_Err != nil {
@@ -3613,7 +3613,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var160 templ.SafeURL
 						templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", *f.PersonID)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1096, Col: 110}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1160, Col: 110}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var160))
 						if templ_7745c5c3_Err != nil {
@@ -3631,7 +3631,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var161 templ.SafeURL
 						templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/faces/%d/new-person", f.ID)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1099, Col: 108}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1163, Col: 108}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var161))
 						if templ_7745c5c3_Err != nil {
@@ -3644,7 +3644,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var162 string
 						templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1100, Col: 67}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1164, Col: 67}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
 						if templ_7745c5c3_Err != nil {
@@ -3663,7 +3663,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var163 string
 						templ_7745c5c3_Var163, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("About %d years old", int(f.EstimatedAge+0.5)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1105, Col: 102}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1169, Col: 102}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var163))
 						if templ_7745c5c3_Err != nil {
@@ -3681,7 +3681,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var164 templ.SafeURL
 					templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/media/%d/delete-face", v.Media.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1108, Col: 113}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1172, Col: 113}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var164))
 					if templ_7745c5c3_Err != nil {
@@ -3694,7 +3694,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var165 string
 					templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1109, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1173, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
 					if templ_7745c5c3_Err != nil {
@@ -3707,7 +3707,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var166 string
 					templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1110, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1174, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 					if templ_7745c5c3_Err != nil {
@@ -3762,7 +3762,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var168 string
 				templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(strings.TrimSpace(v.Media.OCRText))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1124, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1188, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var168))
 				if templ_7745c5c3_Err != nil {
@@ -3791,7 +3791,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var169 string
 			templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1130, Col: 88}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1194, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
 			if templ_7745c5c3_Err != nil {
@@ -3804,7 +3804,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var170 string
 			templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.JoinStringErrs(downloadURL(v.Media))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1132, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1196, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var170))
 			if templ_7745c5c3_Err != nil {
@@ -3817,7 +3817,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var171 string
 			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1132, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1196, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 			if templ_7745c5c3_Err != nil {
@@ -3835,7 +3835,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var172 templ.SafeURL
 				templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(v.Newer) + "#view"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1135, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1199, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 				if templ_7745c5c3_Err != nil {
@@ -3862,7 +3862,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var173 templ.SafeURL
 				templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(v.Older) + "#view"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1140, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1204, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 				if templ_7745c5c3_Err != nil {
@@ -3888,7 +3888,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1146, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3901,7 +3901,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var175 string
 			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(takenAt(v.Media).Format("Jan 2, 2006"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1147, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1211, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 			if templ_7745c5c3_Err != nil {
@@ -3914,7 +3914,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var176 templ.SafeURL
 			templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(downloadURL(v.Media)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1149, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1213, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 			if templ_7745c5c3_Err != nil {
@@ -3927,7 +3927,7 @@ func photoViewPage(v photoView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var177 string
 			templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(v.Media.FileName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1149, Col: 113}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1213, Col: 113}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 			if templ_7745c5c3_Err != nil {
@@ -4081,7 +4081,7 @@ func peoplePage(activePath string, people []Person, allCount, unnamedCount int, 
 					var templ_7745c5c3_Var181 templ.SafeURL
 					templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/person/%d", p.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1185, Col: 74}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1249, Col: 74}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 					if templ_7745c5c3_Err != nil {
@@ -4099,7 +4099,7 @@ func peoplePage(activePath string, people []Person, allCount, unnamedCount int, 
 						var templ_7745c5c3_Var182 string
 						templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(*p.BestFaceID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1188, Col: 46}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1252, Col: 46}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 						if templ_7745c5c3_Err != nil {
@@ -4128,7 +4128,7 @@ func peoplePage(activePath string, people []Person, allCount, unnamedCount int, 
 						var templ_7745c5c3_Var183 string
 						templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1196, Col: 49}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1260, Col: 49}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
 						if templ_7745c5c3_Err != nil {
@@ -4146,7 +4146,7 @@ func peoplePage(activePath string, people []Person, allCount, unnamedCount int, 
 					var templ_7745c5c3_Var184 string
 					templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(plural(p.FaceCount, "photo", "photos"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1198, Col: 79}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1262, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 					if templ_7745c5c3_Err != nil {
@@ -4201,7 +4201,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var186 templ.SafeURL
 			templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1208, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1272, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 			if templ_7745c5c3_Err != nil {
@@ -4214,7 +4214,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var187 string
 			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1208, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1272, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
@@ -4227,7 +4227,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var188 string
 			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1208, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1272, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var188))
 			if templ_7745c5c3_Err != nil {
@@ -4245,7 +4245,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var189 templ.SafeURL
 			templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1274, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 			if templ_7745c5c3_Err != nil {
@@ -4258,7 +4258,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var190 string
 			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1274, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var190))
 			if templ_7745c5c3_Err != nil {
@@ -4271,7 +4271,7 @@ func segmentLink(href, label string, count int, active bool) templ.Component {
 			var templ_7745c5c3_Var191 string
 			templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1210, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1274, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 			if templ_7745c5c3_Err != nil {
@@ -4413,7 +4413,7 @@ func personViewPage(activePath string, person *Person, faces []FaceWithMedia, cs
 				var templ_7745c5c3_Var197 templ.SafeURL
 				templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/hide", person.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1237, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1301, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 				if templ_7745c5c3_Err != nil {
@@ -4426,7 +4426,7 @@ func personViewPage(activePath string, person *Person, faces []FaceWithMedia, cs
 				var templ_7745c5c3_Var198 string
 				templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs("Hide " + person.DisplayName() + "? They no longer appear in People; their photos stay in the gallery.")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1237, Col: 222}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1301, Col: 222}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 				if templ_7745c5c3_Err != nil {
@@ -4439,7 +4439,7 @@ func personViewPage(activePath string, person *Person, faces []FaceWithMedia, cs
 				var templ_7745c5c3_Var199 string
 				templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1238, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1302, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 				if templ_7745c5c3_Err != nil {
@@ -4542,7 +4542,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var202 templ.SafeURL
 		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/name", person.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1256, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1320, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
 		if templ_7745c5c3_Err != nil {
@@ -4555,7 +4555,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1257, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1321, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -4568,7 +4568,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var204 string
 		templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(person.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1268, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1332, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 		if templ_7745c5c3_Err != nil {
@@ -4581,7 +4581,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 		var templ_7745c5c3_Var205 string
 		templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/gallery/api/people/search?exclude=%d", person.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1273, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1337, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 		if templ_7745c5c3_Err != nil {
@@ -4599,7 +4599,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var206 string
 			templ_7745c5c3_Var206, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/apps/gallery/api/people/%d/suggestions", person.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1285, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1349, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var206))
 			if templ_7745c5c3_Err != nil {
@@ -4622,7 +4622,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var207 string
 			templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1301, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1365, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 			if templ_7745c5c3_Err != nil {
@@ -4635,7 +4635,7 @@ func personNameForm(person *Person, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var208 string
 			templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(person.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1302, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1366, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 			if templ_7745c5c3_Err != nil {
@@ -4687,7 +4687,7 @@ func personSuggestions(people []Person) templ.Component {
 				var templ_7745c5c3_Var210 string
 				templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.JoinStringErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/merge", p.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1319, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1383, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var210))
 				if templ_7745c5c3_Err != nil {
@@ -4700,7 +4700,7 @@ func personSuggestions(people []Person) templ.Component {
 				var templ_7745c5c3_Var211 string
 				templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs("Merge with " + p.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1320, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1384, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 				if templ_7745c5c3_Err != nil {
@@ -4718,7 +4718,7 @@ func personSuggestions(people []Person) templ.Component {
 					var templ_7745c5c3_Var212 string
 					templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(*p.BestFaceID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1323, Col: 44}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1387, Col: 44}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
 					if templ_7745c5c3_Err != nil {
@@ -4736,7 +4736,7 @@ func personSuggestions(people []Person) templ.Component {
 				var templ_7745c5c3_Var213 string
 				templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1325, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1389, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 				if templ_7745c5c3_Err != nil {
@@ -4789,7 +4789,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var215 templ.SafeURL
 			templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(f.MediaID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1336, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1400, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
 			if templ_7745c5c3_Err != nil {
@@ -4802,7 +4802,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var216 string
 			templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(faceThumbURL(f.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1337, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1401, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
 			if templ_7745c5c3_Err != nil {
@@ -4815,7 +4815,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var217 templ.SafeURL
 			templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/remove-face", person.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1342, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1406, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 			if templ_7745c5c3_Err != nil {
@@ -4828,7 +4828,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var218 string
 			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs("This photo is not of " + person.DisplayName() + "? It moves to a new, unnamed person.")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1343, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1407, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 			if templ_7745c5c3_Err != nil {
@@ -4841,7 +4841,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var219 string
 			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1347, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1411, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 			if templ_7745c5c3_Err != nil {
@@ -4854,7 +4854,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var220 string
 			templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(f.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1348, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1412, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 			if templ_7745c5c3_Err != nil {
@@ -4867,7 +4867,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var221 string
 			templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1349, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1413, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
 			if templ_7745c5c3_Err != nil {
@@ -4880,7 +4880,7 @@ func personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) tem
 			var templ_7745c5c3_Var222 string
 			templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs("Not " + person.DisplayName())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1349, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1413, Col: 137}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var222))
 			if templ_7745c5c3_Err != nil {
@@ -4975,7 +4975,7 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 					var templ_7745c5c3_Var225 templ.SafeURL
 					templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/apps/gallery/tag/" + url.PathEscape(t.Name)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1370, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1434, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 					if templ_7745c5c3_Err != nil {
@@ -4988,7 +4988,7 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 					var templ_7745c5c3_Var226 string
 					templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1371, Col: 15}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1435, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
 					if templ_7745c5c3_Err != nil {
@@ -5001,7 +5001,7 @@ func tagsPage(activePath string, tags []Tag, admin bool) templ.Component {
 					var templ_7745c5c3_Var227 string
 					templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(t.Count))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1372, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1436, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
 					if templ_7745c5c3_Err != nil {
@@ -5292,7 +5292,7 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 					var templ_7745c5c3_Var237 string
 					templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(groups), "group", "groups"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1426, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1490, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var237))
 					if templ_7745c5c3_Err != nil {
@@ -5339,7 +5339,7 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 					var templ_7745c5c3_Var238 templ.SafeURL
 					templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1436, Col: 78}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1500, Col: 78}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
 					if templ_7745c5c3_Err != nil {
@@ -5352,7 +5352,7 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 					var templ_7745c5c3_Var239 string
 					templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(g.CoverMediaID, 256))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1438, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1502, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var239))
 					if templ_7745c5c3_Err != nil {
@@ -5365,7 +5365,7 @@ func duplicatesPage(activePath string, groups []DuplicateGroup) templ.Component 
 					var templ_7745c5c3_Var240 string
 					templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(plural(g.MemberCount, "similar photo", "similar photos"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1440, Col: 97}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1504, Col: 97}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
 					if templ_7745c5c3_Err != nil {
@@ -5453,7 +5453,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var244 templ.SafeURL
 				templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1461, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1525, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 				if templ_7745c5c3_Err != nil {
@@ -5466,7 +5466,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var245 string
 				templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1462, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1526, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
 				if templ_7745c5c3_Err != nil {
@@ -5484,7 +5484,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var246 templ.SafeURL
 					templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1468, Col: 87}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1532, Col: 87}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var246))
 					if templ_7745c5c3_Err != nil {
@@ -5497,7 +5497,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var247 string
 					templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.JoinStringErrs("Move " + plural(othersCount(members), "photo", "photos") + " to the trash and keep the one marked Keep?")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1469, Col: 125}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1533, Col: 125}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var247))
 					if templ_7745c5c3_Err != nil {
@@ -5510,7 +5510,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var248 string
 					templ_7745c5c3_Var248, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1472, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1536, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var248))
 					if templ_7745c5c3_Err != nil {
@@ -5527,7 +5527,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var249 string
 					templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + plural(othersCount(members), "other", "others"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1475, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1539, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
 					if templ_7745c5c3_Err != nil {
@@ -5594,7 +5594,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var252 templ.SafeURL
 				templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(m.Media.ID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1494, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1558, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
 				if templ_7745c5c3_Err != nil {
@@ -5607,7 +5607,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var253 string
 				templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(thumbURL(m.Media.ID, 256))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1495, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1559, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
 				if templ_7745c5c3_Err != nil {
@@ -5620,7 +5620,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var254 string
 				templ_7745c5c3_Var254, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1495, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1559, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var254))
 				if templ_7745c5c3_Err != nil {
@@ -5651,7 +5651,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var255 string
 				templ_7745c5c3_Var255, templ_7745c5c3_Err = templ.JoinStringErrs(m.Media.FileName())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1506, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1570, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var255))
 				if templ_7745c5c3_Err != nil {
@@ -5664,7 +5664,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var256 string
 				templ_7745c5c3_Var256, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Width))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1508, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1572, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var256))
 				if templ_7745c5c3_Err != nil {
@@ -5677,7 +5677,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var257 string
 				templ_7745c5c3_Var257, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(m.Media.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1508, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1572, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var257))
 				if templ_7745c5c3_Err != nil {
@@ -5695,7 +5695,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var258 string
 					templ_7745c5c3_Var258, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f", m.Distance))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1511, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1575, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var258))
 					if templ_7745c5c3_Err != nil {
@@ -5718,7 +5718,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var259 templ.SafeURL
 					templ_7745c5c3_Var259, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1516, Col: 108}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1580, Col: 108}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var259))
 					if templ_7745c5c3_Err != nil {
@@ -5731,7 +5731,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var260 string
 					templ_7745c5c3_Var260, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1517, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1581, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var260))
 					if templ_7745c5c3_Err != nil {
@@ -5744,7 +5744,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 					var templ_7745c5c3_Var261 string
 					templ_7745c5c3_Var261, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1518, Col: 87}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1582, Col: 87}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var261))
 					if templ_7745c5c3_Err != nil {
@@ -5762,7 +5762,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var262 templ.SafeURL
 				templ_7745c5c3_Var262, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1522, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1586, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var262))
 				if templ_7745c5c3_Err != nil {
@@ -5775,7 +5775,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var263 string
 				templ_7745c5c3_Var263, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1523, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1587, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var263))
 				if templ_7745c5c3_Err != nil {
@@ -5788,7 +5788,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var264 string
 				templ_7745c5c3_Var264, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1524, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1588, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var264))
 				if templ_7745c5c3_Err != nil {
@@ -5801,7 +5801,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var265 templ.SafeURL
 				templ_7745c5c3_Var265, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1530, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1594, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var265))
 				if templ_7745c5c3_Err != nil {
@@ -5814,7 +5814,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var266 string
 				templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinStringErrs("Move “" + m.Media.FileName() + "” to the trash?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1531, Col: 76}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1595, Col: 76}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
 				if templ_7745c5c3_Err != nil {
@@ -5827,7 +5827,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var267 string
 				templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1534, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1598, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var267))
 				if templ_7745c5c3_Err != nil {
@@ -5840,7 +5840,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var268 string
 				templ_7745c5c3_Var268, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(m.Media.ID, 10))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1535, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1599, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var268))
 				if templ_7745c5c3_Err != nil {
@@ -5853,7 +5853,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var269 string
 				templ_7745c5c3_Var269, templ_7745c5c3_Err = templ.JoinStringErrs("Delete " + m.Media.FileName())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1536, Col: 118}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1600, Col: 118}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var269))
 				if templ_7745c5c3_Err != nil {
@@ -5895,7 +5895,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var271 templ.SafeURL
 				templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1546, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1610, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
 				if templ_7745c5c3_Err != nil {
@@ -5908,7 +5908,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var272 string
 				templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1547, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1611, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
 				if templ_7745c5c3_Err != nil {
@@ -5921,7 +5921,7 @@ func duplicateGroupViewPage(activePath string, groupID int64, members []Duplicat
 				var templ_7745c5c3_Var273 string
 				templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs("This moves all " + plural(len(members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery.")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1549, Col: 154}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1613, Col: 154}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
 				if templ_7745c5c3_Err != nil {
@@ -5992,7 +5992,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var276 string
 			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1572, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1636, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
 			if templ_7745c5c3_Err != nil {
@@ -6005,7 +6005,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var277 string
 			templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "photo or video", "photos and videos"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1576, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1640, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
 			if templ_7745c5c3_Err != nil {
@@ -6034,7 +6034,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var279 string
 				templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1580, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1644, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 				if templ_7745c5c3_Err != nil {
@@ -6047,7 +6047,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var280 string
 				templ_7745c5c3_Var280, templ_7745c5c3_Err = templ.JoinStringErrs(SettingScanFolders.MustGet(db))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1583, Col: 189}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1647, Col: 189}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var280))
 				if templ_7745c5c3_Err != nil {
@@ -6086,7 +6086,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var282 string
 				templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.JoinStringErrs(RenamePattern(db))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1612, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1676, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var282))
 				if templ_7745c5c3_Err != nil {
@@ -6099,7 +6099,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var283 string
 				templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(DefaultRenamePattern(db))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1613, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1677, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
 				if templ_7745c5c3_Err != nil {
@@ -6117,7 +6117,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var284 string
 					templ_7745c5c3_Var284, templ_7745c5c3_Err = templ.JoinStringErrs("{{." + f + "}}")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1620, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1684, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var284))
 					if templ_7745c5c3_Err != nil {
@@ -6143,7 +6143,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				var templ_7745c5c3_Var285 string
 				templ_7745c5c3_Var285, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1631, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1695, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var285))
 				if templ_7745c5c3_Err != nil {
@@ -6204,7 +6204,7 @@ func scanFoldersPreview(folders []string, total int) templ.Component {
 			var templ_7745c5c3_Var287 string
 			templ_7745c5c3_Var287, templ_7745c5c3_Err = templ.JoinStringErrs(plural(total, "matching file", "matching files"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1644, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1708, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var287))
 			if templ_7745c5c3_Err != nil {
@@ -6222,7 +6222,7 @@ func scanFoldersPreview(folders []string, total int) templ.Component {
 				var templ_7745c5c3_Var288 string
 				templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.JoinStringErrs(f)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1647, Col: 11}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1711, Col: 11}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var288))
 				if templ_7745c5c3_Err != nil {
@@ -6295,7 +6295,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var291 string
 			templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1665, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1729, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var291))
 			if templ_7745c5c3_Err != nil {
@@ -6378,7 +6378,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var292 string
 			templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "tag_min_confidence", "0.5"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1687, Col: 152}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1751, Col: 152}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var292))
 			if templ_7745c5c3_Err != nil {
@@ -6413,7 +6413,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var294 string
 			templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1706, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1770, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
 			if templ_7745c5c3_Err != nil {
@@ -6456,7 +6456,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var295 string
 			templ_7745c5c3_Var295, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "face_min_confidence", "0.7"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1719, Col: 151}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1783, Col: 151}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var295))
 			if templ_7745c5c3_Err != nil {
@@ -6469,7 +6469,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var296 string
 			templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "cluster_threshold", "0.35"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1724, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1788, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var296))
 			if templ_7745c5c3_Err != nil {
@@ -6504,7 +6504,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var298 string
 			templ_7745c5c3_Var298, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1733, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1797, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var298))
 			if templ_7745c5c3_Err != nil {
@@ -6577,7 +6577,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var299 string
 			templ_7745c5c3_Var299, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "duplicate_distance", "5"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1754, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1818, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var299))
 			if templ_7745c5c3_Err != nil {
@@ -6612,7 +6612,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var301 string
 			templ_7745c5c3_Var301, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1763, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1827, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var301))
 			if templ_7745c5c3_Err != nil {
@@ -6657,7 +6657,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var303 string
 			templ_7745c5c3_Var303, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1777, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1841, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var303))
 			if templ_7745c5c3_Err != nil {
@@ -6712,7 +6712,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var305 string
 			templ_7745c5c3_Var305, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1794, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1858, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var305))
 			if templ_7745c5c3_Err != nil {
@@ -6725,7 +6725,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var306 string
 			templ_7745c5c3_Var306, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_library_path", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1799, Col: 144}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1863, Col: 144}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var306))
 			if templ_7745c5c3_Err != nil {
@@ -6738,7 +6738,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var307 string
 			templ_7745c5c3_Var307, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "onnx_models_dir", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1804, Col: 138}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1868, Col: 138}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var307))
 			if templ_7745c5c3_Err != nil {
@@ -6751,7 +6751,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var308 string
 			templ_7745c5c3_Var308, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_url", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1808, Col: 132}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1872, Col: 132}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var308))
 			if templ_7745c5c3_Err != nil {
@@ -6764,7 +6764,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var309 string
 			templ_7745c5c3_Var309, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_api_key", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1813, Col: 150}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1877, Col: 150}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var309))
 			if templ_7745c5c3_Err != nil {
@@ -6777,7 +6777,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			var templ_7745c5c3_Var310 string
 			templ_7745c5c3_Var310, templ_7745c5c3_Err = templ.JoinStringErrs(GetSetting(db, "recognition_model", ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1817, Col: 140}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1881, Col: 140}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var310))
 			if templ_7745c5c3_Err != nil {
@@ -6851,7 +6851,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var313 string
 					templ_7745c5c3_Var313, templ_7745c5c3_Err = templ.JoinStringErrs(w.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1845, Col: 36}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1909, Col: 36}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var313))
 					if templ_7745c5c3_Err != nil {
@@ -6874,7 +6874,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 							var templ_7745c5c3_Var314 string
 							templ_7745c5c3_Var314, templ_7745c5c3_Err = templ.JoinStringErrs(w.Info.LastFailure)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1850, Col: 66}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1914, Col: 66}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var314))
 							if templ_7745c5c3_Err != nil {
@@ -6898,7 +6898,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var315 string
 						templ_7745c5c3_Var315, templ_7745c5c3_Err = templ.JoinStringErrs(w.LastSeen.Format("Jan 2 3:04 PM"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1855, Col: 89}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1919, Col: 89}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var315))
 						if templ_7745c5c3_Err != nil {
@@ -6921,7 +6921,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var316 string
 						templ_7745c5c3_Var316, templ_7745c5c3_Err = templ.JoinStringErrs(shortCPU(w.Info.CPU))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1860, Col: 53}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1924, Col: 53}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var316))
 						if templ_7745c5c3_Err != nil {
@@ -6934,7 +6934,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var317 string
 						templ_7745c5c3_Var317, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(w.Info.Threads))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1861, Col: 80}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1925, Col: 80}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var317))
 						if templ_7745c5c3_Err != nil {
@@ -6947,7 +6947,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var318 string
 						templ_7745c5c3_Var318, templ_7745c5c3_Err = templ.JoinStringErrs(w.Info.Version)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1861, Col: 110}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1925, Col: 110}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var318))
 						if templ_7745c5c3_Err != nil {
@@ -6966,7 +6966,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 						var templ_7745c5c3_Var319 string
 						templ_7745c5c3_Var319, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatFloat(w.Info.PerPhoto, 'f', 2, 64))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1866, Col: 61}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1930, Col: 61}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var319))
 						if templ_7745c5c3_Err != nil {
@@ -6984,7 +6984,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var320 string
 					templ_7745c5c3_Var320, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(w.Done, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1869, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1933, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var320))
 					if templ_7745c5c3_Err != nil {
@@ -6997,7 +6997,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var321 string
 					templ_7745c5c3_Var321, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1872, Col: 67}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1936, Col: 67}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var321))
 					if templ_7745c5c3_Err != nil {
@@ -7010,7 +7010,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 					var templ_7745c5c3_Var322 string
 					templ_7745c5c3_Var322, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatInt(w.ID, 10))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1873, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1937, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var322))
 					if templ_7745c5c3_Err != nil {
@@ -7033,7 +7033,7 @@ func workersCard(v workersView, csrfToken string) templ.Component {
 			var templ_7745c5c3_Var323 string
 			templ_7745c5c3_Var323, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1885, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1949, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var323))
 			if templ_7745c5c3_Err != nil {
@@ -7113,7 +7113,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var326 string
 				templ_7745c5c3_Var326, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(int(progress.Percent())))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1913, Col: 142}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1977, Col: 142}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var326))
 				if templ_7745c5c3_Err != nil {
@@ -7126,7 +7126,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var327 string
 				templ_7745c5c3_Var327, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("width:" + strconv.FormatFloat(progress.Percent(), 'f', 1, 64) + "%")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1914, Col: 108}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1978, Col: 108}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var327))
 				if templ_7745c5c3_Err != nil {
@@ -7139,7 +7139,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var328 string
 				templ_7745c5c3_Var328, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(progress.Done()))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1917, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1981, Col: 37}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var328))
 				if templ_7745c5c3_Err != nil {
@@ -7152,7 +7152,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var329 string
 				templ_7745c5c3_Var329, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(progress.Total))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1917, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1981, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var329))
 				if templ_7745c5c3_Err != nil {
@@ -7165,7 +7165,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var330 string
 				templ_7745c5c3_Var330, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(int(progress.Percent())))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1917, Col: 132}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1981, Col: 132}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var330))
 				if templ_7745c5c3_Err != nil {
@@ -7178,7 +7178,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var331 string
 				templ_7745c5c3_Var331, templ_7745c5c3_Err = templ.JoinStringErrs(shortDuration(progress.Elapsed))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1918, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1982, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var331))
 				if templ_7745c5c3_Err != nil {
@@ -7196,7 +7196,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var332 string
 					templ_7745c5c3_Var332, templ_7745c5c3_Err = templ.JoinStringErrs(shortDuration(progress.ETA))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1920, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1984, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var332))
 					if templ_7745c5c3_Err != nil {
@@ -7244,7 +7244,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var333 string
 				templ_7745c5c3_Var333, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastRun.Format("Jan 2, 2006 3:04:05 PM"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1938, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2002, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var333))
 				if templ_7745c5c3_Err != nil {
@@ -7263,7 +7263,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var334 string
 				templ_7745c5c3_Var334, templ_7745c5c3_Err = templ.JoinStringErrs(scan.LastError.Error())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1942, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2006, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var334))
 				if templ_7745c5c3_Err != nil {
@@ -7287,7 +7287,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var335 string
 					templ_7745c5c3_Var335, templ_7745c5c3_Err = templ.JoinStringErrs(w)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1948, Col: 15}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2012, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var335))
 					if templ_7745c5c3_Err != nil {
@@ -7310,7 +7310,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 			var templ_7745c5c3_Var336 string
 			templ_7745c5c3_Var336, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.TotalImages))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1953, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2017, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var336))
 			if templ_7745c5c3_Err != nil {
@@ -7323,7 +7323,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 			var templ_7745c5c3_Var337 string
 			templ_7745c5c3_Var337, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Done))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1955, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2019, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var337))
 			if templ_7745c5c3_Err != nil {
@@ -7336,7 +7336,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 			var templ_7745c5c3_Var338 string
 			templ_7745c5c3_Var338, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Pending))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1957, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2021, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var338))
 			if templ_7745c5c3_Err != nil {
@@ -7354,7 +7354,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var339 string
 				templ_7745c5c3_Var339, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(stats.Failed))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1961, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2025, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var339))
 				if templ_7745c5c3_Err != nil {
@@ -7377,7 +7377,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 						var templ_7745c5c3_Var340 templ.SafeURL
 						templ_7745c5c3_Var340, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(photoURL(f.MediaID)))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1965, Col: 53}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2029, Col: 53}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var340))
 						if templ_7745c5c3_Err != nil {
@@ -7390,7 +7390,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 						var templ_7745c5c3_Var341 string
 						templ_7745c5c3_Var341, templ_7745c5c3_Err = templ.JoinStringErrs(f.Path)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1965, Col: 64}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2029, Col: 64}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var341))
 						if templ_7745c5c3_Err != nil {
@@ -7404,7 +7404,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 						var templ_7745c5c3_Var342 string
 						templ_7745c5c3_Var342, templ_7745c5c3_Err = templ.JoinStringErrs(f.User)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1967, Col: 17}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2031, Col: 17}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var342))
 						if templ_7745c5c3_Err != nil {
@@ -7417,7 +7417,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 						var templ_7745c5c3_Var343 string
 						templ_7745c5c3_Var343, templ_7745c5c3_Err = templ.JoinStringErrs(f.Path)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1967, Col: 29}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2031, Col: 29}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var343))
 						if templ_7745c5c3_Err != nil {
@@ -7435,7 +7435,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var344 string
 					templ_7745c5c3_Var344, templ_7745c5c3_Err = templ.JoinStringErrs(f.Error)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1969, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2033, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var344))
 					if templ_7745c5c3_Err != nil {
@@ -7448,7 +7448,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var345 string
 					templ_7745c5c3_Var345, templ_7745c5c3_Err = templ.JoinStringErrs(firstLine(f.Error))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1969, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2033, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var345))
 					if templ_7745c5c3_Err != nil {
@@ -7481,7 +7481,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var346 string
 					templ_7745c5c3_Var346, templ_7745c5c3_Err = templ.JoinStringErrs(u.Username)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1991, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2055, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var346))
 					if templ_7745c5c3_Err != nil {
@@ -7494,7 +7494,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var347 string
 					templ_7745c5c3_Var347, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Metadata))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1992, Col: 38}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2056, Col: 38}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var347))
 					if templ_7745c5c3_Err != nil {
@@ -7507,7 +7507,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var348 string
 					templ_7745c5c3_Var348, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Quality))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1993, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2057, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var348))
 					if templ_7745c5c3_Err != nil {
@@ -7520,7 +7520,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var349 string
 					templ_7745c5c3_Var349, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Fingerprint))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1994, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2058, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var349))
 					if templ_7745c5c3_Err != nil {
@@ -7533,7 +7533,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var350 string
 					templ_7745c5c3_Var350, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.OCR))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1995, Col: 33}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2059, Col: 33}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var350))
 					if templ_7745c5c3_Err != nil {
@@ -7546,7 +7546,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var351 string
 					templ_7745c5c3_Var351, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Recognition))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1996, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2060, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var351))
 					if templ_7745c5c3_Err != nil {
@@ -7559,7 +7559,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 					var templ_7745c5c3_Var352 string
 					templ_7745c5c3_Var352, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(u.Failed))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 1997, Col: 36}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2061, Col: 36}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var352))
 					if templ_7745c5c3_Err != nil {
@@ -7582,7 +7582,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 			var templ_7745c5c3_Var353 string
 			templ_7745c5c3_Var353, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2005, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2069, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var353))
 			if templ_7745c5c3_Err != nil {
@@ -7653,7 +7653,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 				var templ_7745c5c3_Var355 string
 				templ_7745c5c3_Var355, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2022, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2086, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var355))
 				if templ_7745c5c3_Err != nil {
@@ -7708,7 +7708,7 @@ func renameConflictsField(policy ConflictPolicy) templ.Component {
 		var templ_7745c5c3_Var357 string
 		templ_7745c5c3_Var357, templ_7745c5c3_Err = templ.JoinStringErrs(string(ConflictNumber))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2042, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2106, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var357))
 		if templ_7745c5c3_Err != nil {
@@ -7731,7 +7731,7 @@ func renameConflictsField(policy ConflictPolicy) templ.Component {
 		var templ_7745c5c3_Var358 string
 		templ_7745c5c3_Var358, templ_7745c5c3_Err = templ.JoinStringErrs(string(ConflictSkip))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2043, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2107, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var358))
 		if templ_7745c5c3_Err != nil {
@@ -7799,7 +7799,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 			var templ_7745c5c3_Var361 string
 			templ_7745c5c3_Var361, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2054, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2118, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var361))
 			if templ_7745c5c3_Err != nil {
@@ -7812,7 +7812,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 			var templ_7745c5c3_Var362 string
 			templ_7745c5c3_Var362, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.FormatBool(patternErr != ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2054, Col: 170}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2118, Col: 170}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var362))
 			if templ_7745c5c3_Err != nil {
@@ -7867,7 +7867,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var363 string
 					templ_7745c5c3_Var363, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(plan.Renames), "file", "files") + " will be renamed")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2073, Col: 93}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2137, Col: 93}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var363))
 					if templ_7745c5c3_Err != nil {
@@ -7885,7 +7885,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 						var templ_7745c5c3_Var364 string
 						templ_7745c5c3_Var364, templ_7745c5c3_Err = templ.JoinStringErrs(p.OldPath)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2084, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2148, Col: 54}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var364))
 						if templ_7745c5c3_Err != nil {
@@ -7898,7 +7898,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 						var templ_7745c5c3_Var365 string
 						templ_7745c5c3_Var365, templ_7745c5c3_Err = templ.JoinStringErrs(p.NewPath)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2086, Col: 21}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2150, Col: 21}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var365))
 						if templ_7745c5c3_Err != nil {
@@ -7926,7 +7926,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var366 string
 					templ_7745c5c3_Var366, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2097, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2161, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var366))
 					if templ_7745c5c3_Err != nil {
@@ -7939,7 +7939,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var367 string
 					templ_7745c5c3_Var367, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2098, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2162, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var367))
 					if templ_7745c5c3_Err != nil {
@@ -7952,7 +7952,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var368 string
 					templ_7745c5c3_Var368, templ_7745c5c3_Err = templ.JoinStringErrs(string(policy))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2099, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2163, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var368))
 					if templ_7745c5c3_Err != nil {
@@ -7965,7 +7965,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var369 string
 					templ_7745c5c3_Var369, templ_7745c5c3_Err = templ.JoinStringErrs("Rename " + plural(len(plan.Renames), "file", "files"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2100, Col: 107}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2164, Col: 107}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var369))
 					if templ_7745c5c3_Err != nil {
@@ -7988,7 +7988,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var370 string
 					templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(plan.Skipped), "file", "files") + " left alone")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2106, Col: 88}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2170, Col: 88}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var370))
 					if templ_7745c5c3_Err != nil {
@@ -8006,7 +8006,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 						var templ_7745c5c3_Var371 string
 						templ_7745c5c3_Var371, templ_7745c5c3_Err = templ.JoinStringErrs(s.Path)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2117, Col: 52}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2181, Col: 52}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var371))
 						if templ_7745c5c3_Err != nil {
@@ -8019,7 +8019,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 						var templ_7745c5c3_Var372 string
 						templ_7745c5c3_Var372, templ_7745c5c3_Err = templ.JoinStringErrs(s.Reason)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2118, Col: 40}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2182, Col: 40}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var372))
 						if templ_7745c5c3_Err != nil {
