@@ -208,6 +208,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
+	ctx.RegisterAPI("api/people/{id}/suggestions", http.HandlerFunc(pages.PersonSuggestionsAPI))
 	// The scan worker's profiles hold what it was working on — other users'
 	// photos and paths — so only an admin may read them.
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {

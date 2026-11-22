@@ -1367,6 +1367,34 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, ui.PickerResults(items))
 }
 
+// PersonSuggestionsAPI renders up to three named people who look like the
+// given one, as buttons that merge it into them. The name dialog loads it
+// when it opens, so a page view does not pay for comparing faces.
+func (h *Pages) PersonSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sysDB, err := h.plugin.SystemDB()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	maxDist := SettingClusterThreshold.MustGet(sysDB) * suggestMatchScale
+	people, err := SimilarNamedPeople(db, id, maxDist, 3)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, personSuggestions(people))
+}
+
 // TriggerScan manually triggers a media scan via the scan worker subprocess.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
@@ -2001,34 +2029,67 @@ func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 		return
 	}
-	previews, err := PreviewRename(db, pattern)
+	policy := ParseConflictPolicy(r.URL.Query().Get("conflicts"))
+	filesDB, err := h.plugin.ctx.PluginDB(plugin.Username(r), plugin.OfPlugin("files"))
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	plan, err := PlanRename(db, filesDB, pattern, policy)
 	var patternErr string
 	if err != nil {
 		patternErr = err.Error()
+		plan = &RenamePlan{}
 	}
 	plugin.SetTitle(w, "Rename Preview")
-	ui.Render(w, r, renamePreviewPage(pattern, previews, patternErr, plugin.CSRFToken(r)))
+	ui.Render(w, r, renamePreviewPage(pattern, policy, plan, patternErr, plugin.CSRFToken(r)))
 }
 
-// RenameApply executes the rename operation.
+// unscannedNote explains that n files the rename cannot see yet stay put.
+func unscannedNote(n int) string {
+	if n == 1 {
+		return "1 file in the scan folders has not been scanned yet, so the rename leaves it alone. Scan now in Settings, then preview again."
+	}
+	return fmt.Sprintf("%d files in the scan folders have not been scanned yet, so the rename leaves them alone. Scan now in Settings, then preview again.", n)
+}
+
+// renamePreviewURL is the preview of pattern under policy.
+func renamePreviewURL(pattern string, policy ConflictPolicy) string {
+	return "/apps/gallery/rename/preview?" + url.Values{"pattern": {pattern}, "conflicts": {string(policy)}}.Encode()
+}
+
+// RenameApply executes the rename operation, and remembers the pattern and
+// conflict policy as the ones to offer next time.
 func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	username := plugin.Username(r)
 	pattern := r.FormValue("pattern")
-	previews, err := PreviewRename(db, pattern)
+	policy := ParseConflictPolicy(r.FormValue("conflicts"))
+	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
-		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), "/apps/gallery/rename/preview?pattern="+url.QueryEscape(pattern))
+		h.serverError(w, r, err)
 		return
 	}
-	username := plugin.Username(r)
-	if err := h.plugin.ApplyRename(username, previews); err != nil {
+	plan, err := PlanRename(db, filesDB, pattern, policy)
+	if err != nil {
+		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), renamePreviewURL(pattern, policy))
+		return
+	}
+	if err := SettingRenamePattern.Set(db, pattern); err != nil {
+		h.plugin.log.Error("remember rename pattern", "user", username, "err", err)
+	}
+	if err := SettingRenameConflicts.Set(db, policy); err != nil {
+		h.plugin.log.Error("remember rename conflicts", "user", username, "err", err)
+	}
+	if err := h.plugin.ApplyRename(username, plan.Renames); err != nil {
 		flashRedirect(w, r, "error", "The rename stopped part way: "+err.Error()+". Undo Last Rename puts back what was renamed.", "/apps/gallery/settings")
 		return
 	}
-	flashRedirect(w, r, "success", "Renamed "+plural(len(previews), "file", "files")+".", "/apps/gallery/settings")
+	flashRedirect(w, r, "success", "Renamed "+plural(len(plan.Renames), "file", "files")+".", "/apps/gallery/settings")
 }
 
 // RenameUndo reverses the most recent rename batch.

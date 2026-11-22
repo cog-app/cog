@@ -23,6 +23,7 @@ var (
 
 	_ vfs.AtomicCreator = (*CollectionFS)(nil)
 	_ vfs.AttrSetter    = (*CollectionFS)(nil)
+	_ vfs.NoReplacer    = (*CollectionFS)(nil)
 )
 
 // CollectionEntry is a file in a collection: its name there, and where it is
@@ -403,8 +404,14 @@ func (c *CollectionFS) Delete(p string) error {
 }
 
 // Rename renames the owner's file in its folder, keeping it in the
-// collection.
+// collection. It never replaces a file: the name must be free in the
+// collection and in the owner's folder.
 func (c *CollectionFS) Rename(oldPath, newPath string) error {
+	return c.RenameNoReplace(oldPath, newPath)
+}
+
+// RenameNoReplace is Rename, which already leaves a file at newPath alone.
+func (c *CollectionFS) RenameNoReplace(oldPath, newPath string) error {
 	if !c.Modify || c.Remove == nil || c.Add == nil {
 		return vfs.ErrReadOnly
 	}
@@ -426,11 +433,13 @@ func (c *CollectionFS) Rename(oldPath, newPath string) error {
 		return err
 	}
 	defer c.invalidate()
-	if err := c.owner.Rename(from, to); err != nil {
+	// The check above gives the clearer error; this decides it as the
+	// file moves, so one written there in between is not replaced.
+	if err := vfs.RenameNoReplace(c.owner, from, to); err != nil {
 		return err
 	}
 	if err := c.Add(to); err != nil {
-		return errors.Join(fmt.Errorf("add %s: %w", to, err), c.owner.Rename(to, from))
+		return errors.Join(fmt.Errorf("add %s: %w", to, err), vfs.RenameNoReplace(c.owner, to, from))
 	}
 	if err := c.Remove(from); err != nil {
 		return fmt.Errorf("remove %s: %w", from, err)

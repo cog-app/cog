@@ -305,6 +305,14 @@ func (t *sharedTree) Rename(oldPath, newPath string) error {
 	return fsys.Rename(from, to)
 }
 
+func (t *sharedTree) RenameNoReplace(oldPath, newPath string) error {
+	fsys, from, to, err := t.pair(oldPath, newPath)
+	if err != nil {
+		return err
+	}
+	return vfs.RenameNoReplace(fsys, from, to)
+}
+
 func (t *sharedTree) Replace(oldPath, newPath string) error {
 	fsys, from, to, err := t.pair(oldPath, newPath)
 	if err != nil {

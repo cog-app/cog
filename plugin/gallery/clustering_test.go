@@ -533,3 +533,53 @@ func TestClusterSkipsUnchangedFaces(t *testing.T) {
 	require.NoError(t, p.clusterChanged(db, db, "u"))
 	require.Equal(t, personForFace(t, db, good), personForFace(t, db, stranger))
 }
+
+// towards returns a unit embedding at cosine distance dist from direction a,
+// leaning towards direction b.
+func towards(a, b int, dist float64) []float32 {
+	emb := make([]float32, 512)
+	cos := 1 - dist
+	emb[a] = float32(cos)
+	emb[b] = float32(math.Sqrt(1 - cos*cos))
+	return emb
+}
+
+func TestSimilarNamedPeople(t *testing.T) {
+	db := testDB(t)
+	date := int64(1718409600)
+	person := func(name string, visible bool, emb []float32) int64 {
+		t.Helper()
+		fid := insertTestFace(t, db, insertTestMedia(t, db, date), emb, -1)
+		pid := createPerson(t, db, name, fid)
+		assignFace(t, db, fid, pid)
+		if !visible {
+			_, err := db.Exec(`UPDATE people SET visible = 0 WHERE id = ?`, pid)
+			require.NoError(t, err)
+		}
+		return pid
+	}
+
+	target := person("", true, makeEmbedding(0, 0))
+	near := person("Near", true, towards(0, 1, 0.1))
+	nearer := person("Nearer", true, towards(0, 2, 0.05))
+	middle := person("Middle", true, towards(0, 3, 0.2))
+	person("Fourth", true, towards(0, 4, 0.3))   // past the limit
+	person("Far", true, towards(0, 5, 0.6))      // past maxDist
+	person("", true, towards(0, 6, 0.01))        // unnamed
+	person("Hidden", false, towards(0, 7, 0.01)) // hidden
+
+	got, err := SimilarNamedPeople(db, target, 0.5, 3)
+	require.NoError(t, err)
+	ids := make([]int64, len(got))
+	for i, p := range got {
+		ids[i] = p.ID
+		assert.Equal(t, 1, p.FaceCount)
+		assert.True(t, p.BestFaceID != nil)
+	}
+	assert.Equal(t, []int64{nearer, near, middle}, ids)
+
+	// A person with no embeddings has nobody to look like.
+	none, err := SimilarNamedPeople(db, createPerson(t, db, "", 0), 0.5, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(none))
+}
