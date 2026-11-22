@@ -396,7 +396,11 @@ func (p *Plugin) AggregateRecognitionStats() RecognitionStats {
 		total.Pending += s.Pending
 		total.Done += s.Done
 		total.Errored += s.Errored
-		total.Errors = append(total.Errors, s.Errors...)
+		total.Failed += s.Failed
+		for _, f := range s.Failures {
+			f.User = username
+			total.Failures = append(total.Failures, f)
+		}
 	}
 	return total
 }
