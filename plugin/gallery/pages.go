@@ -8,6 +8,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"image"
 	"image/jpeg"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/a-h/templ"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
@@ -64,6 +67,7 @@ func peopleError(w http.ResponseWriter, r *http.Request, err error, back string)
 // photoDay is one day of the timeline: its heading and its photos.
 type photoDay struct {
 	Label string
+	Month string // "2006-01", matching TimelineMonth.Key
 	Media []Media
 }
 
@@ -72,30 +76,173 @@ type photoDay struct {
 func groupByDay(media []Media) []photoDay {
 	var days []photoDay
 	for _, m := range media {
-		label := takenAt(&m).Format("Monday, January 2, 2006")
+		t := takenAt(&m)
+		label := t.Format("Monday, January 2, 2006")
 		if n := len(days); n > 0 && days[n-1].Label == label {
 			days[n-1].Media = append(days[n-1].Media, m)
 			continue
 		}
-		days = append(days, photoDay{Label: label, Media: []Media{m}})
+		days = append(days, photoDay{Label: label, Month: t.Format("2006-01"), Media: []Media{m}})
 	}
 	return days
 }
 
-// Timeline renders the main photo timeline view, grouped by day.
+// timelinePageSize is how many photos a timeline page holds at least. A
+// page always ends on a day boundary, so it may hold more.
+const timelinePageSize = 100
+
+// timelineView is the timeline page: a run of days, the cursors either side
+// of it (0 at either end of the timeline), and the months for the scrubber.
+type timelineView struct {
+	Days   []photoDay
+	Newer  int64
+	Older  int64
+	Months []TimelineMonth
+}
+
+// scrubMark is one month on the timeline's scrubber. Top and Height place
+// it on the rail as percentages, by the share of photos before and in it.
+type scrubMark struct {
+	Key, Label, Href string
+	Top, Height      float64
+	Year             string // the year, on the newest month of a year that has room for a label
+}
+
+// scrubYearGap is how far apart, in percent of the rail, year labels must be
+// to show. A year with few photos is a sliver, and its label would sit on
+// its neighbour's.
+const scrubYearGap = 3.0
+
+func (m scrubMark) style() templ.SafeCSS {
+	return templ.SafeCSS(fmt.Sprintf("top:%.3f%%;height:%.3f%%", m.Top, m.Height))
+}
+
+func (m scrubMark) yearStyle() templ.SafeCSS {
+	return templ.SafeCSS(fmt.Sprintf("top:%.3f%%", m.Top))
+}
+
+// scrubMarks lays out months, newest first, on the scrubber.
+func scrubMarks(months []TimelineMonth) []scrubMark {
+	total := 0
+	for _, m := range months {
+		total += m.Count
+	}
+	if total == 0 {
+		return nil
+	}
+	marks := make([]scrubMark, len(months))
+	seen, lastYear := 0, -scrubYearGap
+	for i, m := range months {
+		mk := scrubMark{
+			Key:    m.Key(),
+			Label:  time.Date(m.Year, m.Month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006"),
+			Href:   fmt.Sprintf("/apps/gallery/?before=%d", m.End()),
+			Top:    100 * float64(seen) / float64(total),
+			Height: 100 * float64(m.Count) / float64(total),
+		}
+		if (i == 0 || months[i-1].Year != m.Year) && mk.Top-lastYear >= scrubYearGap {
+			mk.Year = strconv.Itoa(m.Year)
+			lastYear = mk.Top
+		}
+		marks[i] = mk
+		seen += m.Count
+	}
+	return marks
+}
+
+// cursorParam parses a timeline cursor from the query string. ok is false
+// when it is absent.
+func cursorParam(r *http.Request, name string) (t int64, ok bool, err error) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return 0, false, nil
+	}
+	t, err = strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", name, err)
+	}
+	return t, true, nil
+}
+
+// Timeline renders the main photo timeline view, grouped by day. With
+// ?before= it starts at that time instead of the newest photo, which is
+// where the scrubber's months link to; the photos after it load above as
+// the page scrolls up.
 func (h *Pages) Timeline(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	media, err := RecentMedia(db, 100)
+	before, jumped, err := cursorParam(r, "before")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !jumped {
+		before = math.MaxInt64
+	}
+	var v timelineView
+	media, older, err := OlderMedia(db, before, timelinePageSize)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	v.Days, v.Older = groupByDay(media), older
+	if jumped {
+		newer, err := HasMediaSince(db, before)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if newer {
+			v.Newer = before
+		}
+	}
+	if v.Months, err = TimelineMonths(db); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery")
-	ui.Render(w, r, timelinePage(r.URL.Path, groupByDay(media)))
+	ui.Render(w, r, timelinePage(r.URL.Path, v))
+}
+
+// TimelinePage renders the next run of days for the timeline's infinite
+// scroll: older than ?before=, or newer than ?after=, with the marker that
+// loads the run after it.
+func (h *Pages) TimelinePage(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if before, ok, err := cursorParam(r, "before"); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	} else if ok {
+		media, older, err := OlderMedia(db, before, timelinePageSize)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		ui.Render(w, r, timelineOlderPage(groupByDay(media), older))
+		return
+	}
+	after, ok, err := cursorParam(r, "after")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !ok {
+		http.Error(w, "before or after is required", http.StatusBadRequest)
+		return
+	}
+	media, newer, err := NewerMedia(db, after, timelinePageSize)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, timelineNewerPage(newer, groupByDay(media)))
 }
 
 // Albums renders the album list view.

@@ -402,10 +402,10 @@ templ galleryScripts() {
 }
 
 // --- Timeline ---
-templ timelinePage(activePath string, days []photoDay) {
+templ timelinePage(activePath string, v timelineView) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader("Timeline", nil)
-		if len(days) == 0 {
+		if len(v.Days) == 0 && v.Newer == 0 {
 			<div class="card">
 				@ui.EmptyState("No photos yet", "Photos and videos you upload to Files show up here once the gallery has scanned them.") {
 					<a class="btn btn-primary" href="/apps/files/">Upload photos</a>
@@ -413,14 +413,197 @@ templ timelinePage(activePath string, days []photoDay) {
 				}
 			</div>
 		} else {
-			for _, d := range days {
-				<section class="gallery-day">
-					<h2 class="gallery-day-title">{ d.Label }</h2>
-					@photoGrid(d.Media)
-				</section>
-			}
+			<div class="gallery-timeline" data-timeline>
+				if v.Newer != 0 {
+					@timelineMore("after", v.Newer)
+				}
+				@timelineDays(v.Days)
+				if v.Older != 0 {
+					@timelineMore("before", v.Older)
+				}
+			</div>
+			@timelineScrubber(scrubMarks(v.Months))
+			@timelineScript()
 		}
 	}
+}
+
+// timelineOlderPage is a run of days loaded below the timeline, ending with
+// the marker for the run after it.
+templ timelineOlderPage(days []photoDay, older int64) {
+	@timelineDays(days)
+	if older != 0 {
+		@timelineMore("before", older)
+	}
+}
+
+// timelineNewerPage is a run of days loaded above the timeline, starting
+// with the marker for the run before it.
+templ timelineNewerPage(newer int64, days []photoDay) {
+	if newer != 0 {
+		@timelineMore("after", newer)
+	}
+	@timelineDays(days)
+}
+
+templ timelineDays(days []photoDay) {
+	for _, d := range days {
+		<section class="gallery-day" data-month={ d.Month }>
+			<h2 class="gallery-day-title">{ d.Label }</h2>
+			@photoGrid(d.Media)
+		</section>
+	}
+}
+
+// timelineMore marks where more of the timeline loads, when it comes near
+// the screen. dir is the query parameter: "before" loads older photos,
+// "after" newer ones.
+templ timelineMore(dir string, cursor int64) {
+	<div class="gallery-timeline-more" data-timeline-more={ dir } data-src={ fmt.Sprintf("/apps/gallery/api/timeline/page?%s=%d", dir, cursor) } role="status">
+		<span class="spinner-sm"></span>
+		<span class="sr-only">Loading photos…</span>
+	</div>
+}
+
+// timelineScrubber is the rail at the side of the timeline: a tick for every
+// month, spaced by how many photos it holds, with the month being looked at
+// labelled. A month links to the timeline starting there.
+templ timelineScrubber(marks []scrubMark) {
+	<nav class="gallery-scrubber" aria-label="Months" data-scrubber>
+		for _, m := range marks {
+			if m.Year != "" {
+				<span class="gallery-scrubber-year" style={ m.yearStyle() } aria-hidden="true">{ m.Year }</span>
+			}
+			<a
+				class="gallery-scrubber-month"
+				href={ templ.SafeURL(m.Href) }
+				style={ m.style() }
+				data-month={ m.Key }
+				aria-label={ m.Label }
+			></a>
+		}
+		<span class="gallery-scrubber-current" data-scrubber-current hidden></span>
+	</nav>
+}
+
+templ timelineScript() {
+	<script type="text/javascript">
+		(function () {
+			var timeline = document.querySelector("[data-timeline]");
+			if (!timeline) return;
+
+			// --- Infinite scroll ------------------------------------------
+			// A marker loads its run of days once it is within a screen or
+			// two of the viewport. Days loaded above keep the photos being
+			// looked at where they are: the page scrolls by what was added
+			// (the timeline opts out of the browser's scroll anchoring, so
+			// the two do not both apply).
+			var observer = new IntersectionObserver(function (entries) {
+				entries.forEach(function (e) {
+					if (e.isIntersecting) load(e.target);
+				});
+			}, { rootMargin: "1500px 0px" });
+			function watch(root) {
+				if (root.matches && root.matches("[data-timeline-more]")) observer.observe(root);
+				root.querySelectorAll("[data-timeline-more]").forEach(function (el) { observer.observe(el); });
+			}
+			function load(el) {
+				if (el.dataset.loading) return;
+				el.dataset.loading = "1";
+				observer.unobserve(el);
+				fetch(el.dataset.src, { credentials: "same-origin" }).then(function (res) {
+					if (!res.ok) throw new Error(el.dataset.src + ": " + res.status + " " + res.statusText);
+					return res.text();
+				}).then(function (html) {
+					var tpl = document.createElement("template");
+					tpl.innerHTML = html;
+					var nodes = Array.prototype.slice.call(tpl.content.children);
+					var height = document.documentElement.scrollHeight;
+					el.replaceWith(tpl.content);
+					if (el.dataset.timelineMore === "after") {
+						window.scrollBy(0, document.documentElement.scrollHeight - height);
+					}
+					nodes.forEach(watch);
+					sections = null;
+					update();
+				}).catch(function (err) {
+					console.error("gallery timeline:", err);
+					delete el.dataset.loading;
+					el.textContent = "Couldn’t load more photos. ";
+					var retry = document.createElement("button");
+					retry.type = "button";
+					retry.className = "btn btn-sm";
+					retry.textContent = "Try again";
+					retry.addEventListener("click", function () {
+						el.innerHTML = '<span class="spinner-sm"></span>';
+						load(el);
+					});
+					el.appendChild(retry);
+				});
+			}
+			// A page that starts partway down the timeline (a month picked on
+			// the scrubber) opens with that month at the top, so the days
+			// that load above it stay out of view.
+			var first = timeline.querySelector(".gallery-day");
+			if (first && timeline.querySelector('[data-timeline-more="after"]')) {
+				window.scrollTo(0, first.getBoundingClientRect().top + window.scrollY);
+			}
+			watch(timeline);
+
+			// --- Scrubber --------------------------------------------------
+			// The month of the day at the top of the screen is the one
+			// labelled. Days are in order, so a binary search finds it.
+			var scrubber = document.querySelector("[data-scrubber]");
+			var current = scrubber.querySelector("[data-scrubber-current]");
+			var sections = null, active = null, ticking = false;
+			function update() {
+				ticking = false;
+				sections = sections || timeline.querySelectorAll(".gallery-day");
+				var line = 80, lo = 0, hi = sections.length - 1, found = 0;
+				while (lo <= hi) {
+					var mid = (lo + hi) >> 1;
+					if (sections[mid].getBoundingClientRect().top <= line) {
+						found = mid;
+						lo = mid + 1;
+					} else {
+						hi = mid - 1;
+					}
+				}
+				var sec = sections[found];
+				var tick = sec ? scrubber.querySelector('[data-month="' + sec.dataset.month + '"]') : null;
+				if (tick === active) return;
+				if (active) active.classList.remove("is-active");
+				active = tick;
+				current.hidden = !tick;
+				if (!tick) return;
+				tick.classList.add("is-active");
+				current.textContent = tick.getAttribute("aria-label");
+				current.style.top = tick.style.top;
+			}
+			// Phones show the label only while scrolling (see the CSS).
+			var idle = 0;
+			window.addEventListener("scroll", function () {
+				scrubber.classList.add("is-scrolling");
+				clearTimeout(idle);
+				idle = setTimeout(function () { scrubber.classList.remove("is-scrolling"); }, 1500);
+				if (ticking) return;
+				ticking = true;
+				requestAnimationFrame(update);
+			}, { passive: true });
+			update();
+
+			// A month already on the page scrolls into view; any other
+			// follows its link to the timeline starting there.
+			scrubber.addEventListener("click", function (e) {
+				var tick = e.target.closest(".gallery-scrubber-month");
+				if (!tick) return;
+				var sec = timeline.querySelector('.gallery-day[data-month="' + tick.dataset.month + '"]');
+				if (!sec) return;
+				e.preventDefault();
+				window.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY });
+			});
+		})();
+	</script>
 }
 
 // --- Albums ---
@@ -1678,9 +1861,11 @@ templ workersCard(v workersView, csrfToken string) {
 				</div>
 			</form>
 			<p class="form-help">Run a worker with the server's image:</p>
-			<pre class="mono text-sm">docker run -d --name cog-worker --restart unless-stopped \
-  -e COG_WORKER_TOKEN=cogw_… -v cog-worker:/data \
-  docker.duckfam.us/jj-software/cog cog gallery worker { v.Server }</pre>
+			<pre class="mono text-sm">
+				docker run -d --name cog-worker --restart unless-stopped \
+				-e COG_WORKER_TOKEN=cogw_… -v cog-worker:/data \
+				docker.duckfam.us/jj-software/cog cog gallery worker { v.Server }
+			</pre>
 		}
 	</div>
 }

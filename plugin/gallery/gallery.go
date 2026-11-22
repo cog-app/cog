@@ -199,6 +199,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 
 	ctx.RegisterAPI("api/timeline", http.HandlerFunc(pages.TimelineAPI))
+	ctx.RegisterAPI("api/timeline/page", http.HandlerFunc(pages.TimelinePage))
 	ctx.RegisterAPI("api/media/{id}", http.HandlerFunc(pages.MediaDetailAPI))
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
