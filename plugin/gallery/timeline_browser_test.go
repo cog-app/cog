@@ -45,7 +45,7 @@ func TestBrowserTimelineScroll(t *testing.T) {
 			document.querySelectorAll(".gallery-thumb").length === 300 &&
 			!document.querySelector("[data-timeline-more]"))`)
 		waitTrue(t, b, "the scrubber to reach January",
-			`document.querySelector("[data-scrubber-current]").textContent === "January 2024"`)
+			`document.querySelector("[data-scrubber-current]")?.textContent === "January 2024"`)
 	})
 
 	// A month that has not loaded yet opens the timeline there; the months
@@ -55,12 +55,24 @@ func TestBrowserTimelineScroll(t *testing.T) {
 		b.Login(t, "scroll", "pass")
 		b.Navigate(t, "/apps/gallery/")
 		b.WaitText(t, "Timeline")
-		b.Click(t, `.gallery-scrubber-month[data-month="2024-01"]`)
-		waitTrue(t, b, "January", `document.querySelector("[data-scrubber-current]").textContent === "January 2024"`)
-		if !strings.Contains(b.URL(t), "?before=") {
-			// January was already on the page and the click scrolled to it.
-			return
+		// The first page reaches March 6 and stops well short of the
+		// marker's margin, so January is not on the page and the click
+		// navigates.
+		if b.HasElement(t, `.gallery-day[data-month="2024-01"]`) {
+			t.Fatal("January loaded before the jump; the test needs it not to")
 		}
+		b.Click(t, `.gallery-scrubber-month[data-month="2024-01"]`)
+		// Wait for the new page before reading it: a script run while it
+		// is still loading finds no scrubber.
+		deadline := time.Now().Add(30 * time.Second)
+		for !strings.Contains(b.URL(t), "?before=") {
+			if time.Now().After(deadline) {
+				t.Fatal("timed out waiting for the jump")
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		b.WaitReady(t, "[data-timeline]")
+		waitTrue(t, b, "January", `document.querySelector("[data-scrubber-current]")?.textContent === "January 2024"`)
 		waitTrue(t, b, "February to load above", `!!document.querySelector('.gallery-day[data-month="2024-02"]')`)
 		time.Sleep(300 * time.Millisecond) // let a wrong scroll show
 		// Without the correction January would be pushed a page down the
