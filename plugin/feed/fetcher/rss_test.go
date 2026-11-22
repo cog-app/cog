@@ -117,3 +117,31 @@ func TestRSSEtag304(t *testing.T) {
 		t.Fatalf("expected 0 items on 304, got %d", len(out.Items))
 	}
 }
+
+func TestRSSThumbnailsAndDurations(t *testing.T) {
+	body, err := os.ReadFile("testdata/sample-images.xml")
+	require.NoError(t, err)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	out, err := fetcher.Fetch(context.Background(), feed.Subscription{Kind: "rss", URL: srv.URL})
+	require.NoError(t, err)
+	require.Equal(t, 4, len(out.Items))
+
+	for i, want := range []struct {
+		title, thumb string
+		dur          int64
+	}{
+		{"Episode With Art", "https://example.com/art.jpg", 3725},
+		{"Episode With Art", "https://example.com/art.jpg", 3725},
+		{"Bare Episode", "", 0},
+		{"Article", "https://example.com/posts/pic.png", 0},
+	} {
+		it := out.Items[i]
+		if it.Title != want.title || it.ThumbnailURL != want.thumb || it.DurationSec != want.dur {
+			t.Errorf("item %d (%s): thumbnail %q duration %d, want %q %d", i, it.Title, it.ThumbnailURL, it.DurationSec, want.thumb, want.dur)
+		}
+	}
+}
