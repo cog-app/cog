@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"image"
+	"image/color"
 	"image/png"
 	"testing"
 
@@ -34,6 +35,16 @@ func TestDecodeRefusesHuge(t *testing.T) {
 	// The chunk's CRC covers its type and data (bytes 12..29).
 	binary.BigEndian.PutUint32(b[29:], crc32.ChecksumIEEE(b[12:29]))
 	_, _, err := Decode(bytes.NewReader(b))
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("got %v, want ErrTooLarge", err)
+	}
+}
+
+// A phone's panorama is past 50 megapixels but, as a JPEG, well inside the
+// budget; the same pixels as a 16-bit PNG are not.
+func TestCheckCountsBytes(t *testing.T) {
+	require.NoError(t, Check(image.Config{ColorModel: color.YCbCrModel, Width: 19696, Height: 3744}))
+	err := Check(image.Config{ColorModel: color.RGBA64Model, Width: 19696, Height: 3744})
 	if !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("got %v, want ErrTooLarge", err)
 	}

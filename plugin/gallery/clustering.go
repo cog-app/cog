@@ -102,6 +102,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 		}
 		f.embedding = bytesToFloat32Slice(blob)
 		if len(f.embedding) > 0 {
+			l2normalize(f.embedding)
 			faces = append(faces, f)
 		}
 	}
@@ -112,6 +113,33 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	// poor ones are then judged against it.
 	slices.SortStableFunc(faces, func(a, b unassignedFace) int { return cmp.Compare(b.quality, a.quality) })
 
+	type candidate struct {
+		personID  int64
+		embedding []float32
+		birthYear float64
+	}
+	people := make([]candidate, 0, len(centroids))
+	for personID, centroid := range centroids {
+		people = append(people, candidate{personID, centroid, birthYears[personID]})
+	}
+	var recent []candidate
+	for personID, embs := range recentFaces {
+		for _, emb := range embs {
+			l2normalize(emb)
+			recent = append(recent, candidate{personID, emb, birthYears[personID]})
+		}
+	}
+	closest := func(face unassignedFace, among []candidate, personID int64, best float64) (int64, float64) {
+		for _, c := range among {
+			dist := unitDistance(face.embedding, c.embedding)
+			dist += agePenalty(face.estimatedAge, face.photoDate, c.birthYear, agePenaltyWeight)
+			if dist < best {
+				best, personID = dist, c.personID
+			}
+		}
+		return personID, best
+	}
+
 	err = inTx(db, func(tx *sql.Tx) error {
 		for _, face := range faces {
 			good := face.quality >= seedFaceQuality
@@ -119,30 +147,10 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 			if !good {
 				limit = threshold * poorFaceMatch
 			}
-			bestPersonID := int64(0)
-			bestDist := limit
-
-			for personID, centroid := range centroids {
-				dist := cosineDistance(face.embedding, centroid)
-				dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
-				if dist < bestDist {
-					bestDist = dist
-					bestPersonID = personID
-				}
-			}
-
+			bestPersonID, bestDist := closest(face, people, 0, limit)
 			// Chain matching: if centroid didn't match, try recent faces.
 			if bestPersonID == 0 {
-				for personID, recent := range recentFaces {
-					for _, emb := range recent {
-						dist := cosineDistance(face.embedding, emb)
-						dist += agePenalty(face.estimatedAge, face.photoDate, birthYears[personID], agePenaltyWeight)
-						if dist < bestDist {
-							bestDist = dist
-							bestPersonID = personID
-						}
-					}
-				}
+				bestPersonID, _ = closest(face, recent, 0, bestDist)
 			}
 
 			switch {
@@ -155,7 +163,7 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 				if err != nil {
 					return err
 				}
-				centroids[personID] = face.embedding
+				people = append(people, candidate{personID, face.embedding, 0})
 			default:
 				// A blurred, tiny or turned-away face that matches no one is
 				// left unassigned rather than made a person of its own: it
@@ -196,6 +204,42 @@ func clusterFaces(db *sql.DB, sysDB *sql.DB) error {
 	}
 
 	return nil
+}
+
+// clusterChanged clusters a user's faces unless nothing clustering reads
+// has changed since it last did. With thousands of people, comparing the
+// faces that matched no one against all of them again takes minutes, and
+// would find what it found before.
+func (p *Plugin) clusterChanged(db, sysDB *sql.DB, username string) error {
+	before, err := clusterInputs(db, sysDB)
+	if err != nil {
+		return err
+	}
+	if last, ok := p.clustered.Load(username); ok && last == before {
+		return nil
+	}
+	if err := clusterFaces(db, sysDB); err != nil {
+		return err
+	}
+	after, err := clusterInputs(db, sysDB)
+	if err != nil {
+		return err
+	}
+	p.clustered.Store(username, after)
+	return nil
+}
+
+// clusterInputs summarises the faces, whom they belong to, the people and
+// the settings, so that a change to any of them changes it.
+func clusterInputs(db, sysDB *sql.DB) (string, error) {
+	var faces, people string
+	if err := db.QueryRow(`SELECT
+		(SELECT count(*) || ':' || COALESCE(max(id), 0) || ':' || total(person_id) || ':' || count(person_id) || ':' || count(embedding) FROM faces),
+		(SELECT count(*) || ':' || COALESCE(max(id), 0) || ':' || total(length(linked_from)) FROM people)`).Scan(&faces, &people); err != nil {
+		return "", fmt.Errorf("cluster inputs: %w", err)
+	}
+	return fmt.Sprintf("%s/%s/%v/%v", faces, people,
+		SettingClusterThreshold.MustGet(sysDB), SettingAgePenaltyWeight.MustGet(sysDB)), nil
 }
 
 // recencyHalfLife controls how quickly older photos lose weight in centroid
@@ -357,6 +401,19 @@ func cosineDistance(a, b []float32) float64 {
 		return 1.0
 	}
 	return 1 - dot/denom
+}
+
+// unitDistance is cosineDistance for vectors already of unit length: the
+// norms are left out of the loop clustering spends its time in.
+func unitDistance(a, b []float32) float64 {
+	if len(a) != len(b) || len(a) == 0 {
+		return 1.0
+	}
+	var dot float64
+	for i := range a {
+		dot += float64(a[i]) * float64(b[i])
+	}
+	return 1 - dot
 }
 
 // float32SliceToBytes converts a float32 slice to a byte slice (little-endian).

@@ -250,7 +250,7 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := report.time("people", func() error { return p.syncSharedPeople(galleryDB, username, nil) }); err != nil {
 		warn("shared people", err)
 	}
-	if err := report.time("clustering", func() error { return clusterFaces(galleryDB, sysDB) }); err != nil {
+	if err := report.time("clustering", func() error { return p.clusterChanged(galleryDB, sysDB, username) }); err != nil {
 		warn("clustering", err)
 	}
 	if err := report.time("duplicates", func() error { return p.detectDuplicates(galleryDB) }); err != nil {
@@ -969,7 +969,7 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.
 	if err != nil {
 		return nil, err
 	}
-	if err := ffmpegThumbnail(srcPath, cachePath, size); err != nil {
+	if err := ffmpegThumbnail(srcPath, cachePath, size, thumbnailSeek(m)); err != nil {
 		return nil, err
 	}
 

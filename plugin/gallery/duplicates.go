@@ -10,6 +10,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"log/slog"
+	"math/bits"
 	"slices"
 	"strings"
 
@@ -367,15 +368,20 @@ func rebuildDuplicateGroups(db *sql.DB, maxDist int, log *slog.Logger) error {
 		}
 		return parent[x]
 	}
+	words := make([][]uint64, len(hashes))
+	for i, h := range hashes {
+		words[i] = packWords(h)
+	}
 	for i := range entries {
 		if hashes[i] == nil {
 			continue
 		}
+		wi := words[i]
 		for j := i + 1; j < len(entries); j++ {
 			if hashes[j] == nil || len(hashes[i]) != len(hashes[j]) {
 				continue
 			}
-			if int(similarity.Hamming(hashes[i], hashes[j])) > maxDist {
+			if hammingWords(wi, words[j]) > maxDist {
 				continue
 			}
 			if excluded[pairKey(entries[i].ID, entries[j].ID)] {
@@ -421,6 +427,28 @@ func rebuildDuplicateGroups(db *sql.DB, maxDist int, log *slog.Logger) error {
 		groups = append(groups, g)
 	}
 	return replaceDuplicateGroups(db, groups)
+}
+
+// packWords packs a fingerprint into 64-bit words. Every pair of photos is
+// compared, and similarity.Hamming, a byte at a time, took 80 seconds over
+// 34,000 of them.
+func packWords(h hashtype.Binary) []uint64 {
+	if h == nil {
+		return nil
+	}
+	w := make([]uint64, (len(h)+7)/8)
+	for i, b := range h {
+		w[i/8] |= uint64(b) << (8 * (i % 8))
+	}
+	return w
+}
+
+func hammingWords(a, b []uint64) int {
+	d := 0
+	for k := range a {
+		d += bits.OnesCount64(a[k] ^ b[k])
+	}
+	return d
 }
 
 type duplicateMemberRow struct {

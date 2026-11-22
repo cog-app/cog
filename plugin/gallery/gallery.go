@@ -69,6 +69,8 @@ type Plugin struct {
 
 	hub      workerHub
 	progress progressTracker
+
+	clustered sync.Map // username → clusterInputs after the last clustering
 }
 
 // New creates a new Gallery plugin instance.

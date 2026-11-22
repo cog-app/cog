@@ -509,3 +509,27 @@ func TestFaceQuality(t *testing.T) {
 	require.True(t, faceQuality(0.9, 200, 200, profile, 1000, 1000) < seedFaceQuality)
 	require.True(t, faceQuality(0.9, 40, 40, frontal, 1000, 1000) < seedFaceQuality)
 }
+
+// A face that matched no one is not compared again until a face or a
+// person changes: what it is compared against is all clustering reads.
+func TestClusterSkipsUnchangedFaces(t *testing.T) {
+	db := testDB(t)
+	p := &Plugin{}
+	date := int64(1718409600)
+	good := insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(0, 0.01), -1)
+	stranger := insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(7, 0.01), -1)
+	setFaceBox(t, db, stranger, 0.03)
+	require.NoError(t, p.clusterChanged(db, db, "u"))
+	require.Equal(t, int64(0), personForFace(t, db, stranger))
+
+	// Not something a face changes by, but it shows the faces were not
+	// looked at again.
+	_, err := db.Exec(`UPDATE faces SET embedding = ? WHERE id = ?`, float32SliceToBytes(makeEmbedding(0, 0.01)), stranger)
+	require.NoError(t, err)
+	require.NoError(t, p.clusterChanged(db, db, "u"))
+	require.Equal(t, int64(0), personForFace(t, db, stranger))
+
+	insertTestFace(t, db, insertTestMedia(t, db, date), makeEmbedding(9, 0.01), -1)
+	require.NoError(t, p.clusterChanged(db, db, "u"))
+	require.Equal(t, personForFace(t, db, good), personForFace(t, db, stranger))
+}
