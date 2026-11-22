@@ -116,10 +116,8 @@ func fetchRSS(ctx context.Context, sub feed.Subscription) (feed.FetchResult, err
 			content = sanitizer.Sanitize(content)
 		}
 
-		base := itemURL
-		if base == "" {
-			base = sub.URL
-		}
+		// The entry link may be relative to the feed.
+		base := resolveAgainst(sub.URL, itemURL)
 		thumbnail := itemImage(entry, base)
 		var duration int64
 		if entry.ITunesExt != nil {
@@ -198,4 +196,21 @@ func enclosureMediaType(mimeType string) string {
 func enclosureGUID(entryGUID, encURL string) string {
 	h := sha256.Sum256([]byte(encURL))
 	return entryGUID + "#" + hex.EncodeToString(h[:6])
+}
+
+// resolveAgainst resolves ref against base, answering base when ref is empty
+// and ref unchanged when either does not parse.
+func resolveAgainst(base, ref string) string {
+	if ref == "" {
+		return base
+	}
+	r, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	b, err := url.Parse(base)
+	if err != nil {
+		return ref
+	}
+	return b.ResolveReference(r).String()
 }

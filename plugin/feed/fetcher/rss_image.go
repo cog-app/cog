@@ -1,6 +1,8 @@
 package fetcher
 
 import (
+	"io"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -55,7 +57,11 @@ func firstContentImage(markup, base string) string {
 	for {
 		switch z.Next() {
 		case html.ErrorToken:
-			// io.EOF ends the document; a malformed tail just stops the scan.
+			// io.EOF ends the document. Any other error stops the scan: a bad
+			// body must not fail the fetch, but it is worth knowing about.
+			if err := z.Err(); err != io.EOF {
+				slog.Warn("feed: scanning item body for an image", "error", err)
+			}
 			return ""
 		case html.StartTagToken, html.SelfClosingTagToken:
 			name, hasAttr := z.TagName()
@@ -88,8 +94,7 @@ func firstContentImage(markup, base string) string {
 	}
 }
 
-// mediaImage finds an image among media:content elements, looking one level
-// down into media:group.
+// mediaImage finds an image among the media:content elements in exts.
 func mediaImage(exts map[string][]ext.Extension, base string) string {
 	for _, c := range exts["content"] {
 		if c.Attrs["medium"] == "image" || strings.HasPrefix(c.Attrs["type"], "image/") {
@@ -122,6 +127,11 @@ func itemImage(entry *gofeed.Item, base string) string {
 	for _, g := range media["group"] {
 		if got := mediaImage(g.Children, base); got != "" {
 			return got
+		}
+		for _, th := range g.Children["thumbnail"] {
+			if got := resolveImage(th.Attrs["url"], base); got != "" {
+				return got
+			}
 		}
 	}
 	if got := firstContentImage(entry.Content, base); got != "" {

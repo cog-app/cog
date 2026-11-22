@@ -5,6 +5,7 @@ import (
 
 	"github.com/mmcdole/gofeed"
 
+	"git.duckfam.us/jj-software/cog/internal/testing/assert"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
 
@@ -13,9 +14,7 @@ func TestParseITunesDuration(t *testing.T) {
 		"3725": 3725, "62:05": 3725, "1:02:05": 3725, " 45 ": 45,
 		"": 0, "abc": 0, "1:xx": 0, "-5": 0,
 	} {
-		if got := parseITunesDuration(in); got != want {
-			t.Errorf("parseITunesDuration(%q) = %d, want %d", in, got, want)
-		}
+		assert.Equal(t, want, parseITunesDuration(in), in)
 	}
 }
 
@@ -28,9 +27,7 @@ func TestFirstContentImage(t *testing.T) {
 		`<img src="data:image/png;base64,AAAA"><img src="//cdn.x/c.jpg">`:      "https://cdn.x/c.jpg",
 	}
 	for in, want := range cases {
-		if got := firstContentImage(in, base); got != want {
-			t.Errorf("firstContentImage(%q) = %q, want %q", in, got, want)
-		}
+		assert.Equal(t, want, firstContentImage(in, base), in)
 	}
 }
 
@@ -57,6 +54,18 @@ func TestItemImagePrecedence(t *testing.T) {
 		"media:content image type in group": {
 			`<media:group><media:content url="https://img/g.jpg" type="image/jpeg"/></media:group>`,
 			"https://img/g.jpg",
+		},
+		"media:thumbnail in group": {
+			`<media:group><media:thumbnail url="https://img/gt.jpg"/></media:group>`,
+			"https://img/gt.jpg",
+		},
+		"group thumbnail beats body img": {
+			`<media:group><media:thumbnail url="https://img/gt.jpg"/></media:group><description>&lt;img src="https://img/body.jpg"&gt;</description>`,
+			"https://img/gt.jpg",
+		},
+		"item media:content beats group thumbnail": {
+			`<media:group><media:thumbnail url="https://img/gt.jpg"/></media:group><media:content url="https://img/mc.jpg" medium="image"/>`,
+			"https://img/mc.jpg",
 		},
 		"media:content video ignored": {
 			`<media:content url="https://img/v.mp4" type="video/mp4"/>`,
