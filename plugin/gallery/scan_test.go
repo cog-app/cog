@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"math/rand/v2"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -174,6 +175,11 @@ func TestScanSettlesUndecodablePhoto(t *testing.T) {
 	require.Equal(t, 0, pending.Quality)
 	require.Equal(t, 0, pending.Fingerprint)
 	require.Equal(t, 1, pending.Failed)
+
+	var id int64
+	require.NoError(t, e.db.QueryRow(`SELECT id FROM media WHERE file_path = '/Photos/broken.jpg'`).Scan(&id))
+	e.Get(t, "/admin/plugins/gallery", e.alice.Auth).Status(200).
+		Contains(`<a href="/apps/gallery/photo/` + strconv.FormatInt(id, 10) + `">/Photos/broken.jpg</a>`)
 }
 
 // withOrientation inserts an EXIF APP1 segment carrying an orientation tag

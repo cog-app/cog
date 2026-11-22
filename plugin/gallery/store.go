@@ -1131,8 +1131,17 @@ type RecognitionStats struct {
 	Pending     int
 	Done        int
 	Errored     int
-	Errors      []string // distinct error messages from errored images
+	Failed      int                  // photos with any stage failed, as PendingWork counts them
+	Failures    []RecognitionFailure // the latest of them
 	Users       []UserPending
+}
+
+// RecognitionFailure is a photo a stage failed on, and why.
+type RecognitionFailure struct {
+	User    string
+	MediaID int64
+	Path    string
+	Error   string
 }
 
 // UserPending is what one user's scan has still to do.
@@ -1153,23 +1162,28 @@ func GetRecognitionStats(db *sql.DB) (RecognitionStats, error) {
 	if err != nil {
 		return s, err
 	}
-	if s.Errored > 0 {
-		rows, err := db.Query(`SELECT DISTINCT recognition_error FROM media
-			WHERE recognition_state = 2 AND recognition_error != '' LIMIT 10`)
-		if err != nil {
-			return s, fmt.Errorf("recognition errors: %w", err)
+	const failed = `shared_from = '' AND (scan_error != '' OR recognition_state = 2)`
+	if err := db.QueryRow(`SELECT count(*) FROM media WHERE ` + failed).Scan(&s.Failed); err != nil {
+		return s, fmt.Errorf("count failures: %w", err)
+	}
+	if s.Failed == 0 {
+		return s, nil
+	}
+	rows, err := db.Query(`SELECT id, file_path, CASE WHEN recognition_error != '' THEN recognition_error ELSE scan_error END
+		FROM media WHERE ` + failed + ` ORDER BY id DESC LIMIT 10`)
+	if err != nil {
+		return s, fmt.Errorf("list failures: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f RecognitionFailure
+		if err := rows.Scan(&f.MediaID, &f.Path, &f.Error); err != nil {
+			return s, fmt.Errorf("scan failure: %w", err)
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var msg string
-			if err := rows.Scan(&msg); err != nil {
-				return s, fmt.Errorf("scan recognition error: %w", err)
-			}
-			s.Errors = append(s.Errors, msg)
-		}
-		if err := rows.Err(); err != nil {
-			return s, fmt.Errorf("recognition errors: %w", err)
-		}
+		s.Failures = append(s.Failures, f)
+	}
+	if err := rows.Err(); err != nil {
+		return s, fmt.Errorf("list failures: %w", err)
 	}
 	return s, nil
 }

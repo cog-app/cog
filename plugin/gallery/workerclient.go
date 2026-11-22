@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/netip"
 	"os"
@@ -32,6 +31,12 @@ var anyAddress = []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustPa
 // a round trip.
 const workerBatch = 8
 
+const (
+	workerLongPoll     = 25 * time.Second
+	workerIdleGap      = time.Minute // between finished photos, too long to be work
+	workerSpeedSamples = 10          // photos in a row before a speed is reported
+)
+
 // remoteWorker analyses photos for a server: it leases them, downloads each,
 // runs the same stages the scan would, and sends back what it found.
 type remoteWorker struct {
@@ -42,8 +47,7 @@ type remoteWorker struct {
 	threads   int
 	http      *http.Client
 
-	info     atomic.Pointer[workerInfo]
-	perPhoto atomic.Uint64 // math.Float64bits of seconds per photo, smoothed
+	info atomic.Pointer[workerInfo]
 
 	cfg     *workerConfig
 	stages  *analysisConfig   // what preparing a photo needs; its recognizer is the first engine's
@@ -53,6 +57,8 @@ type remoteWorker struct {
 
 	observed sync.Mutex
 	lastDone time.Time
+	perPhoto float64 // seconds, smoothed
+	samples  int     // photos finished since the worker last sat idle
 }
 
 // runRemoteWorker is `cog gallery worker <server>`. The token comes from
@@ -94,7 +100,7 @@ func (p *Plugin) runRemoteWorker(ctx context.Context, server string) error {
 		modelsDir: modelsDir,
 		threads:   threads,
 		// The server is the operator's own, and usually on their network.
-		http:    safehttp.ClientWith(10*time.Minute, safehttp.Options{Allow: anyAddress}),
+		http:    safehttp.ClientWith(10*time.Minute, safehttp.Options{Allow: anyAddress, ResponseHeaderTimeout: workerLongPoll + 30*time.Second}),
 		release: func() {},
 		checked: map[string]string{},
 	}
@@ -115,7 +121,11 @@ func (p *Plugin) runRemoteWorker(ctx context.Context, server string) error {
 
 func (rw *remoteWorker) currentInfo() workerInfo {
 	info := *rw.info.Load()
-	info.PerPhoto = float64FromBits(rw.perPhoto.Load())
+	rw.observed.Lock()
+	defer rw.observed.Unlock()
+	if rw.samples >= workerSpeedSamples && time.Since(rw.lastDone) < workerIdleGap {
+		info.PerPhoto = rw.perPhoto
+	}
 	return info
 }
 
@@ -160,6 +170,7 @@ func (rw *remoteWorker) leaseRetrying(ctx context.Context, wait bool) (*leaseRes
 	for {
 		resp, err := rw.lease(ctx, wait)
 		if err == nil {
+			rw.clearFailure()
 			return resp, nil
 		}
 		var fatal *fatalError
@@ -193,6 +204,13 @@ func (rw *remoteWorker) noteFailure(err error) {
 	info := *rw.info.Load()
 	info.LastFailure = err.Error()
 	rw.info.Store(&info)
+}
+
+func (rw *remoteWorker) clearFailure() {
+	if info := *rw.info.Load(); info.LastFailure != "" {
+		info.LastFailure = ""
+		rw.info.Store(&info)
+	}
 }
 
 // fatalError is an answer from the server that retrying will not change.
@@ -285,7 +303,7 @@ func statusOf(err error) int {
 func (rw *remoteWorker) lease(ctx context.Context, wait bool) (*leaseResponse, error) {
 	req := leaseRequest{Info: rw.currentInfo(), Max: workerBatch}
 	if wait {
-		req.Wait = 25
+		req.Wait = workerLongPoll.Seconds()
 	}
 	var resp leaseResponse
 	err := rw.call(ctx, http.MethodPost, workerAPI+"/lease", nil, req, &resp)
@@ -551,19 +569,24 @@ func (rw *remoteWorker) finish(ctx context.Context, engine *analysisConfig, pr p
 }
 
 // observe smooths the time between finished photos, whichever engine
-// finished them: the worker's seconds per photo.
+// finished them: the worker's seconds per photo. A gap long enough to be
+// waiting for photos starts the measure again, so a worker that gets a
+// photo now and then reports no speed rather than its idle time.
 func (rw *remoteWorker) observe() {
 	rw.observed.Lock()
 	defer rw.observed.Unlock()
 	now := time.Now()
-	if !rw.lastDone.IsZero() {
-		next := now.Sub(rw.lastDone).Seconds()
-		if prev := float64FromBits(rw.perPhoto.Load()); prev > 0 {
-			next = 0.95*prev + 0.05*next
-		}
-		rw.perPhoto.Store(float64Bits(next))
-	}
+	gap := now.Sub(rw.lastDone)
 	rw.lastDone = now
+	switch {
+	case gap >= workerIdleGap:
+		rw.perPhoto, rw.samples = 0, 0
+	case rw.samples == 0:
+		rw.perPhoto, rw.samples = gap.Seconds(), 1
+	default:
+		rw.perPhoto = 0.95*rw.perPhoto + 0.05*gap.Seconds()
+		rw.samples++
+	}
 }
 
 // prepare downloads a leased photo and runs the stages that need only its
@@ -660,6 +683,3 @@ func cpuModel() string {
 	}
 	return runtime.GOARCH
 }
-
-func float64Bits(f float64) uint64     { return math.Float64bits(f) }
-func float64FromBits(b uint64) float64 { return math.Float64frombits(b) }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +40,18 @@ func NewPages(p *Plugin) *Pages {
 func isAdmin(r *http.Request) bool {
 	u := plugin.UserFromContext(r.Context())
 	return u != nil && u.IsAdmin
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
+}
+
+func viewerName(r *http.Request) string {
+	if u := plugin.UserFromContext(r.Context()); u != nil {
+		return u.Username
+	}
+	return ""
 }
 
 // serverError reports a failure the user cannot fix and logs it.
@@ -1517,7 +1530,7 @@ func (h *Pages) SystemSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plugin.SetTitle(w, "Gallery Settings")
-	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, progress, workersView{Workers: workers, Now: h.plugin.ctx.Now(), Server: serverURL(r)}, plugin.CSRFToken(r)))
+	ui.Render(w, r, systemSettingsPage(sysDB, stats, scanStatus, progress, workersView{Workers: workers, Now: h.plugin.ctx.Now()}, viewerName(r), plugin.CSRFToken(r)))
 }
 
 // WorkersAction adds a remote worker, gives one a new token, or removes one.
@@ -1558,15 +1571,14 @@ func (h *Pages) WorkersAction(w http.ResponseWriter, r *http.Request) {
 type workersView struct {
 	Workers []worker
 	Now     time.Time
-	Server  string
 }
 
-func serverURL(r *http.Request) string {
-	scheme := "https"
-	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
-		scheme = "http"
-	}
-	return scheme + "://" + r.Host
+var cpuNoise = regexp.MustCompile(`\((R|TM)\)|\bCPU\b|@ *[0-9.]+ *GHz|\b[0-9]+(st|nd|rd|th) Gen\b|\b\w+-Core Processor\b|with Radeon Graphics`)
+
+// shortCPU trims a CPU's model name to what tells one machine from another:
+// "11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz" is "Intel Core i7-1165G7".
+func shortCPU(model string) string {
+	return strings.Join(strings.Fields(cpuNoise.ReplaceAllString(model, " ")), " ")
 }
 
 // ScanStatusPartial returns the scan status card as an HTMX partial.
@@ -1578,7 +1590,7 @@ func (h *Pages) ScanStatusPartial(w http.ResponseWriter, r *http.Request) {
 		httperr.Internal(w, r, err)
 		return
 	}
-	ui.Render(w, r, scanStatusCard(stats, scan, progress, plugin.CSRFToken(r)))
+	ui.Render(w, r, scanStatusCard(stats, scan, progress, viewerName(r), plugin.CSRFToken(r)))
 }
 
 // UserScanStatusPartial returns a small scan-running banner for the gallery sidebar.

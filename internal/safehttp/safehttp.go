@@ -222,12 +222,18 @@ type Options struct {
 	// HTTP2 attempts HTTP/2 as the default client does, for servers that
 	// score the client's fingerprint.
 	HTTP2 bool
+	// ResponseHeaderTimeout replaces the default 10 seconds, for a server
+	// that holds a request open until it has an answer.
+	ResponseHeaderTimeout time.Duration
 }
 
 // ClientWith is Client with options.
 func ClientWith(timeout time.Duration, o Options) *http.Client {
 	t := transport(o)
 	t.ForceAttemptHTTP2 = o.HTTP2
+	if o.ResponseHeaderTimeout > 0 {
+		t.ResponseHeaderTimeout = o.ResponseHeaderTimeout
+	}
 	if o.NoRedirect {
 		return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: NoRedirect}
 	}
