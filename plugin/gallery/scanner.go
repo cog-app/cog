@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/imaging"
+	"git.duckfam.us/jj-software/cog/internal/imgconv"
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	cogplugin "git.duckfam.us/jj-software/cog/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/files"
@@ -575,13 +576,20 @@ func extractImageMetadata(path string, m *Media) error {
 
 	// Read image dimensions.
 	cfg, _, decodeErr := image.DecodeConfig(f)
+	converted := 0 // the orientation a conversion left to apply
 	if decodeErr == nil {
 		m.Width = cfg.Width
 		m.Height = cfg.Height
+	} else if img, orientation, err := imgconv.Decode(context.Background(), path); err == nil {
+		b := img.Bounds()
+		m.Width, m.Height, decodeErr, converted = b.Dx(), b.Dy(), nil, orientation
 	} else {
 		// 1×1, as for a video ffprobe cannot read: metadata is not read again
 		// every scan, and the analysis records why the photo fails.
 		m.Width, m.Height = 1, 1
+		if !errors.Is(err, imgconv.ErrUnsupported) {
+			decodeErr = errors.Join(decodeErr, err)
+		}
 		decodeErr = fmt.Errorf("dimensions: %w", decodeErr)
 	}
 
@@ -590,6 +598,10 @@ func extractImageMetadata(path string, m *Media) error {
 		return fmt.Errorf("rewind for exif: %w", err)
 	}
 	readEXIF(f, m)
+	if converted != 0 {
+		// A HEIF converts upright, whatever its EXIF says.
+		m.Orientation = converted
+	}
 	// Dimensions are stored upright, like the thumbnails and face boxes.
 	m.Width, m.Height = imaging.OrientedSize(m.Width, m.Height, m.Orientation)
 	return decodeErr

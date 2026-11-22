@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"git.duckfam.us/jj-software/cog/internal/imgconv"
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
 )
 
@@ -104,6 +105,7 @@ func (p *Plugin) runRemoteWorker(ctx context.Context, server string) error {
 		CPU:      cpuModel(),
 		Threads:  threads,
 		OCR:      TesseractAvailable(),
+		HEIF:     imgconv.HandlesHEIF(),
 		ONNX:     (&OnnxBackend{LibraryPath: onnxLibrary()}).Available(),
 	})
 	defer func() { rw.release() }()

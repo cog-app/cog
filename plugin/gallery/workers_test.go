@@ -162,3 +162,18 @@ func TestWorkerToken(t *testing.T) {
 	require.NoError(t, e.g.DeleteWorker(workers[0].ID))
 	e.PostJSON(t, workerAPI+"/lease", map[string]any{}, workerAuth(fresh)).Status(http.StatusUnauthorized)
 }
+
+// A HEIF goes only to a worker that has heif-dec to read it: any other
+// would record it as undecodable.
+func TestWorkerLeasesHEIFOnlyToHEIFWorkers(t *testing.T) {
+	e := newWorkerEnv(t, "/Photos/a.jpg")
+	_, err := e.db.Exec(`UPDATE media SET mime_type = 'image/heif'`)
+	require.NoError(t, err)
+	token, err := e.g.CreateWorker("w")
+	require.NoError(t, err)
+	require.Equal(t, 0, len(lease(t, e, token, 4).Jobs))
+
+	var resp leaseResponse
+	e.PostJSON(t, workerAPI+"/lease", map[string]any{"info": map[string]any{"protocol": 1, "heif": true}, "max": 4}, workerAuth(token)).Status(200).JSON(&resp)
+	require.Equal(t, 1, len(resp.Jobs))
+}

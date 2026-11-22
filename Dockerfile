@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	tesseract-ocr \
 	tesseract-ocr-eng \
 	ffmpeg \
+	libheif-examples \
 	ca-certificates \
 	libstdc++6 \
 	wget \

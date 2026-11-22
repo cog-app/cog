@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
@@ -19,6 +20,8 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/imaging"
+	"git.duckfam.us/jj-software/cog/internal/imgconv"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
 	"git.duckfam.us/jj-software/cog/plugin"
 
@@ -134,6 +137,9 @@ func isPSD(mimeType string) bool {
 
 // canConvertToPNG reports whether we have a tool to convert this MIME type.
 func canConvertToPNG(mimeType string) bool {
+	if imgconv.Handles(mimeType) {
+		return true
+	}
 	if isInkscapeFormat(mimeType) && InkscapeAvailable() {
 		return true
 	}
@@ -228,30 +234,9 @@ func (p *Plugin) ensurePreview(username, filePath string, size int, generated *b
 // generatePreview makes a size×size-bounded JPEG of an image, turned upright,
 // and stores it in the cache as name.
 func (p *Plugin) generatePreview(username, filePath string, meta *FileMeta, cache plugin.Storage, name string, size int) error {
-	var (
-		srcFile io.ReadCloser
-		err     error
-	)
-	if isNativeImage(meta.MimeType) {
-		srcFile, err = p.open(username, filePath)
-	} else {
-		var png string
-		if png, err = p.convertToPNG(username, cache, filePath, meta); err != nil {
-			return fmt.Errorf("convert to png: %w", err)
-		}
-		srcFile, err = cache.Open(png)
-	}
+	src, orientation, err := p.decodeSource(username, filePath, meta, cache)
 	if err != nil {
-		return fmt.Errorf("open source: %w", err)
-	}
-	data, err := io.ReadAll(srcFile)
-	if err = errors.Join(err, srcFile.Close()); err != nil {
-		return fmt.Errorf("read source: %w", err)
-	}
-
-	src, _, orientation, err := imaging.Decode(data)
-	if err != nil {
-		return fmt.Errorf("decode image: %w", err)
+		return err
 	}
 	b := src.Bounds()
 	ow, oh := imaging.OrientedSize(b.Dx(), b.Dy(), orientation)
@@ -269,6 +254,69 @@ func (p *Plugin) generatePreview(username, filePath string, meta *FileMeta, cach
 		return fmt.Errorf("write thumbnail: %w", err)
 	}
 	return nil
+}
+
+// decodeSource decodes the image a preview is made from. A JPEG Go's
+// decoder refuses, being cut short, is converted as a format Go cannot read
+// would be, keeping its own EXIF orientation.
+func (p *Plugin) decodeSource(username, filePath string, meta *FileMeta, cache plugin.Storage) (image.Image, int, error) {
+	if isNativeImage(meta.MimeType) {
+		data, err := p.readAll(username, filePath)
+		if err != nil {
+			return nil, 1, err
+		}
+		src, _, orientation, err := imaging.Decode(data)
+		if err == nil || errors.Is(err, safeimage.ErrTooLarge) || !imgconv.Handles(meta.MimeType) {
+			if err != nil {
+				return nil, 1, fmt.Errorf("decode image: %w", err)
+			}
+			return src, orientation, nil
+		}
+		p.log.Debug("decode failed, converting", "path", filePath, "err", err)
+		src, _, err = p.decodeConverted(username, filePath, meta, cache)
+		return src, imaging.Orientation(bytes.NewReader(data)), err
+	}
+	return p.decodeConverted(username, filePath, meta, cache)
+}
+
+func (p *Plugin) decodeConverted(username, filePath string, meta *FileMeta, cache plugin.Storage) (image.Image, int, error) {
+	png, err := p.convertToPNG(username, cache, filePath, meta)
+	if err != nil {
+		return nil, 1, fmt.Errorf("convert to png: %w", err)
+	}
+	data, err := p.readCache(cache, png)
+	if err != nil {
+		return nil, 1, err
+	}
+	src, _, orientation, err := imaging.Decode(data)
+	if err != nil {
+		return nil, 1, fmt.Errorf("decode converted image: %w", err)
+	}
+	return src, orientation, nil
+}
+
+func (p *Plugin) readAll(username, filePath string) ([]byte, error) {
+	rc, err := p.open(username, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open source: %w", err)
+	}
+	data, err := io.ReadAll(rc)
+	if err = errors.Join(err, rc.Close()); err != nil {
+		return nil, fmt.Errorf("read source: %w", err)
+	}
+	return data, nil
+}
+
+func (p *Plugin) readCache(cache plugin.Storage, name string) ([]byte, error) {
+	f, err := cache.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("open converted: %w", err)
+	}
+	data, err := io.ReadAll(f)
+	if err = errors.Join(err, f.Close()); err != nil {
+		return nil, fmt.Errorf("read converted: %w", err)
+	}
+	return data, nil
 }
 
 // localCopy copies a user's file into the cache under name, for a program
@@ -320,6 +368,11 @@ func (p *Plugin) convertToPNG(username string, cache plugin.Storage, filePath st
 	spec := sandbox.Spec{Read: []string{srcPath}, Write: []string{filepath.Dir(cachePath)}}
 	var cmd *exec.Cmd
 	switch {
+	case imgconv.Handles(mimeType):
+		if err := imgconv.ToPNG(ctx, srcPath, cachePath); err != nil {
+			return "", fmt.Errorf("convert %s: %w", mimeType, err)
+		}
+		return name, nil
 	case isInkscapeFormat(mimeType):
 		// Inkscape draws the files an SVG links to into the PNG the uploader
 		// gets back, so links outside the document are refused even where

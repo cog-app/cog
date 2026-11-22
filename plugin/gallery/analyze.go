@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/imaging"
+	"git.duckfam.us/jj-software/cog/internal/imgconv"
+	"git.duckfam.us/jj-software/cog/internal/safeimage"
 )
 
 // workSize is the long side of the copy of a photo the analysis stages look
@@ -59,6 +61,14 @@ func decodePhoto(path string) (*decodedPhoto, error) {
 		return nil, err
 	}
 	img, _, orientation, err := imaging.Decode(data)
+	if err != nil && !errors.Is(err, safeimage.ErrTooLarge) {
+		var convErr error
+		if img, orientation, convErr = imgconv.Decode(context.Background(), path); convErr == nil {
+			err = nil
+		} else if !errors.Is(convErr, imgconv.ErrUnsupported) {
+			err = errors.Join(err, convErr)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

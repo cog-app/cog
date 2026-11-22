@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/httperr"
+	"git.duckfam.us/jj-software/cog/internal/imgconv"
 )
 
 // workerProtocol changes whenever a worker and a server of different
@@ -42,6 +43,7 @@ type workerInfo struct {
 	Threads     int     `json:"threads"`
 	OCR         bool    `json:"ocr"`
 	ONNX        bool    `json:"onnx"`
+	HEIF        bool    `json:"heif"`
 	PerPhoto    float64 `json:"per_photo"` // seconds per photo, recently
 	LastFailure string  `json:"last_failure,omitempty"`
 }
@@ -520,7 +522,11 @@ func (p *Plugin) leaseJobs(sysDB *sql.DB, wk *worker, info workerInfo, wcfg work
 		if cfg.hasher != nil && cfg.algorithm != wcfg.Algorithm {
 			cfg.hasher = nil
 		}
-		rows, err := db.Query(`SELECT `+mediaCols+` FROM media m WHERE `+cfg.pendingClause()+` AND `+unleased+`
+		readable := ""
+		if !info.HEIF {
+			readable = ` AND m.mime_type NOT IN ('` + strings.Join(imgconv.HEIFTypes, "', '") + `')`
+		}
+		rows, err := db.Query(`SELECT `+mediaCols+` FROM media m WHERE `+cfg.pendingClause()+readable+` AND `+unleased+`
 			ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC, m.id DESC LIMIT ?`, p.ctx.Now().Unix(), limit-len(jobs))
 		if err != nil {
 			return nil, fmt.Errorf("list photos of %s to analyse: %w", username, err)
