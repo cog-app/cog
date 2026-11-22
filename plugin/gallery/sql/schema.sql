@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS media (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_media_file_id ON media(file_id);
 CREATE INDEX IF NOT EXISTS idx_media_file_path ON media(file_path);
 CREATE INDEX IF NOT EXISTS idx_media_date_taken ON media(date_taken DESC);
+-- Timeline order. Queries must spell the expression exactly this way to use
+-- it; the trailing columns let the month summary read only the index.
+CREATE INDEX IF NOT EXISTS idx_media_when ON media(COALESCE(date_taken, date_indexed) DESC, id DESC, date_taken, date_indexed);
 CREATE INDEX IF NOT EXISTS idx_media_place ON media(country, city);
 CREATE INDEX IF NOT EXISTS idx_media_camera ON media(camera_make, camera_model);
 CREATE INDEX IF NOT EXISTS idx_media_recognition ON media(recognition_state);

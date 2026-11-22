@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -198,6 +199,147 @@ func RecentMedia(db *sql.DB, limit int) ([]Media, error) {
 	}
 	defer rows.Close()
 	return scanMediaRows(rows)
+}
+
+// dayStart is the UTC midnight at or before t, a Unix time. Floor division,
+// so a photo from before 1970 lands on its own day.
+func dayStart(t int64) int64 {
+	d := t / 86400
+	if t%86400 < 0 {
+		d--
+	}
+	return d * 86400
+}
+
+// mediaWhen is when m sorts on the timeline: when it was taken, or when it
+// was found if it carries no date of its own.
+func mediaWhen(m *Media) int64 {
+	if m.DateTaken != nil {
+		return *m.DateTaken
+	}
+	return m.DateIndexed
+}
+
+// OlderMedia returns at least atLeast photos taken before `before`, newest
+// first, and then the rest of the day the last of them falls on, so a day is
+// never split between pages. next is the cursor for the page after — the
+// midnight that page ends on — or 0 when nothing older is left.
+//
+// The query has no LIMIT: rows stream from idx_media_when and reading stops
+// at the first photo past the last day, which is also how it learns whether
+// there is more.
+func OlderMedia(db *sql.DB, before int64, atLeast int) (media []Media, next int64, err error) {
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE COALESCE(m.date_taken, m.date_indexed) < ?
+		ORDER BY COALESCE(m.date_taken, m.date_indexed) DESC, m.id DESC`, before)
+	if err != nil {
+		return nil, 0, fmt.Errorf("older media: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("older media: %w", err)
+		}
+		if len(media) >= atLeast {
+			if boundary := dayStart(mediaWhen(&media[len(media)-1])); mediaWhen(m) < boundary {
+				return media, boundary, nil
+			}
+		}
+		media = append(media, *m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("older media: %w", err)
+	}
+	return media, 0, nil
+}
+
+// NewerMedia is OlderMedia the other way: at least atLeast photos taken at or
+// after `after`, finishing the last day, returned newest first. next is the
+// midnight the page ends on, to continue from, or 0 when nothing newer is
+// left.
+func NewerMedia(db *sql.DB, after int64, atLeast int) (media []Media, next int64, err error) {
+	rows, err := db.Query(`SELECT `+mediaCols+` FROM media m
+		WHERE COALESCE(m.date_taken, m.date_indexed) >= ?
+		ORDER BY COALESCE(m.date_taken, m.date_indexed), m.id`, after)
+	if err != nil {
+		return nil, 0, fmt.Errorf("newer media: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("newer media: %w", err)
+		}
+		if len(media) >= atLeast {
+			if boundary := dayStart(mediaWhen(&media[len(media)-1])) + 86400; mediaWhen(m) >= boundary {
+				next = boundary
+				break
+			}
+		}
+		media = append(media, *m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("newer media: %w", err)
+	}
+	slices.Reverse(media)
+	return media, next, nil
+}
+
+// HasMediaSince reports whether any photo was taken at or after t.
+func HasMediaSince(db *sql.DB, t int64) (bool, error) {
+	var ok bool
+	err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM media
+		WHERE COALESCE(date_taken, date_indexed) >= ?)`, t).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("media since: %w", err)
+	}
+	return ok, nil
+}
+
+// TimelineMonth is one calendar month (UTC) of the timeline and how many
+// photos it holds.
+type TimelineMonth struct {
+	Year  int
+	Month time.Month
+	Count int
+}
+
+// Key is the month as "2006-01", how the timeline's day sections name it.
+func (m TimelineMonth) Key() string {
+	return fmt.Sprintf("%04d-%02d", m.Year, int(m.Month))
+}
+
+// End is the Unix time the month ends at, exclusive: the cursor that starts
+// the timeline at this month.
+func (m TimelineMonth) End() int64 {
+	return time.Date(m.Year, m.Month+1, 1, 0, 0, 0, 0, time.UTC).Unix()
+}
+
+// TimelineMonths returns every month that has photos, newest first.
+func TimelineMonths(db *sql.DB) ([]TimelineMonth, error) {
+	rows, err := db.Query(`SELECT CAST(strftime('%Y', w, 'unixepoch') AS INTEGER),
+			CAST(strftime('%m', w, 'unixepoch') AS INTEGER), COUNT(*)
+		FROM (SELECT COALESCE(date_taken, date_indexed) AS w FROM media)
+		GROUP BY 1, 2 ORDER BY 1 DESC, 2 DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("timeline months: %w", err)
+	}
+	defer rows.Close()
+	var months []TimelineMonth
+	for rows.Next() {
+		var m TimelineMonth
+		var month int
+		if err := rows.Scan(&m.Year, &month, &m.Count); err != nil {
+			return nil, fmt.Errorf("timeline months: %w", err)
+		}
+		m.Month = time.Month(month)
+		months = append(months, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("timeline months: %w", err)
+	}
+	return months, nil
 }
 
 // TimelineMedia returns media for a specific day.
@@ -891,6 +1033,37 @@ func GetPerson(db *sql.DB, id int64) (*Person, error) {
 	return &p, err
 }
 
+// peopleByIDs returns the people with the given IDs, in no particular order,
+// with face counts and best face ID.
+func peopleByIDs(db *sql.DB, ids []int64) ([]Person, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.Query(`SELECT p.id, p.name, p.representative_face_id, p.visible, p.created_at, p.contact_uid,
+		(SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id) AS face_count,
+		(SELECT f.id FROM faces f JOIN media m ON m.id = f.media_id
+			WHERE f.person_id = p.id ORDER BY f.w * m.width * f.h * m.height DESC LIMIT 1) AS best_face_id
+		FROM people p WHERE p.id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("people by id: %w", err)
+	}
+	defer rows.Close()
+	var people []Person
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ID, &p.Name, &p.RepresentativeFaceID, &p.Visible, &p.CreatedAt,
+			&p.ContactUID, &p.FaceCount, &p.BestFaceID); err != nil {
+			return nil, err
+		}
+		people = append(people, p)
+	}
+	return people, rows.Err()
+}
+
 // MediaByPerson returns media items containing a specific person.
 func MediaByPerson(db *sql.DB, personID int64, limit, offset int) ([]Media, error) {
 	rows, err := db.Query(`SELECT DISTINCT `+mediaCols+` FROM media m
@@ -1161,6 +1334,22 @@ func stringSetting[T ~string](key string, defaultValue T) setting[T] {
 
 // Enum types.
 
+// ConflictPolicy says what a rename does when a file's new name is taken.
+type ConflictPolicy string
+
+const (
+	ConflictNumber ConflictPolicy = "number" // add _1, _2, … before the extension
+	ConflictSkip   ConflictPolicy = "skip"   // leave the file where it is
+)
+
+// ParseConflictPolicy is the policy named s, or ConflictNumber.
+func ParseConflictPolicy(s string) ConflictPolicy {
+	if p := ConflictPolicy(s); p == ConflictSkip {
+		return p
+	}
+	return ConflictNumber
+}
+
 // RecognitionBackendType identifies which recognition backend to use.
 type RecognitionBackendType string
 
@@ -1234,9 +1423,11 @@ var (
 	SettingScanLastRun   = intSetting("scan_last_run", 0)
 	SettingScanLastError = stringSetting[string]("scan_last_error", "")
 
-	// File rename
-	SettingRenamePattern = stringSetting[string]("rename_pattern",
-		"{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}")
+	// File rename: the pattern and conflict policy last applied (per-user).
+	// An unset pattern means DefaultRenamePattern, which depends on the
+	// scan folders.
+	SettingRenamePattern   = stringSetting[string]("rename_pattern", "")
+	SettingRenameConflicts = stringSetting("rename_conflicts", ConflictNumber)
 
 	// Scan folders (per-user)
 	SettingScanFolders = stringSetting[string]("scan_folders", "Photos/")

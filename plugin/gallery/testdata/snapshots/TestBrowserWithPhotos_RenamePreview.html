@@ -5,7 +5,7 @@
     <title>
       Rename Preview — Cog
     </title>
-    <link href="/static/style.css?v=840fe19b7805" rel="stylesheet" />
+    <link href="/static/style.css?v=3c100f3b95e3" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -288,14 +288,31 @@
             </div>
             <div class="page-actions" />
           </header>
-          <form action="/apps/gallery/rename/preview" class="form-inline mb-2" method="get">
-            <label class="sr-only" for="gallery-rename-pattern">
-              Pattern
-            </label>
-            <input aria-invalid="false" class="form-control mono" id="gallery-rename-pattern" name="pattern" required="" type="text" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
-            <button class="btn" type="submit">
-              Preview
-            </button>
+          <form action="/apps/gallery/rename/preview" class="card" method="get">
+            <div class="form-group">
+              <label for="gallery-rename-pattern">
+                Pattern
+              </label>
+              <input aria-invalid="false" class="form-control mono" id="gallery-rename-pattern" name="pattern" required="" type="text" value="Photos/{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+            </div>
+            <div class="form-group">
+              <label for="gallery-rename-conflicts">
+                When the new name is taken
+              </label>
+              <select class="form-control" id="gallery-rename-conflicts" name="conflicts">
+                <option selected="" value="number">
+                  Add a number (_1, _2, …)
+                </option>
+                <option value="skip">
+                  Leave the file where it is
+                </option>
+              </select>
+            </div>
+            <div class="form-actions mt-0">
+              <button class="btn" type="submit">
+                Preview
+              </button>
+            </div>
           </form>
           <div class="card">
             <h2 class="card-title">
@@ -318,7 +335,7 @@
                     /Photos/IMG_0007 (copy).png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/06/2025-06-27_153000.png
+                    /Photos/2025/06/2025-06-27_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -326,7 +343,7 @@
                     /Photos/IMG_0007.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/06/2025-06-28_153000.png
+                    /Photos/2025/06/2025-06-28_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -334,7 +351,7 @@
                     /Photos/Beach day & sunset #2 - the long panoramic one.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/06/2025-06-29_153000.png
+                    /Photos/2025/06/2025-06-29_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -342,7 +359,7 @@
                     /Photos/IMG_0005.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/06/2025-06-30_153000.png
+                    /Photos/2025/06/2025-06-30_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -350,7 +367,7 @@
                     /Photos/IMG_0004.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/07/2025-07-01_153000.png
+                    /Photos/2025/07/2025-07-01_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -358,7 +375,7 @@
                     /Photos/IMG_0003.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/07/2025-07-02_153000.png
+                    /Photos/2025/07/2025-07-02_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -366,7 +383,7 @@
                     /Photos/IMG_0002.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/07/2025-07-03_153000.png
+                    /Photos/2025/07/2025-07-03_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -374,7 +391,7 @@
                     /Photos/IMG_0001.png
                   </td>
                   <td class="mono" data-label="After">
-                    2025/07/2025-07-04_153000.png
+                    /Photos/2025/07/2025-07-04_153000.png
                   </td>
                 </tr>
                 <tr>
@@ -382,7 +399,7 @@
                     /Photos/VID_0001.mp4
                   </td>
                   <td class="mono" data-label="After">
-                    2025/07/2025-07-04_153000.mp4
+                    /Photos/2025/07/2025-07-04_153000.mp4
                   </td>
                 </tr>
               </tbody>
@@ -390,7 +407,8 @@
           </div>
           <form action="/apps/gallery/rename/apply" class="form-actions" method="post">
             <input name="csrf_token" type="hidden" value="«hex»" />
-            <input name="pattern" type="hidden" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+            <input name="pattern" type="hidden" value="Photos/{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+            <input name="conflicts" type="hidden" value="number" />
             <button class="btn btn-primary" type="submit">
               Rename 9 files
             </button>

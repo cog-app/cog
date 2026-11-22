@@ -229,6 +229,9 @@ func (t *volumeTree) Mkdir(p string) error            { return t.readOnly(p) }
 func (t *volumeTree) Delete(p string) error           { return t.readOnly(p) }
 func (t *volumeTree) Rename(p, _ string) error        { return t.readOnly(p) }
 
+// RenameNoReplace is refused like Rename, rather than as unsupported.
+func (t *volumeTree) RenameNoReplace(p, _ string) error { return t.readOnly(p) }
+
 // VolumeTarget is the volume and the path in it that p, a path of the tree,
 // names, for a mount of it.
 func (s *Shared) VolumeTarget(u *user.User, p string) (*volume.Volume, string, error) {

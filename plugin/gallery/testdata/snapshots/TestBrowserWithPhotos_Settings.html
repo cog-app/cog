@@ -5,7 +5,7 @@
     <title>
       Gallery Settings — Cog
     </title>
-    <link href="/static/style.css?v=840fe19b7805" rel="stylesheet" />
+    <link href="/static/style.css?v=3c100f3b95e3" rel="stylesheet" />
     <link href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwNzBmMyIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiICB2aWV3Ym94PSIwIDAgMjQgMjQiPjxyZWN0IHg9IjMiIHk9IjMiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgcng9IjIiIHJ5PSIyIj48L3JlY3Q+PGNpcmNsZSBjeD0iOC41IiBjeT0iOC41IiByPSIxLjUiPjwvY2lyY2xlPjxwb2x5bGluZSBwb2ludHM9IjIxIDE1IDE2IDEwIDUgMjEiPjwvcG9seWxpbmU+PC9zdmc+" rel="icon" type="image/svg+xml" />
     <style>
       .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
@@ -338,9 +338,9 @@
                 <label for="gallery-rename-pattern">
                   Pattern
                 </label>
-                <input aria-describedby="gallery-rename-help" class="form-control mono" id="gallery-rename-pattern" name="pattern" placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}" required="" type="text" value="{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
+                <input aria-describedby="gallery-rename-help" class="form-control mono" id="gallery-rename-pattern" name="pattern" placeholder="Photos/{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" required="" type="text" value="Photos/{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}" />
                 <p class="form-help" id="gallery-rename-help">
-                  A Go template. Available fields:
+                  A Go template, from the top of your files. Keep it inside a scan folder, or the gallery loses the photos it moves. Available fields:
                 </p>
                 <ul class="chip-group gallery-fields">
                   <li>
@@ -404,6 +404,19 @@
                     </code>
                   </li>
                 </ul>
+              </div>
+              <div class="form-group">
+                <label for="gallery-rename-conflicts">
+                  When the new name is taken
+                </label>
+                <select class="form-control" id="gallery-rename-conflicts" name="conflicts">
+                  <option selected="" value="number">
+                    Add a number (_1, _2, …)
+                  </option>
+                  <option value="skip">
+                    Leave the file where it is
+                  </option>
+                </select>
               </div>
               <div class="form-actions mt-0">
                 <button class="btn btn-primary" data-testid="rename-preview" type="submit">

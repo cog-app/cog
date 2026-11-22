@@ -199,6 +199,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterPage("settings", http.HandlerFunc(pages.Settings))
 
 	ctx.RegisterAPI("api/timeline", http.HandlerFunc(pages.TimelineAPI))
+	ctx.RegisterAPI("api/timeline/page", http.HandlerFunc(pages.TimelinePage))
 	ctx.RegisterAPI("api/media/{id}", http.HandlerFunc(pages.MediaDetailAPI))
 	ctx.RegisterAPI("api/media/{id}/thumbnail", http.HandlerFunc(pages.MediaThumbnail))
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
@@ -207,6 +208,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
+	ctx.RegisterAPI("api/people/{id}/suggestions", http.HandlerFunc(pages.PersonSuggestionsAPI))
 	// The scan worker's profiles hold what it was working on — other users'
 	// photos and paths — so only an admin may read them.
 	if priv, ok := ctx.(plugin.PrivilegedContext); ok {

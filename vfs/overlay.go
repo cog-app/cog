@@ -260,6 +260,16 @@ func (o *OverlayFS) Delete(p string) error {
 }
 
 func (o *OverlayFS) Rename(oldPath, newPath string) error {
+	return o.rename(oldPath, newPath, FS.Rename)
+}
+
+// RenameNoReplace is Rename that leaves a file already at newPath alone.
+func (o *OverlayFS) RenameNoReplace(oldPath, newPath string) error {
+	return o.rename(oldPath, newPath, RenameNoReplace)
+}
+
+// rename is Rename or RenameNoReplace, moving with move.
+func (o *OverlayFS) rename(oldPath, newPath string, move func(FS, string, string) error) error {
 	oldPath = o.clean(oldPath)
 	newPath = o.clean(newPath)
 	if _, ok := o.files[oldPath]; ok {
@@ -274,14 +284,14 @@ func (o *OverlayFS) Rename(oldPath, newPath string) error {
 	// Both paths in the same mount?
 	if mfs, subOld, ok := o.resolveMount(oldPath); ok {
 		if _, subNew, ok2 := o.resolveMount(newPath); ok2 {
-			return mfs.Rename(subOld, subNew)
+			return move(mfs, subOld, subNew)
 		}
 		return fmt.Errorf("cannot rename across mount boundaries")
 	}
 	if o.base == nil {
 		return ErrNotFound
 	}
-	return o.base.Rename(oldPath, newPath)
+	return move(o.base, oldPath, newPath)
 }
 
 // Replace is Rename, passing the update through to a mount that keeps a

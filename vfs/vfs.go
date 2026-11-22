@@ -5,6 +5,7 @@ package vfs
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -99,6 +100,25 @@ func Replace(fsys FS, oldPath, newPath string) error {
 		return r.Replace(oldPath, newPath)
 	}
 	return fsys.Rename(oldPath, newPath)
+}
+
+// NoReplacer is implemented by file systems that can rename without
+// replacing what is at the new path, deciding that in the same step as the
+// move, so a file that appears there a moment before is not deleted.
+// RenameNoReplace fails with an error matching fs.ErrExist when newPath
+// is taken.
+type NoReplacer interface {
+	RenameNoReplace(oldPath, newPath string) error
+}
+
+// RenameNoReplace moves oldPath to newPath unless something is already
+// there. A file system that cannot decide that as it moves fails with
+// errors.ErrUnsupported rather than check first and race.
+func RenameNoReplace(fsys FS, oldPath, newPath string) error {
+	if r, ok := fsys.(NoReplacer); ok {
+		return r.RenameNoReplace(oldPath, newPath)
+	}
+	return fmt.Errorf("rename %s without replacing: %w", oldPath, errors.ErrUnsupported)
 }
 
 // DirReader provides os-level fs.FileInfo/fs.DirEntry (SFTP, shell stat/readdir).

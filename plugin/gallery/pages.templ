@@ -402,10 +402,10 @@ templ galleryScripts() {
 }
 
 // --- Timeline ---
-templ timelinePage(activePath string, days []photoDay) {
+templ timelinePage(activePath string, v timelineView) {
 	@galleryLayout(activePath) {
 		@ui.PageHeader("Timeline", nil)
-		if len(days) == 0 {
+		if len(v.Days) == 0 && v.Newer == 0 {
 			<div class="card">
 				@ui.EmptyState("No photos yet", "Photos and videos you upload to Files show up here once the gallery has scanned them.") {
 					<a class="btn btn-primary" href="/apps/files/">Upload photos</a>
@@ -413,14 +413,197 @@ templ timelinePage(activePath string, days []photoDay) {
 				}
 			</div>
 		} else {
-			for _, d := range days {
-				<section class="gallery-day">
-					<h2 class="gallery-day-title">{ d.Label }</h2>
-					@photoGrid(d.Media)
-				</section>
-			}
+			<div class="gallery-timeline" data-timeline>
+				if v.Newer != 0 {
+					@timelineMore("after", v.Newer)
+				}
+				@timelineDays(v.Days)
+				if v.Older != 0 {
+					@timelineMore("before", v.Older)
+				}
+			</div>
+			@timelineScrubber(scrubMarks(v.Months))
+			@timelineScript()
 		}
 	}
+}
+
+// timelineOlderPage is a run of days loaded below the timeline, ending with
+// the marker for the run after it.
+templ timelineOlderPage(days []photoDay, older int64) {
+	@timelineDays(days)
+	if older != 0 {
+		@timelineMore("before", older)
+	}
+}
+
+// timelineNewerPage is a run of days loaded above the timeline, starting
+// with the marker for the run before it.
+templ timelineNewerPage(newer int64, days []photoDay) {
+	if newer != 0 {
+		@timelineMore("after", newer)
+	}
+	@timelineDays(days)
+}
+
+templ timelineDays(days []photoDay) {
+	for _, d := range days {
+		<section class="gallery-day" data-month={ d.Month }>
+			<h2 class="gallery-day-title">{ d.Label }</h2>
+			@photoGrid(d.Media)
+		</section>
+	}
+}
+
+// timelineMore marks where more of the timeline loads, when it comes near
+// the screen. dir is the query parameter: "before" loads older photos,
+// "after" newer ones.
+templ timelineMore(dir string, cursor int64) {
+	<div class="gallery-timeline-more" data-timeline-more={ dir } data-src={ fmt.Sprintf("/apps/gallery/api/timeline/page?%s=%d", dir, cursor) } role="status">
+		<span class="spinner-sm"></span>
+		<span class="sr-only">Loading photos…</span>
+	</div>
+}
+
+// timelineScrubber is the rail at the side of the timeline: a tick for every
+// month, spaced by how many photos it holds, with the month being looked at
+// labelled. A month links to the timeline starting there.
+templ timelineScrubber(marks []scrubMark) {
+	<nav class="gallery-scrubber" aria-label="Months" data-scrubber>
+		for _, m := range marks {
+			if m.Year != "" {
+				<span class="gallery-scrubber-year" style={ m.yearStyle() } aria-hidden="true">{ m.Year }</span>
+			}
+			<a
+				class="gallery-scrubber-month"
+				href={ templ.SafeURL(m.Href) }
+				style={ m.style() }
+				data-month={ m.Key }
+				aria-label={ m.Label }
+			></a>
+		}
+		<span class="gallery-scrubber-current" data-scrubber-current hidden></span>
+	</nav>
+}
+
+templ timelineScript() {
+	<script type="text/javascript">
+		(function () {
+			var timeline = document.querySelector("[data-timeline]");
+			if (!timeline) return;
+
+			// --- Infinite scroll ------------------------------------------
+			// A marker loads its run of days once it is within a screen or
+			// two of the viewport. Days loaded above keep the photos being
+			// looked at where they are: the page scrolls by what was added
+			// (the timeline opts out of the browser's scroll anchoring, so
+			// the two do not both apply).
+			var observer = new IntersectionObserver(function (entries) {
+				entries.forEach(function (e) {
+					if (e.isIntersecting) load(e.target);
+				});
+			}, { rootMargin: "1500px 0px" });
+			function watch(root) {
+				if (root.matches && root.matches("[data-timeline-more]")) observer.observe(root);
+				root.querySelectorAll("[data-timeline-more]").forEach(function (el) { observer.observe(el); });
+			}
+			function load(el) {
+				if (el.dataset.loading) return;
+				el.dataset.loading = "1";
+				observer.unobserve(el);
+				fetch(el.dataset.src, { credentials: "same-origin" }).then(function (res) {
+					if (!res.ok) throw new Error(el.dataset.src + ": " + res.status + " " + res.statusText);
+					return res.text();
+				}).then(function (html) {
+					var tpl = document.createElement("template");
+					tpl.innerHTML = html;
+					var nodes = Array.prototype.slice.call(tpl.content.children);
+					var height = document.documentElement.scrollHeight;
+					el.replaceWith(tpl.content);
+					if (el.dataset.timelineMore === "after") {
+						window.scrollBy(0, document.documentElement.scrollHeight - height);
+					}
+					nodes.forEach(watch);
+					sections = null;
+					update();
+				}).catch(function (err) {
+					console.error("gallery timeline:", err);
+					delete el.dataset.loading;
+					el.textContent = "Couldn’t load more photos. ";
+					var retry = document.createElement("button");
+					retry.type = "button";
+					retry.className = "btn btn-sm";
+					retry.textContent = "Try again";
+					retry.addEventListener("click", function () {
+						el.innerHTML = '<span class="spinner-sm"></span>';
+						load(el);
+					});
+					el.appendChild(retry);
+				});
+			}
+			// A page that starts partway down the timeline (a month picked on
+			// the scrubber) opens with that month at the top, so the days
+			// that load above it stay out of view.
+			var first = timeline.querySelector(".gallery-day");
+			if (first && timeline.querySelector('[data-timeline-more="after"]')) {
+				window.scrollTo(0, first.getBoundingClientRect().top + window.scrollY);
+			}
+			watch(timeline);
+
+			// --- Scrubber --------------------------------------------------
+			// The month of the day at the top of the screen is the one
+			// labelled. Days are in order, so a binary search finds it.
+			var scrubber = document.querySelector("[data-scrubber]");
+			var current = scrubber.querySelector("[data-scrubber-current]");
+			var sections = null, active = null, ticking = false;
+			function update() {
+				ticking = false;
+				sections = sections || timeline.querySelectorAll(".gallery-day");
+				var line = 80, lo = 0, hi = sections.length - 1, found = 0;
+				while (lo <= hi) {
+					var mid = (lo + hi) >> 1;
+					if (sections[mid].getBoundingClientRect().top <= line) {
+						found = mid;
+						lo = mid + 1;
+					} else {
+						hi = mid - 1;
+					}
+				}
+				var sec = sections[found];
+				var tick = sec ? scrubber.querySelector('[data-month="' + sec.dataset.month + '"]') : null;
+				if (tick === active) return;
+				if (active) active.classList.remove("is-active");
+				active = tick;
+				current.hidden = !tick;
+				if (!tick) return;
+				tick.classList.add("is-active");
+				current.textContent = tick.getAttribute("aria-label");
+				current.style.top = tick.style.top;
+			}
+			// Phones show the label only while scrolling (see the CSS).
+			var idle = 0;
+			window.addEventListener("scroll", function () {
+				scrubber.classList.add("is-scrolling");
+				clearTimeout(idle);
+				idle = setTimeout(function () { scrubber.classList.remove("is-scrolling"); }, 1500);
+				if (ticking) return;
+				ticking = true;
+				requestAnimationFrame(update);
+			}, { passive: true });
+			update();
+
+			// A month already on the page scrolls into view; any other
+			// follows its link to the timeline starting there.
+			scrubber.addEventListener("click", function (e) {
+				var tick = e.target.closest(".gallery-scrubber-month");
+				if (!tick) return;
+				var sec = timeline.querySelector('.gallery-day[data-month="' + tick.dataset.month + '"]');
+				if (!sec) return;
+				e.preventDefault();
+				window.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY });
+			});
+		})();
+	</script>
 }
 
 // --- Albums ---
@@ -1097,12 +1280,53 @@ templ personNameForm(person *Person, csrfToken string) {
 				</div>
 				<p class="form-help">Pick someone from the list to merge their photos with this person's, or a contact to link them.</p>
 			</div>
+			if person.Name == "" {
+				<div
+					hx-get={ fmt.Sprintf("/apps/gallery/api/people/%d/suggestions", person.ID) }
+					hx-trigger="click once from:[data-modal-open=gallery-name-person]"
+					hx-swap="innerHTML"
+				></div>
+			}
 		</div>
 		<div class="modal-footer">
 			<button type="button" class="btn" data-modal-close>Cancel</button>
 			<button type="submit" class="btn btn-primary">Save</button>
 		</div>
 	</form>
+	if person.Name == "" {
+		// The suggestions sit inside the name form but belong to this one.
+		// Enter in a text field submits through its form's first submit
+		// button, and in the name form that must stay Save, not a merge.
+		<form method="post" id="gallery-merge-person" hidden>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="source_id" value={ strconv.FormatInt(person.ID, 10) }/>
+		</form>
+	}
+}
+
+// personSuggestions offers the named people who look like the person being
+// named. Each submits the merge form to merge them into that person, so a
+// likely match takes one click.
+templ personSuggestions(people []Person) {
+	if len(people) > 0 {
+		<p class="gallery-suggestions-label">Looks like</p>
+		<div class="gallery-suggestions-list">
+			for _, p := range people {
+				<button
+					type="submit"
+					form="gallery-merge-person"
+					class="gallery-suggestion"
+					formaction={ templ.SafeURL(fmt.Sprintf("/apps/gallery/people/%d/merge", p.ID)) }
+					title={ "Merge with " + p.Name }
+				>
+					if p.BestFaceID != nil {
+						<img src={ faceThumbURL(*p.BestFaceID) } alt=""/>
+					}
+					<span class="gallery-suggestion-name">{ p.Name }</span>
+				</button>
+			}
+		</div>
+	}
 }
 
 templ personFaceGrid(person *Person, faces []FaceWithMedia, csrfToken string) {
@@ -1338,9 +1562,6 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 }
 
 // --- Settings (per user) ---
-
-const defaultRenamePattern = "{{.Year}}/{{.Month}}/{{.Year}}-{{.Month}}-{{.Day}}_{{.Hour}}{{.Minute}}{{.Second}}{{.Ext}}"
-
 templ settingsPage(db *sql.DB, total int, csrfToken string) {
 	@galleryLayout("/apps/gallery/settings") {
 		@ui.PageHeader("Gallery Settings", nil)
@@ -1388,18 +1609,19 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 						id="gallery-rename-pattern"
 						name="pattern"
 						class="form-control mono"
-						value={ GetSetting(db, "rename_pattern", defaultRenamePattern) }
-						placeholder="{{.Year}}/{{.Month}}-{{.Day}}/{{.Original}}{{.Ext}}"
+						value={ RenamePattern(db) }
+						placeholder={ DefaultRenamePattern(db) }
 						required
 						aria-describedby="gallery-rename-help"
 					/>
-					<p class="form-help" id="gallery-rename-help">A Go template. Available fields:</p>
+					<p class="form-help" id="gallery-rename-help">A Go template, from the top of your files. Keep it inside a scan folder, or the gallery loses the photos it moves. Available fields:</p>
 					<ul class="chip-group gallery-fields">
 						for _, f := range []string{"Year", "Month", "Day", "Hour", "Minute", "Second", "Camera", "Lens", "Original", "Ext", "Place", "Country"} {
 							<li><code>{ "{{." + f + "}}" }</code></li>
 						}
 					</ul>
 				</div>
+				@renameConflictsField(SettingRenameConflicts.MustGet(db))
 				<div class="form-actions mt-0">
 					<button type="submit" class="btn btn-primary" data-testid="rename-preview">Preview rename</button>
 				</div>
@@ -1812,46 +2034,94 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgr
 }
 
 // --- Rename Preview Page ---
-templ renamePreviewPage(pattern string, previews []RenamePreview, patternErr string, csrfToken string) {
+// renameConflictsField chooses what a rename does when a new name is taken.
+templ renameConflictsField(policy ConflictPolicy) {
+	<div class="form-group">
+		<label for="gallery-rename-conflicts">When the new name is taken</label>
+		<select id="gallery-rename-conflicts" name="conflicts" class="form-control">
+			<option value={ string(ConflictNumber) } selected?={ policy == ConflictNumber }>Add a number (_1, _2, …)</option>
+			<option value={ string(ConflictSkip) } selected?={ policy == ConflictSkip }>Leave the file where it is</option>
+		</select>
+	</div>
+}
+
+templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, patternErr string, csrfToken string) {
 	@galleryLayout("/apps/gallery/settings") {
 		@ui.PageHeader("Rename preview", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
-		<form method="get" action="/apps/gallery/rename/preview" class="form-inline mb-2">
-			<label class="sr-only" for="gallery-rename-pattern">Pattern</label>
-			<input type="text" id="gallery-rename-pattern" name="pattern" class="form-control mono" value={ pattern } required aria-invalid={ strconv.FormatBool(patternErr != "") }/>
-			<button type="submit" class="btn">Preview</button>
+		<form method="get" action="/apps/gallery/rename/preview" class="card">
+			<div class="form-group">
+				<label for="gallery-rename-pattern">Pattern</label>
+				<input type="text" id="gallery-rename-pattern" name="pattern" class="form-control mono" value={ pattern } required aria-invalid={ strconv.FormatBool(patternErr != "") }/>
+			</div>
+			@renameConflictsField(policy)
+			<div class="form-actions mt-0">
+				<button type="submit" class="btn">Preview</button>
+			</div>
 		</form>
 		if patternErr != "" {
 			@ui.Alert("error", patternErr)
-		} else if len(previews) == 0 {
-			<div class="card">
-				@ui.EmptyState("Nothing to rename", "Every file already has the name this pattern gives it.")
-			</div>
 		} else {
-			<div class="card">
-				<h2 class="card-title">{ plural(len(previews), "file", "files") + " will be renamed" }</h2>
-				<table class="table table-stack gallery-rename-table">
-					<thead>
-						<tr>
-							<th>Now</th>
-							<th>After</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, p := range previews {
+			if plan.Unscanned > 0 {
+				@ui.Alert("info", unscannedNote(plan.Unscanned))
+			}
+			if len(plan.Renames) == 0 {
+				<div class="card">
+					@ui.EmptyState("Nothing to rename", "Every file already has the name this pattern gives it, or is listed below as left alone.")
+				</div>
+			} else {
+				<div class="card">
+					<h2 class="card-title">{ plural(len(plan.Renames), "file", "files") + " will be renamed" }</h2>
+					<table class="table table-stack gallery-rename-table">
+						<thead>
 							<tr>
-								<td data-label="Now" class="mono">{ p.OldPath }</td>
-								<td data-label="After" class="mono">{ p.NewPath }</td>
+								<th>Now</th>
+								<th>After</th>
 							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
-			<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
-				<input type="hidden" name="csrf_token" value={ csrfToken }/>
-				<input type="hidden" name="pattern" value={ pattern }/>
-				<button type="submit" class="btn btn-primary">{ "Rename " + plural(len(previews), "file", "files") }</button>
-				<a href="/apps/gallery/settings" class="btn">Cancel</a>
-			</form>
+						</thead>
+						<tbody>
+							for _, p := range plan.Renames {
+								<tr>
+									<td data-label="Now" class="mono">{ p.OldPath }</td>
+									<td data-label="After" class="mono">
+										{ p.NewPath }
+										if p.Numbered {
+											<span class="badge badge-outline" title="Another file has the name the pattern gives">numbered</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
+					<input type="hidden" name="csrf_token" value={ csrfToken }/>
+					<input type="hidden" name="pattern" value={ pattern }/>
+					<input type="hidden" name="conflicts" value={ string(policy) }/>
+					<button type="submit" class="btn btn-primary">{ "Rename " + plural(len(plan.Renames), "file", "files") }</button>
+					<a href="/apps/gallery/settings" class="btn">Cancel</a>
+				</form>
+			}
+			if len(plan.Skipped) > 0 {
+				<div class="card">
+					<h2 class="card-title">{ plural(len(plan.Skipped), "file", "files") + " left alone" }</h2>
+					<table class="table table-stack gallery-rename-table">
+						<thead>
+							<tr>
+								<th>File</th>
+								<th>Why</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, s := range plan.Skipped {
+								<tr>
+									<td data-label="File" class="mono">{ s.Path }</td>
+									<td data-label="Why">{ s.Reason }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
 		}
 	}
 }

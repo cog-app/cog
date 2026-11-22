@@ -696,7 +696,21 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 }
 
 // Rename moves/renames a file or directory, preserving its stable ID.
+// Whatever is at newPath is replaced.
 func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
+	return p.rename(username, oldPath, newPath, vfs.FS.Rename)
+}
+
+// RenameNoReplace is Rename that fails with an error matching fs.ErrExist
+// when something is at newPath, deciding so as the file moves: a file
+// written there a moment before, even one this plugin has not recorded
+// yet, is left alone.
+func (p *Plugin) RenameNoReplace(username, oldPath, newPath string) (*FileMeta, error) {
+	return p.rename(username, oldPath, newPath, vfs.RenameNoReplace)
+}
+
+// rename is Rename or RenameNoReplace, moving on disk with move.
+func (p *Plugin) rename(username, oldPath, newPath string, move func(vfs.FS, string, string) error) (*FileMeta, error) {
 	oldPath = normalizePath(oldPath)
 	newPath = normalizePath(newPath)
 
@@ -713,7 +727,7 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 			return meta, err
 		}
 	}
-	if meta, ok, err := p.renameShared(db, username, oldPath, newPath); ok || err != nil {
+	if meta, ok, err := p.renameShared(db, username, oldPath, newPath, move); ok || err != nil {
 		return meta, err
 	}
 
@@ -725,7 +739,7 @@ func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {
 	if err := fs.Mkdir(newParentDir); err != nil {
 		return nil, fmt.Errorf("mkdir new parent: %w", err)
 	}
-	if err := fs.Rename(oldPath, newPath); err != nil {
+	if err := move(fs, oldPath, newPath); err != nil {
 		return nil, fmt.Errorf("rename: %w", err)
 	}
 	if u != nil {
@@ -812,7 +826,7 @@ func (p *Plugin) renameInCollection(db *sql.DB, username, oldPath, newPath strin
 // renameShared is Rename within a folder shared with username (true): the
 // owner's file is moved, and username's rows follow it. Moving in or out of
 // one is moving between mounts, which a rename cannot.
-func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string) (*FileMeta, bool, error) {
+func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string, move func(vfs.FS, string, string) error) (*FileMeta, bool, error) {
 	from, fromShared, err := p.writable(username, oldPath)
 	if err != nil {
 		return nil, true, err
@@ -834,7 +848,7 @@ func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string) (*F
 	if from.mountRoot || to.mountRoot {
 		return nil, true, errMountPoint
 	}
-	if _, err := p.Rename(from.owner, from.path, to.path); err != nil {
+	if _, err := p.rename(from.owner, from.path, to.path, move); err != nil {
 		return nil, true, err
 	}
 	moved, err := p.moveRows(db, oldPath, newPath)

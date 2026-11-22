@@ -35,6 +35,13 @@ type Resolver struct {
 
 	mu    sync.Mutex
 	cache map[string]cachedFS // by username
+	// gen counts invalidations. A tree is built without holding mu, so a
+	// build that started before an invalidation would otherwise store the
+	// tree from before it, and serve it until cacheTTL.
+	gen uint64
+	// built, when set, runs between building a tree and caching it. Tests
+	// use it to land a change there.
+	built func()
 }
 
 type cachedFS struct {
@@ -70,6 +77,7 @@ func (r *Resolver) InvalidateAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	clear(r.cache)
+	r.gen++
 }
 
 // Invalidate forgets username's cached VFS.
@@ -77,6 +85,7 @@ func (r *Resolver) Invalidate(username string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.cache, username)
+	r.gen++
 }
 
 // root returns the user's root mount. An account made since the server
@@ -156,6 +165,7 @@ func (r *Resolver) userFS(username string, depth int) (vfs.FS, error) {
 	now := time.Now()
 	r.mu.Lock()
 	c, ok := r.cache[username]
+	gen := r.gen
 	r.mu.Unlock()
 	if ok && now.Before(c.expires) {
 		return c.fs, nil
@@ -164,9 +174,16 @@ func (r *Resolver) userFS(username string, depth int) (vfs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.built != nil {
+		r.built()
+	}
 	if depth == 0 {
 		r.mu.Lock()
-		r.cache[username] = cachedFS{fs: fs, expires: now.Add(cacheTTL)}
+		// Something changed while the tree was built: it may predate the
+		// change, so it is used this once and not kept.
+		if r.gen == gen {
+			r.cache[username] = cachedFS{fs: fs, expires: now.Add(cacheTTL)}
+		}
 		r.mu.Unlock()
 	}
 	return fs, nil

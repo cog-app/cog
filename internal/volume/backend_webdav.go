@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"path"
 	"strings"
@@ -265,7 +266,10 @@ func (b *webdavBackend) Delete(filePath string) error {
 }
 
 // Compile-time interface check.
-var _ vfs.FS = (*webdavBackend)(nil)
+var (
+	_ vfs.FS         = (*webdavBackend)(nil)
+	_ vfs.NoReplacer = (*webdavBackend)(nil)
+)
 
 func (b *webdavBackend) ReadFile(filePath string) ([]byte, error) {
 	rc, err := b.Get(filePath)
@@ -277,6 +281,12 @@ func (b *webdavBackend) ReadFile(filePath string) ([]byte, error) {
 }
 
 func (b *webdavBackend) Rename(oldPath, newPath string) error {
+	return b.RenameNoReplace(oldPath, newPath)
+}
+
+// RenameNoReplace is MOVE with Overwrite: F, which the server refuses with
+// 412 when newPath exists.
+func (b *webdavBackend) RenameNoReplace(oldPath, newPath string) error {
 	req, err := http.NewRequest("MOVE", b.url(oldPath), nil)
 	if err != nil {
 		return err
@@ -288,8 +298,11 @@ func (b *webdavBackend) Rename(oldPath, newPath string) error {
 		return fmt.Errorf("move: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 201 && resp.StatusCode != 204 {
-		return fmt.Errorf("move: status %d", resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusCreated, http.StatusNoContent:
+		return nil
+	case http.StatusPreconditionFailed:
+		return fmt.Errorf("move to %s: %w", newPath, fs.ErrExist)
 	}
-	return nil
+	return fmt.Errorf("move: status %d", resp.StatusCode)
 }

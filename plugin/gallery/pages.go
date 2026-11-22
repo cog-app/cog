@@ -8,6 +8,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"image"
 	"image/jpeg"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/a-h/templ"
 
 	"git.duckfam.us/jj-software/cog/internal/plugin"
 	"git.duckfam.us/jj-software/cog/plugin/contacts"
@@ -77,6 +80,7 @@ func peopleError(w http.ResponseWriter, r *http.Request, err error, back string)
 // photoDay is one day of the timeline: its heading and its photos.
 type photoDay struct {
 	Label string
+	Month string // "2006-01", matching TimelineMonth.Key
 	Media []Media
 }
 
@@ -85,30 +89,173 @@ type photoDay struct {
 func groupByDay(media []Media) []photoDay {
 	var days []photoDay
 	for _, m := range media {
-		label := takenAt(&m).Format("Monday, January 2, 2006")
+		t := takenAt(&m)
+		label := t.Format("Monday, January 2, 2006")
 		if n := len(days); n > 0 && days[n-1].Label == label {
 			days[n-1].Media = append(days[n-1].Media, m)
 			continue
 		}
-		days = append(days, photoDay{Label: label, Media: []Media{m}})
+		days = append(days, photoDay{Label: label, Month: t.Format("2006-01"), Media: []Media{m}})
 	}
 	return days
 }
 
-// Timeline renders the main photo timeline view, grouped by day.
+// timelinePageSize is how many photos a timeline page holds at least. A
+// page always ends on a day boundary, so it may hold more.
+const timelinePageSize = 100
+
+// timelineView is the timeline page: a run of days, the cursors either side
+// of it (0 at either end of the timeline), and the months for the scrubber.
+type timelineView struct {
+	Days   []photoDay
+	Newer  int64
+	Older  int64
+	Months []TimelineMonth
+}
+
+// scrubMark is one month on the timeline's scrubber. Top and Height place
+// it on the rail as percentages, by the share of photos before and in it.
+type scrubMark struct {
+	Key, Label, Href string
+	Top, Height      float64
+	Year             string // the year, on the newest month of a year that has room for a label
+}
+
+// scrubYearGap is how far apart, in percent of the rail, year labels must be
+// to show. A year with few photos is a sliver, and its label would sit on
+// its neighbour's.
+const scrubYearGap = 3.0
+
+func (m scrubMark) style() templ.SafeCSS {
+	return templ.SafeCSS(fmt.Sprintf("top:%.3f%%;height:%.3f%%", m.Top, m.Height))
+}
+
+func (m scrubMark) yearStyle() templ.SafeCSS {
+	return templ.SafeCSS(fmt.Sprintf("top:%.3f%%", m.Top))
+}
+
+// scrubMarks lays out months, newest first, on the scrubber.
+func scrubMarks(months []TimelineMonth) []scrubMark {
+	total := 0
+	for _, m := range months {
+		total += m.Count
+	}
+	if total == 0 {
+		return nil
+	}
+	marks := make([]scrubMark, len(months))
+	seen, lastYear := 0, -scrubYearGap
+	for i, m := range months {
+		mk := scrubMark{
+			Key:    m.Key(),
+			Label:  time.Date(m.Year, m.Month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006"),
+			Href:   fmt.Sprintf("/apps/gallery/?before=%d", m.End()),
+			Top:    100 * float64(seen) / float64(total),
+			Height: 100 * float64(m.Count) / float64(total),
+		}
+		if (i == 0 || months[i-1].Year != m.Year) && mk.Top-lastYear >= scrubYearGap {
+			mk.Year = strconv.Itoa(m.Year)
+			lastYear = mk.Top
+		}
+		marks[i] = mk
+		seen += m.Count
+	}
+	return marks
+}
+
+// cursorParam parses a timeline cursor from the query string. ok is false
+// when it is absent.
+func cursorParam(r *http.Request, name string) (t int64, ok bool, err error) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return 0, false, nil
+	}
+	t, err = strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", name, err)
+	}
+	return t, true, nil
+}
+
+// Timeline renders the main photo timeline view, grouped by day. With
+// ?before= it starts at that time instead of the newest photo, which is
+// where the scrubber's months link to; the photos after it load above as
+// the page scrolls up.
 func (h *Pages) Timeline(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	media, err := RecentMedia(db, 100)
+	before, jumped, err := cursorParam(r, "before")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !jumped {
+		before = math.MaxInt64
+	}
+	var v timelineView
+	media, older, err := OlderMedia(db, before, timelinePageSize)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	v.Days, v.Older = groupByDay(media), older
+	if jumped {
+		newer, err := HasMediaSince(db, before)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if newer {
+			v.Newer = before
+		}
+	}
+	if v.Months, err = TimelineMonths(db); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Gallery")
-	ui.Render(w, r, timelinePage(r.URL.Path, groupByDay(media)))
+	ui.Render(w, r, timelinePage(r.URL.Path, v))
+}
+
+// TimelinePage renders the next run of days for the timeline's infinite
+// scroll: older than ?before=, or newer than ?after=, with the marker that
+// loads the run after it.
+func (h *Pages) TimelinePage(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	if before, ok, err := cursorParam(r, "before"); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	} else if ok {
+		media, older, err := OlderMedia(db, before, timelinePageSize)
+		if err != nil {
+			httperr.Internal(w, r, err)
+			return
+		}
+		ui.Render(w, r, timelineOlderPage(groupByDay(media), older))
+		return
+	}
+	after, ok, err := cursorParam(r, "after")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !ok {
+		http.Error(w, "before or after is required", http.StatusBadRequest)
+		return
+	}
+	media, newer, err := NewerMedia(db, after, timelinePageSize)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, timelineNewerPage(newer, groupByDay(media)))
 }
 
 // Albums renders the album list view.
@@ -1233,6 +1380,34 @@ func (h *Pages) SearchPeopleAPI(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, ui.PickerResults(items))
 }
 
+// PersonSuggestionsAPI renders up to three named people who look like the
+// given one, as buttons that merge it into them. The name dialog loads it
+// when it opens, so a page view does not pay for comparing faces.
+func (h *Pages) PersonSuggestionsAPI(w http.ResponseWriter, r *http.Request) {
+	db, err := plugin.UserDB(r)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sysDB, err := h.plugin.SystemDB()
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	maxDist := SettingClusterThreshold.MustGet(sysDB) * suggestMatchScale
+	people, err := SimilarNamedPeople(db, id, maxDist, 3)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
+	ui.Render(w, r, personSuggestions(people))
+}
+
 // TriggerScan manually triggers a media scan via the scan worker subprocess.
 func (h *Pages) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
@@ -1866,34 +2041,67 @@ func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
 		return
 	}
-	previews, err := PreviewRename(db, pattern)
+	policy := ParseConflictPolicy(r.URL.Query().Get("conflicts"))
+	filesDB, err := h.plugin.ctx.PluginDB(plugin.Username(r), plugin.OfPlugin("files"))
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	plan, err := PlanRename(db, filesDB, pattern, policy)
 	var patternErr string
 	if err != nil {
 		patternErr = err.Error()
+		plan = &RenamePlan{}
 	}
 	plugin.SetTitle(w, "Rename Preview")
-	ui.Render(w, r, renamePreviewPage(pattern, previews, patternErr, plugin.CSRFToken(r)))
+	ui.Render(w, r, renamePreviewPage(pattern, policy, plan, patternErr, plugin.CSRFToken(r)))
 }
 
-// RenameApply executes the rename operation.
+// unscannedNote explains that n files the rename cannot see yet stay put.
+func unscannedNote(n int) string {
+	if n == 1 {
+		return "1 file in the scan folders has not been scanned yet, so the rename leaves it alone. Scan now in Settings, then preview again."
+	}
+	return fmt.Sprintf("%d files in the scan folders have not been scanned yet, so the rename leaves them alone. Scan now in Settings, then preview again.", n)
+}
+
+// renamePreviewURL is the preview of pattern under policy.
+func renamePreviewURL(pattern string, policy ConflictPolicy) string {
+	return "/apps/gallery/rename/preview?" + url.Values{"pattern": {pattern}, "conflicts": {string(policy)}}.Encode()
+}
+
+// RenameApply executes the rename operation, and remembers the pattern and
+// conflict policy as the ones to offer next time.
 func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	username := plugin.Username(r)
 	pattern := r.FormValue("pattern")
-	previews, err := PreviewRename(db, pattern)
+	policy := ParseConflictPolicy(r.FormValue("conflicts"))
+	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
 	if err != nil {
-		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), "/apps/gallery/rename/preview?pattern="+url.QueryEscape(pattern))
+		h.serverError(w, r, err)
 		return
 	}
-	username := plugin.Username(r)
-	if err := h.plugin.ApplyRename(username, previews); err != nil {
+	plan, err := PlanRename(db, filesDB, pattern, policy)
+	if err != nil {
+		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), renamePreviewURL(pattern, policy))
+		return
+	}
+	if err := SettingRenamePattern.Set(db, pattern); err != nil {
+		h.plugin.log.Error("remember rename pattern", "user", username, "err", err)
+	}
+	if err := SettingRenameConflicts.Set(db, policy); err != nil {
+		h.plugin.log.Error("remember rename conflicts", "user", username, "err", err)
+	}
+	if err := h.plugin.ApplyRename(username, plan.Renames); err != nil {
 		flashRedirect(w, r, "error", "The rename stopped part way: "+err.Error()+". Undo Last Rename puts back what was renamed.", "/apps/gallery/settings")
 		return
 	}
-	flashRedirect(w, r, "success", "Renamed "+plural(len(previews), "file", "files")+".", "/apps/gallery/settings")
+	flashRedirect(w, r, "success", "Renamed "+plural(len(plan.Renames), "file", "files")+".", "/apps/gallery/settings")
 }
 
 // RenameUndo reverses the most recent rename batch.

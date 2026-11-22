@@ -2,12 +2,17 @@ package gallery_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-rod/rod/lib/input"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -507,4 +512,92 @@ func openTileMenu(t *testing.T, b *webtest.Browser, name string) {
 	t.Helper()
 	b.WaitReady(t, `[aria-label="Actions for `+name+`"]`)
 	b.Eval(t, `() => document.querySelector('[aria-label="Actions for `+name+`"]').click()`)
+}
+
+// TestBrowserNameSuggestions opens the name dialog of an unnamed person whose
+// face is close to two named people's, and names them with one click.
+func TestBrowserNameSuggestions(t *testing.T) {
+	env := cogtest.New(t, gallery.New())
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+
+	user := env.CreateUser(t, "suggest", "pass")
+	db, err := env.Providers.Plugins.PluginDB(user.Username, "gallery")
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO media (file_id, file_path, file_etag, mime_type, width, height, date_indexed)
+		VALUES (1, '/Photos/group.jpg', 'etag', 'image/jpeg', 1920, 1080, 1700000000)`)
+	require.NoError(t, err)
+
+	// Unit embeddings at a given cosine distance from axis 0.
+	embedding := func(axis int, dist float64) []byte {
+		v := make([]float32, 512)
+		v[0] = float32(1 - dist)
+		v[axis] = float32(math.Sqrt(1 - (1-dist)*(1-dist)))
+		b := make([]byte, 4*len(v))
+		for i, f := range v {
+			binary.LittleEndian.PutUint32(b[4*i:], math.Float32bits(f))
+		}
+		return b
+	}
+	person := func(name string, emb []byte) int64 {
+		t.Helper()
+		res, err := db.Exec(`INSERT INTO people (name, visible) VALUES (?, 1)`, name)
+		require.NoError(t, err)
+		id, err := res.LastInsertId()
+		require.NoError(t, err)
+		_, err = db.Exec(`INSERT INTO faces (media_id, person_id, x, y, w, h, confidence, embedding)
+			VALUES (1, ?, 0.1, 0.1, 0.2, 0.2, 0.9, ?)`, id, emb)
+		require.NoError(t, err)
+		return id
+	}
+	ada := person("Ada", embedding(1, 0.1))
+	person("Grace", embedding(2, 0.3))
+	person("Linus", embedding(3, 0.9))
+
+	open := func(t *testing.T, id int64) *webtest.Browser {
+		t.Helper()
+		b := eng.Start(t)
+		b.Login(t, "suggest", "pass")
+		b.Navigate(t, fmt.Sprintf("/apps/gallery/person/%d", id))
+		b.Click(t, `[data-modal-open="gallery-name-person"]`)
+		b.WaitVisible(t, ".gallery-suggestion")
+		return b
+	}
+
+	t.Run("Merge", func(t *testing.T) {
+		unnamed := person("", embedding(4, 0))
+		b := open(t, unnamed)
+		if n := b.Count(t, ".gallery-suggestion"); n != 2 {
+			t.Fatalf("%d suggestions, want Ada and Grace", n)
+		}
+		b.Snapshot(t)
+		b.Snapshot(t, webtest.Mobile)
+
+		b.Click(t, ".gallery-suggestion")
+		b.WaitText(t, "Hide")
+		if got, want := b.URL(t), fmt.Sprintf("/apps/gallery/person/%d", ada); !strings.HasSuffix(got, want) {
+			t.Fatalf("landed on %s, want %s", got, want)
+		}
+		var left int
+		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM people WHERE id = ?`, unnamed).Scan(&left))
+		if left != 0 {
+			t.Fatal("unnamed person was not merged into Ada")
+		}
+	})
+
+	// Enter in the name field saves the typed name. The suggestions are
+	// submit buttons ahead of Save; if they were the name form's, Enter
+	// would merge into the first of them instead.
+	t.Run("EnterSavesTypedName", func(t *testing.T) {
+		unnamed := person("", embedding(4, 0))
+		b := open(t, unnamed)
+		b.Type(t, "#gallery-person-name", "Margaret")
+		b.Press(t, "#gallery-person-name", input.Enter)
+		b.WaitText(t, "Rename")
+		var name string
+		require.NoError(t, db.QueryRow(`SELECT name FROM people WHERE id = ?`, unnamed).Scan(&name))
+		if name != "Margaret" {
+			t.Fatalf("person is named %q, want Margaret", name)
+		}
+	})
 }

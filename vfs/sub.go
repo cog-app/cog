@@ -112,6 +112,17 @@ func (s *subFS) Rename(oldPath, newPath string) error {
 	return s.fs.Rename(from, s.at(newPath))
 }
 
+func (s *subFS) RenameNoReplace(oldPath, newPath string) error {
+	from, err := s.write(oldPath)
+	if err != nil {
+		return err
+	}
+	if from == s.dir {
+		return fmt.Errorf("rename /: %w", fs.ErrPermission)
+	}
+	return RenameNoReplace(s.fs, from, s.at(newPath))
+}
+
 func (s *subFS) Replace(oldPath, newPath string) error {
 	from, err := s.write(oldPath)
 	if err != nil {
