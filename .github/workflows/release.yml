@@ -1,0 +1,86 @@
+# Builds the binaries for a tag pushed to the GitHub mirror (GitLab pushes
+# tags there), publishes them as a GitHub release, and republishes the docs
+# site with the signed release list the updater reads.
+#
+# Each platform builds on a runner of its own: Cog needs cgo (go-sqlite3,
+# onnxruntime_go), and a native C compiler is simpler and more faithful
+# than a cross toolchain. darwin-amd64 is the exception: clang on the arm64
+# runner targets x86_64 directly.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, goos: linux, goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          # windows-2022 has MinGW's gcc on PATH.
+          - { runner: windows-2022, goos: windows, goarch: amd64, ext: .exe }
+          - { runner: macos-15, goos: darwin, goarch: arm64 }
+          - { runner: macos-15, goos: darwin, goarch: amd64, cc: "clang -arch x86_64", cross: true }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          OUT: dist/cog-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X git.duckfam.us/jj-software/cog/internal/version.Version=${GITHUB_REF_NAME}" \
+            -o "$OUT" ./cmd/cog
+      - name: Check it runs
+        if: ${{ !matrix.cross }}
+        shell: bash
+        run: |
+          got=$(./dist/cog-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} version)
+          test "$got" = "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cog-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: go tool release sums -out dist/SHA256SUMS dist/cog-*
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Cog $GITHUB_REF_NAME" --generate-notes --verify-tag $pre
+
+  # A release made with the workflow's token starts no other workflow, so
+  # the docs site (and releases.json) is republished from here.
+  pages:
+    needs: publish
+    uses: ./.github/workflows/pages.yml
+    secrets: inherit

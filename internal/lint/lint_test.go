@@ -228,6 +228,7 @@ var dataDirOwners = map[string]string{
 	"internal/plugin/registry.go":         "per-user directories, root databases",
 	"internal/search/manager.go":          "search indexes",
 	"internal/ssh/hostkey.go":             "the SSH host key",
+	"internal/certs/certs.go":             "the ACME account and certificates",
 	"internal/services/services.go":       "the master secret",
 	"plugin/plugcmd/trusted.go":           "a trusted process plugin's mirror of the registry",
 	"internal/testing/cogtest/cogtest.go": "the test server's system database",

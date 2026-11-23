@@ -42,7 +42,9 @@ WE DO NOT SWALLOW ERRORS. Errors should be handled by either wrapping and return
 
 ## Architecture
 
-**Entry point**: `cmd/cog/main.go` — parses flags, builds service graph, starts HTTP server.
+**Entry point**: `cmd/cog/main.go` — parses flags, builds service graph, starts HTTP server. Config is `config.Defaults()`, then `cog.toml` (`--config`, `COG_CONFIG`, or beside an installed `bin/cog`), then `COG_*` env (`loadConfig` in `cog.go`).
+
+**Setup, releases, updates** (`DESIGN/setup.md`): `internal/setup` (browser/CLI wizard, `Plan` → `Apply`), `internal/service` (systemd/launchd/Windows), `internal/certs` (lego TLS), `internal/update` (signed `releases.json`, self-replace, restart). The `nosetup` build tag (Docker, distro packages) leaves setup and the updater out; keep `go vet -tags nosetup .` passing. Releases build on GitHub Actions from tags mirrored from GitLab (`.github/workflows`).
 
 **Service layer** (`internal/services/services.go`): Central `Providers` struct wires together all dependencies (Users, Sessions, AppPasswords, Plugins, Shares, Files, DB). Constructed via `services.New(cfg)`.
 

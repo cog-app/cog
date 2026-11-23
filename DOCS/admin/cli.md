@@ -86,6 +86,34 @@ cog doctor
 
 Reports the status of optional external tools (ffmpeg, etc.) and database integrity. Plugins can contribute their own health checks.
 
+### `cog setup`
+
+Installs Cog as a service, or changes, resets or removes an install. In the
+browser when there is a desktop, else at the terminal. See
+[Installation](../getting-started/installation.md).
+
+```bash
+cog setup          # browser with a desktop, terminal without
+cog setup --cli    # always at the terminal
+```
+
+### `cog update`
+
+Installs the newest release over the running program and restarts the
+service. See [Updates](updates.md).
+
+```bash
+cog update --check
+cog update
+```
+
+### `cog version`
+
+Prints the version.
+
+Every command takes `--config <file>` to read a configuration file other
+than the one beside the installed program.
+
 ## Plugin commands
 
 Plugins can register CLI commands that appear as subcommands under their plugin ID:

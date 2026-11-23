@@ -43,6 +43,7 @@ import (
 	"git.duckfam.us/jj-software/cog/internal/share"
 	"git.duckfam.us/jj-software/cog/internal/ssh/keys"
 	"git.duckfam.us/jj-software/cog/internal/storage"
+	"git.duckfam.us/jj-software/cog/internal/update"
 	"git.duckfam.us/jj-software/cog/internal/user"
 	"git.duckfam.us/jj-software/cog/internal/volume"
 	"git.duckfam.us/jj-software/cog/internal/webpush"
@@ -100,6 +101,10 @@ type Providers struct {
 	Cookies    cogplugin.CookieConfig
 	Clock      clock.Clock
 	StartedAt  time.Time
+	// Updates looks for and installs new releases. It is nil in a build
+	// made with the nosetup tag, which is updated by whoever packaged it,
+	// and when nothing serves (a command).
+	Updates *update.Checker
 
 	closeOnce sync.Once
 	closeErr  error

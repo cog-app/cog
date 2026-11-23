@@ -97,3 +97,20 @@ func TestPasswordCallback_AppPasswordWhileLimited(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, alice.ID, perms.Extensions["user_id"])
 }
+
+// With account passwords refused (setup's choice for a server reachable
+// from the internet), only an app password signs in.
+func TestPasswordCallback_NoAccountPasswords(t *testing.T) {
+	env := newTestEnv(t)
+	env.createUser(t, "alice", "secret")
+	alice, err := env.providers.Users.GetByUsername("alice")
+	require.NoError(t, err)
+	ac := &authCallbacks{users: env.providers.Users, appPasswords: env.providers.AppPasswords, keys: env.keys, noAccountPasswords: true}
+	perms, err := ac.passwordCallback(&stubConnMeta{user: "alice"}, []byte("secret"))
+	require.True(t, err != nil && perms == nil, "the account password signed in")
+
+	appPW, _, err := env.providers.AppPasswords.Create(alice.ID, "ssh")
+	require.NoError(t, err)
+	_, err = ac.passwordCallback(&stubConnMeta{user: "alice"}, []byte(appPW))
+	require.NoError(t, err)
+}

@@ -98,8 +98,11 @@ RUN git clone --depth 1 --branch ${WHISPER_CPP_VERSION} https://github.com/ggerg
 	cmake --build build --config Release --target whisper-cli -j
 
 FROM build_dependencies AS build
+ARG COG_VERSION=
 COPY . .
-RUN CGO_ENABLED=1 go build ./cmd/cog
+# nosetup: the image is updated by pulling a new one, not by setup or the
+# self-updater.
+RUN CGO_ENABLED=1 go build -tags nosetup -ldflags "-X git.duckfam.us/jj-software/cog/internal/version.Version=${COG_VERSION}" ./cmd/cog
 RUN CGO_ENABLED=1 go build -o cog-plugin-recipes ./cmd/cog-plugin-recipes
 
 FROM dependencies AS publish

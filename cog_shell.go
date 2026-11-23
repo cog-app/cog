@@ -34,9 +34,7 @@ func shellCmd(plugins []plugin.Plugin) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("files for %q: %w", username, err)
 			}
-			cfg := configFromEnv()
-			log, _ := newLogger(cfg)
-			sh, err := cogssh.NewShell(p, p.SSHKeys, log, username, userFS)
+			sh, err := cogssh.NewShell(p, p.SSHKeys, p.Log, username, userFS)
 			if err != nil {
 				return err
 			}

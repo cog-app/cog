@@ -9,17 +9,17 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
-	"os"
-	"os/signal"
 	"regexp"
 	"strings"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"git.duckfam.us/jj-software/cog/internal/certs"
 	"git.duckfam.us/jj-software/cog/internal/safehttp"
 	"git.duckfam.us/jj-software/cog/internal/sandbox"
+	"git.duckfam.us/jj-software/cog/internal/services"
 	cogssh "git.duckfam.us/jj-software/cog/internal/ssh"
 	"git.duckfam.us/jj-software/cog/internal/web"
 	"git.duckfam.us/jj-software/cog/plugin"
@@ -30,8 +30,6 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 		Use:   "serve",
 		Short: "Start the Cog server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := configFromEnv()
-
 			// Lets a development server subscribe to feeds on the local
 			// network. Never set it in production: it disables the guard
 			// that keeps user-supplied URLs off the host's own network.
@@ -49,48 +47,106 @@ func serveCmd(plugins []plugin.Plugin) *cobra.Command {
 
 			runSeed(p)
 
-			// Start search indexing after plugins are registered.
-			if err := p.StartSearch(context.Background()); err != nil {
-				p.Log.Warn("search init failed", "err", err)
-			}
-
-			// Start plugin background tasks (scan loops, etc.).
-			if err := p.Plugins.Start(context.Background()); err != nil {
-				return err
-			}
-			// Deliver WebDAV-Push notifications.
-			p.StartPush(context.Background())
-			// Remove cache entries nothing has used in a while.
-			p.StartCacheSweep(context.Background())
-			p.StartLockWatch(context.Background())
-
 			if envBool("COG_LOG_REQUESTS") {
 				handler = requestLogger(handler)
 			}
-
-			// Start SSH server if enabled.
-			if cfg.SSHEnabled {
-				sshSrv, err := cogssh.New(cfg, p, p.SSHKeys, p.Log)
-				if err != nil {
-					return err
-				}
-				defer sshSrv.Close()
-				go func() {
-					if err := sshSrv.ListenAndServe(); err != nil {
-						p.Log.Error("ssh server error", "err", err)
-					}
-				}()
-			}
-
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			if err := sandbox.Status(); err != nil {
-				p.Log.Warn("previews, OCR and media tools run unsandboxed", "reason", err)
-			}
-			p.Log.Info("Cog listening", "addr", cfg.Addr)
-			return serve(ctx, newServer(cfg.Addr, handler), p.Log)
+			return runService(cmd.Context(), func(ctx context.Context, restart func()) error {
+				return runServer(ctx, p, handler, restart)
+			})
 		},
 	}
+}
+
+// errRestart ends the server so that it starts again, with the binary an
+// update put in place: Main restarts the process once everything is closed.
+var errRestart = errors.New("restarting")
+
+// runService runs run until the process is asked to stop: by a signal, or
+// by the Windows service manager when it runs as a service. restart, which
+// the updater calls, ends it with errRestart.
+func runService(parent context.Context, run func(ctx context.Context, restart func()) error) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	var restarting atomic.Bool
+	restart := func() {
+		restarting.Store(true)
+		cancel()
+	}
+	err := runManaged(ctx, func(ctx context.Context) error { return run(ctx, restart) })
+	if err == nil && restarting.Load() {
+		return errRestart
+	}
+	return err
+}
+
+// runServer starts everything the server runs on p (search, plugins'
+// background work, SSH, the updater, certificates) and serves handler
+// until ctx ends.
+func runServer(ctx context.Context, p *services.Providers, handler http.Handler, restart func()) error {
+	cfg := p.Config
+	if err := p.StartSearch(ctx); err != nil {
+		p.Log.Warn("search init failed", "err", err)
+	}
+	// Plugin background tasks (scan loops, etc.).
+	if err := p.Plugins.Start(ctx); err != nil {
+		return fmt.Errorf("start plugins: %w", err)
+	}
+	// Deliver WebDAV-Push notifications.
+	p.StartPush(ctx)
+	// Remove cache entries nothing has used in a while.
+	p.StartCacheSweep(ctx)
+	p.StartLockWatch(ctx)
+	startUpdates(ctx, p, restart)
+
+	if cfg.SSHEnabled {
+		sshSrv, err := cogssh.New(cfg, p, p.SSHKeys, p.Log)
+		if err != nil {
+			return err
+		}
+		defer sshSrv.Close()
+		go func() {
+			if err := sshSrv.ListenAndServe(); err != nil {
+				p.Log.Error("ssh server error", "err", err)
+			}
+		}()
+	}
+	if err := sandbox.Status(); err != nil {
+		p.Log.Warn("previews, OCR and media tools run unsandboxed", "reason", err)
+	}
+
+	var servers []listener
+	if cfg.Addr != "" {
+		servers = append(servers, listener{srv: newServer(cfg.Addr, handler)})
+	}
+	if cfg.TLS.Enabled() {
+		m, err := certs.New(cfg.TLS, cfg.DataDir, p.Log)
+		if err != nil {
+			return fmt.Errorf("tls: %w", err)
+		}
+		go m.Run(ctx)
+		addr := cfg.TLS.Addr
+		if addr == "" {
+			addr = ":8443"
+		}
+		srv := newServer(addr, handler)
+		srv.TLSConfig = m.TLSConfig()
+		servers = append(servers, listener{srv: srv, tls: true})
+		if cfg.TLS.HTTPAddr != "" {
+			servers = append(servers, listener{srv: newServer(cfg.TLS.HTTPAddr, m.HTTPHandler(redirectToHTTPS(cfg.BaseURL)))})
+		}
+	}
+	if len(servers) == 0 {
+		return errors.New("nothing to listen on: set addr, or tls")
+	}
+	return serve(ctx, servers, p.Log)
+}
+
+// redirectToHTTPS sends a plain HTTP request to the same path at baseURL.
+func redirectToHTTPS(baseURL string) http.Handler {
+	base := strings.TrimSuffix(baseURL, "/")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, base+r.URL.RequestURI(), http.StatusPermanentRedirect)
+	})
 }
 
 // newServer is the HTTP server for handler. ReadHeaderTimeout stops a client
@@ -119,28 +175,55 @@ func newServer(addr string, handler http.Handler) *http.Server {
 // is asked to stop.
 const shutdownGrace = 30 * time.Second
 
-// serve runs srv until ctx ends, then stops taking connections and waits up
-// to shutdownGrace for requests in flight. The caller's deferred cleanup
-// (closing search indexes, stopping plugin processes) runs after, instead
-// of the process dying under it.
-func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
-	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+// listener is one of the server's listeners.
+type listener struct {
+	srv *http.Server
+	tls bool // serve TLS with srv.TLSConfig
+}
+
+// serve runs servers until ctx ends or one fails, then stops taking
+// connections and waits up to shutdownGrace for requests in flight. The
+// caller's deferred cleanup (closing search indexes, stopping plugin
+// processes) runs after, instead of the process dying under it.
+func serve(ctx context.Context, servers []listener, log *slog.Logger) error {
+	errc := make(chan error, len(servers))
+	for _, l := range servers {
+		log.Info("Cog listening", "addr", l.srv.Addr, "tls", l.tls)
+		go func() {
+			if l.tls {
+				errc <- l.srv.ListenAndServeTLS("", "")
+			} else {
+				errc <- l.srv.ListenAndServe()
+			}
+		}()
+	}
+	var failed error
 	select {
-	case err := <-errc:
-		return err
+	case failed = <-errc:
 	case <-ctx.Done():
 	}
 	log.Info("Cog shutting down")
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if err := srv.Shutdown(sctx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+	var errs []error
+	if failed != nil {
+		errs = append(errs, failed)
 	}
-	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
+	for _, l := range servers {
+		if err := l.srv.Shutdown(sctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown %s: %w", l.srv.Addr, err))
+		}
 	}
-	return nil
+	remaining := len(servers)
+	if failed != nil {
+		remaining--
+	}
+	for range remaining {
+		if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // credentialHeaders are not written to the request log: a development log

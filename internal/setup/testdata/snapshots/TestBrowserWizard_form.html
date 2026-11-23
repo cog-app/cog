@@ -1,0 +1,567 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Set up Cog — Cog setup
+    </title>
+    <link href="/static/style.css?v=4740c74b892e" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+    <style>
+      .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
+    </style>
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body>
+    <main class="content setup">
+      <header class="page-header">
+        <div class="page-heading">
+          <h1>
+            Set up Cog
+          </h1>
+        </div>
+        <div class="page-actions" />
+      </header>
+      <form action="/plan" method="post">
+        <div class="card">
+          <h2 class="card-title">
+            Where Cog runs
+          </h2>
+          <label class="form-check">
+            <input checked="" name="scope" type="radio" value="user" />
+            <span>
+              <strong>
+                On this computer, for me
+              </strong>
+              <br />
+              <span class="form-help">
+                Starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer.
+              </span>
+            </span>
+          </label>
+          <label class="form-check">
+            <input name="scope" type="radio" value="system" />
+            <span>
+              <strong>
+                As a system service
+              </strong>
+              <br />
+              <span class="form-help">
+                Starts when the computer starts and runs as an account of its own. Needs administrator rights; for a computer that is a server.
+              </span>
+            </span>
+          </label>
+          <p class="form-help when when-system">
+            Your computer will ask for an administrator's password when you install.
+          </p>
+          <div class="form-group">
+            <label for="dir">
+              Folder
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="dir" name="dir" type="text" value="«tmp»/002/cog" />
+            <p class="form-help">
+              Cog keeps its program, settings and everyone's files here. Pick a disk with room for them.
+            </p>
+          </div>
+        </div>
+        <div class="card">
+          <h2 class="card-title">
+            Admin account
+          </h2>
+          <p class="card-desc">
+            The account you sign in with to manage Cog. You can add other people from the admin pages afterwards.
+          </p>
+          <div class="form-group">
+            <label for="admin_user">
+              Name
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="admin_user" name="admin_user" type="text" value="admin" />
+          </div>
+          <div class="form-group">
+            <label for="admin_password">
+              Password
+            </label>
+            <input aria-invalid="false" autocomplete="new-password" class="form-control" id="admin_password" name="admin_password" type="password" value="" />
+            <p class="form-help">
+              At least 8 characters. If Cog will be reachable from the internet, make it long.
+            </p>
+          </div>
+          <div class="form-group">
+            <label for="admin_password_confirm">
+              Password again
+            </label>
+            <input aria-invalid="false" autocomplete="new-password" class="form-control" id="admin_password_confirm" name="admin_password_confirm" type="password" value="" />
+          </div>
+        </div>
+        <div class="card">
+          <h2 class="card-title">
+            Who can reach Cog
+          </h2>
+          <label class="form-check">
+            <input checked="" name="access" type="radio" value="local" />
+            <span>
+              <strong>
+                Only this computer
+              </strong>
+              <br />
+              <span class="form-help">
+                Open Cog at http://localhost. Nothing else on the network can connect.
+              </span>
+            </span>
+          </label>
+          <label class="form-check">
+            <input name="access" type="radio" value="lan" />
+            <span>
+              <strong>
+                My home network
+              </strong>
+              <br />
+              <span class="form-help">
+                Phones and computers on the same Wi-Fi reach it at http://192.168.1.20. Not encrypted, so only for a network you trust.
+              </span>
+            </span>
+          </label>
+          <label class="form-check">
+            <input name="access" type="radio" value="internet" />
+            <span>
+              <strong>
+                Anywhere, over HTTPS
+              </strong>
+              <br />
+              <span class="form-help">
+                Cog gets a free certificate from Let's Encrypt and your router forwards the internet to this computer. You need a domain name.
+              </span>
+            </span>
+          </label>
+          <label class="form-check">
+            <input name="access" type="radio" value="proxy" />
+            <span>
+              <strong>
+                Anywhere, behind my reverse proxy
+              </strong>
+              <br />
+              <span class="form-help">
+                Caddy, nginx or similar already handles HTTPS and passes requests on to Cog.
+              </span>
+            </span>
+          </label>
+          <div class="form-group">
+            <label for="port">
+              Port
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="port" name="port" type="number" value="8580" />
+            <p class="form-help">
+              The plain HTTP port. With HTTPS it answers only on this computer.
+            </p>
+          </div>
+          <div class="when when-internet">
+            <h3 class="card-subtitle">
+              Your domain
+            </h3>
+            <div class="form-group">
+              <label for="domain">
+                Domain name
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="domain" name="domain" type="text" value="" />
+              <p class="form-help">
+                A name that points at your home's public address, such as cloud.example.com. A dynamic DNS service (Duck DNS, deSEC) gives you one for free and keeps it pointing at you when your address changes.
+              </p>
+            </div>
+            <div class="form-group">
+              <label for="email">
+                Email (optional)
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="email" name="email" type="email" value="" />
+              <p class="form-help">
+                Let's Encrypt writes here about problems with your certificate.
+              </p>
+            </div>
+            <div class="form-group">
+              <label for="https_port">
+                HTTPS port on this computer
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="https_port" name="https_port" type="number" value="8443" />
+              <p class="form-help">
+                Your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.
+              </p>
+            </div>
+            <h3 class="card-subtitle">
+              How Let's Encrypt checks the name is yours
+            </h3>
+            <label class="form-check">
+              <input checked="" name="challenge" type="radio" value="tls-alpn-01" />
+              <span>
+                <strong>
+                  Through the HTTPS port
+                </strong>
+                <br />
+                <span class="form-help">
+                  Simplest: only port 443 has to be forwarded.
+                </span>
+              </span>
+            </label>
+            <label class="form-check">
+              <input name="challenge" type="radio" value="http-01" />
+              <span>
+                <strong>
+                  Through port 80
+                </strong>
+                <br />
+                <span class="form-help">
+                  For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.
+                </span>
+              </span>
+            </label>
+            <label class="form-check">
+              <input name="challenge" type="radio" value="dns-01" />
+              <span>
+                <strong>
+                  Through my DNS host
+                </strong>
+                <br />
+                <span class="form-help">
+                  Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.
+                </span>
+              </span>
+            </label>
+            <div class="when when-http01">
+              <div class="form-group">
+                <label for="http_port">
+                  HTTP port on this computer
+                </label>
+                <input aria-invalid="false" autocomplete="off" class="form-control" id="http_port" name="http_port" type="number" value="8080" />
+                <p class="form-help">
+                  Your router forwards the internet's port 80 to this one.
+                </p>
+              </div>
+            </div>
+            <div class="when when-dns">
+              <div class="form-group">
+                <label for="dns_provider">
+                  DNS host
+                </label>
+                <select class="form-control" id="dns_provider" name="dns_provider">
+                  <option value="">
+                    Choose…
+                  </option>
+                  <option value="cloudflare">
+                    Cloudflare
+                  </option>
+                  <option value="digitalocean">
+                    DigitalOcean
+                  </option>
+                  <option value="duckdns">
+                    Duck DNS
+                  </option>
+                  <option value="gandiv5">
+                    Gandi
+                  </option>
+                  <option value="httpreq">
+                    HTTP request (lego httpreq)
+                  </option>
+                  <option value="hetzner">
+                    Hetzner
+                  </option>
+                  <option value="namecheap">
+                    Namecheap
+                  </option>
+                  <option value="ovh">
+                    OVH
+                  </option>
+                  <option value="porkbun">
+                    Porkbun
+                  </option>
+                  <option value="exec">
+                    Program (lego exec)
+                  </option>
+                  <option value="rfc2136">
+                    RFC 2136 (BIND, Knot, PowerDNS)
+                  </option>
+                  <option value="desec">
+                    deSEC
+                  </option>
+                </select>
+              </div>
+              <div class="when when-dns-cloudflare">
+                <div class="form-group">
+                  <label for="dns_env.CLOUDFLARE_DNS_API_TOKEN">
+                    API token (Zone:DNS:Edit)
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.CLOUDFLARE_DNS_API_TOKEN" name="dns_env.CLOUDFLARE_DNS_API_TOKEN" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-digitalocean">
+                <div class="form-group">
+                  <label for="dns_env.DO_AUTH_TOKEN">
+                    API token
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DO_AUTH_TOKEN" name="dns_env.DO_AUTH_TOKEN" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-duckdns">
+                <div class="form-group">
+                  <label for="dns_env.DUCKDNS_TOKEN">
+                    Token
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DUCKDNS_TOKEN" name="dns_env.DUCKDNS_TOKEN" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-gandiv5">
+                <div class="form-group">
+                  <label for="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN">
+                    Personal access token
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN" name="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-httpreq">
+                <div class="form-group">
+                  <label for="dns_env.HTTPREQ_ENDPOINT">
+                    Endpoint URL
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.HTTPREQ_ENDPOINT" name="dns_env.HTTPREQ_ENDPOINT" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.HTTPREQ_USERNAME">
+                    Username
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.HTTPREQ_USERNAME" name="dns_env.HTTPREQ_USERNAME" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.HTTPREQ_PASSWORD">
+                    Password
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.HTTPREQ_PASSWORD" name="dns_env.HTTPREQ_PASSWORD" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-hetzner">
+                <div class="form-group">
+                  <label for="dns_env.HETZNER_API_TOKEN">
+                    API token
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.HETZNER_API_TOKEN" name="dns_env.HETZNER_API_TOKEN" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-namecheap">
+                <div class="form-group">
+                  <label for="dns_env.NAMECHEAP_API_USER">
+                    API user
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.NAMECHEAP_API_USER" name="dns_env.NAMECHEAP_API_USER" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.NAMECHEAP_API_KEY">
+                    API key
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.NAMECHEAP_API_KEY" name="dns_env.NAMECHEAP_API_KEY" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-ovh">
+                <div class="form-group">
+                  <label for="dns_env.OVH_ENDPOINT">
+                    Endpoint (ovh-eu, ovh-ca, ...)
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.OVH_ENDPOINT" name="dns_env.OVH_ENDPOINT" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.OVH_APPLICATION_KEY">
+                    Application key
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.OVH_APPLICATION_KEY" name="dns_env.OVH_APPLICATION_KEY" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.OVH_APPLICATION_SECRET">
+                    Application secret
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.OVH_APPLICATION_SECRET" name="dns_env.OVH_APPLICATION_SECRET" type="password" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.OVH_CONSUMER_KEY">
+                    Consumer key
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.OVH_CONSUMER_KEY" name="dns_env.OVH_CONSUMER_KEY" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-porkbun">
+                <div class="form-group">
+                  <label for="dns_env.PORKBUN_API_KEY">
+                    API key
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.PORKBUN_API_KEY" name="dns_env.PORKBUN_API_KEY" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.PORKBUN_SECRET_API_KEY">
+                    Secret API key
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.PORKBUN_SECRET_API_KEY" name="dns_env.PORKBUN_SECRET_API_KEY" type="password" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-exec">
+                <div class="form-group">
+                  <label for="dns_env.EXEC_PATH">
+                    Program path
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.EXEC_PATH" name="dns_env.EXEC_PATH" type="text" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-rfc2136">
+                <div class="form-group">
+                  <label for="dns_env.DNSUPDATE_NAMESERVER">
+                    Name server (host:port)
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_NAMESERVER" name="dns_env.DNSUPDATE_NAMESERVER" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.DNSUPDATE_TSIG_KEY">
+                    TSIG key name
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_TSIG_KEY" name="dns_env.DNSUPDATE_TSIG_KEY" type="text" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.DNSUPDATE_TSIG_SECRET">
+                    TSIG secret
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DNSUPDATE_TSIG_SECRET" name="dns_env.DNSUPDATE_TSIG_SECRET" type="password" value="" />
+                </div>
+                <div class="form-group">
+                  <label for="dns_env.DNSUPDATE_TSIG_ALGORITHM">
+                    TSIG algorithm (hmac-sha256.)
+                  </label>
+                  <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_TSIG_ALGORITHM" name="dns_env.DNSUPDATE_TSIG_ALGORITHM" type="text" value="" />
+                </div>
+              </div>
+              <div class="when when-dns-desec">
+                <div class="form-group">
+                  <label for="dns_env.DESEC_TOKEN">
+                    Token
+                  </label>
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DESEC_TOKEN" name="dns_env.DESEC_TOKEN" type="password" value="" />
+                </div>
+              </div>
+            </div>
+            <label class="form-check">
+              <input name="staging" type="checkbox" value="1" />
+              <span>
+                Use Let's Encrypt's test service
+                <br />
+                <span class="form-help">
+                  For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.
+                </span>
+              </span>
+            </label>
+          </div>
+          <div class="when when-proxy">
+            <div class="form-group">
+              <label for="public_url">
+                Public address
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="public_url" name="public_url" type="url" value="" />
+              <p class="form-help">
+                The https:// address your proxy serves Cog at.
+              </p>
+            </div>
+            <div class="form-group">
+              <label for="trusted_proxies">
+                Proxy addresses
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="trusted_proxies" name="trusted_proxies" type="text" value="" />
+              <p class="form-help">
+                The proxy's address as a range, such as 127.0.0.1/32 or 172.16.0.0/12, so Cog sees visitors' real addresses. Separate several with commas.
+              </p>
+            </div>
+          </div>
+          <p class="form-help when when-lan">
+            To use Cog away from home later, run setup again and choose HTTPS.
+          </p>
+        </div>
+        <div class="card">
+          <h2 class="card-title">
+            SSH and SFTP
+          </h2>
+          <label class="form-check">
+            <input checked="" name="ssh" type="checkbox" value="1" />
+            <span>
+              Serve SSH
+              <br />
+              <span class="form-help">
+                Sign in with an SSH key to reach your files over SFTP, rsync and scp, or use Cog's shell.
+              </span>
+            </span>
+          </label>
+          <div class="when when-ssh">
+            <div class="form-group">
+              <label for="ssh_port">
+                SSH port
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="ssh_port" name="ssh_port" type="number" value="8522" />
+            </div>
+            <label class="form-check">
+              <input name="ssh_account_passwords" type="checkbox" value="1" />
+              <span>
+                Allow account passwords over SSH
+                <br />
+                <span class="form-help">
+                  Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if your router forwards the SSH port.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="card">
+          <h2 class="card-title">
+            Updates
+          </h2>
+          <label class="form-check">
+            <input checked="" name="update_check" type="checkbox" value="1" />
+            <span>
+              Check for new versions daily
+              <br />
+              <span class="form-help">
+                Admins see an update on the Admin > Updates page and install it with a click.
+              </span>
+            </span>
+          </label>
+          <label class="form-check">
+            <input name="update_auto" type="checkbox" value="1" />
+            <span>
+              Install new versions automatically
+              <br />
+              <span class="form-help">
+                Cog restarts itself, which interrupts uploads and downloads in progress.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div class="when when-system">
+          <div class="card">
+            <h2 class="card-title">
+              Firewall
+            </h2>
+            <label class="form-check">
+              <input name="firewall" type="checkbox" value="1" />
+              <span>
+                Open Cog's ports in the firewall
+                <br />
+                <span class="form-help">
+                  Windows Firewall, ufw or firewalld, whichever this computer uses.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">
+            Review
+          </button>
+        </div>
+      </form>
+      <form action="/quit" method="post">
+        <button class="btn btn-ghost">
+          Close setup
+        </button>
+      </form>
+    </main>
+  </body>
+</html>

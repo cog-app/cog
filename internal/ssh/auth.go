@@ -22,6 +22,9 @@ type authCallbacks struct {
 	// guard throttles password guessing per client address and per
 	// account, as it does for HTTP. A nil guard allows every attempt.
 	guard *ratelimit.Guard
+	// noAccountPasswords refuses an account's own password, leaving app
+	// passwords (config.SSHNoAccountPasswords).
+	noAccountPasswords bool
 }
 
 // appPasswordValidator validates app password tokens.
@@ -46,8 +49,14 @@ func (a *authCallbacks) passwordCallback(conn gossh.ConnMetadata, password []byt
 			return checkErr == nil, nil
 		}
 	}
+	// With account passwords refused there is nothing for the limits to
+	// guard but the app password, which Try counts as a failure if wrong.
+	var check func() (bool, error)
+	if !a.noAccountPasswords {
+		check = asCheck(a.checkPassword)
+	}
 	ok, err := a.guard.Try(remoteIP(conn.RemoteAddr()), ratelimit.AccountKey(conn.User()), string(password),
-		asCheck(a.checkAppPassword), asCheck(a.checkPassword))
+		asCheck(a.checkAppPassword), check)
 	if err != nil {
 		return nil, err
 	}

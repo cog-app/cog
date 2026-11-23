@@ -226,6 +226,9 @@ func New(p *services.Providers) http.Handler {
 	mux.Handle("POST /admin/plugins/{id}/toggle", adminMut(http.HandlerFunc(adminH.TogglePlugin)))
 
 	mux.Handle("GET /admin/logs", adminAuth(http.HandlerFunc(adminH.ShowLogs)))
+	mux.Handle("GET /admin/updates", adminAuth(http.HandlerFunc(adminH.ShowUpdates)))
+	mux.Handle("POST /admin/updates/check", adminMut(http.HandlerFunc(adminH.CheckUpdates)))
+	mux.Handle("POST /admin/updates/install", adminMut(http.HandlerFunc(adminH.InstallUpdate)))
 	mux.Handle("GET /admin/logs/entries", adminAuth(http.HandlerFunc(adminH.LogEntries)))
 
 	// Volume browser

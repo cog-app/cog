@@ -82,6 +82,8 @@ test:
   script:
     - go generate ./...
     - go tool stamp
+    # The image's build (Dockerfile) leaves setup and the updater out.
+    - go vet -tags nosetup .
     # A package's browser tests wait for a Chrome slot (WEBTEST_PARALLEL,
     # CLAUDE.md) while other packages hold them, and the wait counts against
     # go test's per-package timeout.

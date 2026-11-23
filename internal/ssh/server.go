@@ -37,6 +37,8 @@ func New(cfg config.Config, p *services.Providers, ks *keys.Store, log *slog.Log
 		appPasswords: p.AppPasswords,
 		keys:         ks,
 		guard:        p.Guard,
+
+		noAccountPasswords: cfg.SSHNoAccountPasswords,
 	}
 
 	sshCfg := &gossh.ServerConfig{

@@ -1,0 +1,61 @@
+package web
+
+import (
+	"git.duckfam.us/jj-software/cog/internal/update"
+	"git.duckfam.us/jj-software/cog/ui"
+)
+
+templ adminUpdatesPage(pd ui.PageData, current string, st *update.Status, flash, flashKind string) {
+	@ui.AdminSidebarPage(pd, "updates") {
+		@ui.PageHeader("Updates", nil)
+		@ui.Alert(flashKind, flash)
+		@ui.Card("This server") {
+			<p>Cog { current }</p>
+			if st == nil {
+				<p class="card-desc">This build is updated by whoever packaged it: its image or package manager.</p>
+			}
+		}
+		if st != nil {
+			@ui.Card("Releases") {
+				if st.Updating {
+					<p>Installing an update. Cog restarts when it is in place.</p>
+				} else if st.Latest != nil {
+					<p>
+						{ availableText(st.Latest) }
+						if st.Latest.NotesURL != "" {
+							<a href={ templ.SafeURL(st.Latest.NotesURL) } target="_blank" rel="noopener">What's new</a>
+						}
+					</p>
+					if st.Replace != nil {
+						@ui.Alert("warning", "Cog cannot replace its own binary ("+st.Replace.Error()+"). Run cog update as an administrator, or download the release yourself.")
+					} else {
+						<form method="post" action="/admin/updates/install">
+							<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+							<button class="btn btn-primary" type="submit" onclick="return confirm('Install the update? Cog restarts, which interrupts uploads and downloads in progress.')">Install and restart</button>
+						</form>
+					}
+				} else if !st.Checked.IsZero() && st.Err == nil {
+					<p>This is the newest release.</p>
+				}
+				if st.Err != nil {
+					@ui.Alert("error", "The last check or install failed: "+st.Err.Error())
+				}
+				if !st.Checked.IsZero() {
+					<p class="form-help">Last checked { st.Checked.Format("2 January 2006 15:04") }.</p>
+				}
+				<form method="post" action="/admin/updates/check">
+					<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
+					<button class="btn btn-secondary" type="submit">Check now</button>
+				</form>
+			}
+		}
+	}
+}
+
+func availableText(r *update.Release) string {
+	s := "Cog " + r.Version + " is available"
+	if !r.Date.IsZero() {
+		s += ", released " + r.Date.Format("2 January 2006")
+	}
+	return s + "."
+}

@@ -1,0 +1,57 @@
+# Publishes the docs site, with releases.json and its signature: the list of
+# releases the updater in every installed Cog reads (internal/update). The
+# site lives in its own repository (cog-app/cog-app.github.io, served at
+# https://cog-app.github.io from its main branch), so this builds it here
+# and pushes it there with a deploy key (PAGES_DEPLOY_KEY). releases.json is
+# rebuilt from the GitHub releases each time and signed with
+# COG_RELEASE_KEY (go tool release keygen).
+name: Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  SITE_REPO: cog-app/cog-app.github.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Docs
+        run: go tool docs -out public
+      - name: Release list
+        env:
+          COG_RELEASE_KEY: ${{ secrets.COG_RELEASE_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: go tool release manifest -repo "$GITHUB_REPOSITORY" -out public/releases.json
+      - name: Push the site
+        env:
+          PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PAGES_DEPLOY_KEY" > ~/.ssh/pages
+          chmod 600 ~/.ssh/pages
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/pages -o IdentitiesOnly=yes"
+          git clone --depth 1 "git@github.com:$SITE_REPO.git" site
+          rsync -a --delete --exclude .git public/ site/
+          touch site/.nojekyll
+          cd site
+          git add -A
+          if git diff --cached --quiet; then echo "Site unchanged"; exit 0; fi
+          git -c user.name="cog release" -c user.email="actions@users.noreply.github.com" \
+            commit -m "Publish ${GITHUB_SHA::12}"
+          git push

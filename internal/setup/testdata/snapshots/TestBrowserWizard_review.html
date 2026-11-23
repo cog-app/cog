@@ -1,0 +1,56 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Review — Cog setup
+    </title>
+    <link href="/static/style.css?v=4740c74b892e" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+    <style>
+      .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
+    </style>
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body>
+    <main class="content setup">
+      <header class="page-header">
+        <div class="page-heading">
+          <h1>
+            Ready to set up
+          </h1>
+        </div>
+        <div class="page-actions" />
+      </header>
+      <div class="card">
+        <h2 class="card-title">
+          What setup will do
+        </h2>
+        <ul>
+          <li>
+            Copy Cog to «tmp»/002/cog/bin/cog.
+          </li>
+          <li>
+            Keep settings in «tmp»/002/cog/cog.toml and data in «tmp»/002/cog.
+          </li>
+          <li>
+            Make admin an admin, with the password you chose.
+          </li>
+          <li>
+            Start Cog now and whenever you sign in.
+          </li>
+        </ul>
+      </div>
+      <form action="/apply" class="btn-group" method="post">
+        <button class="btn btn-primary" type="submit">
+          Install
+        </button>
+        <a class="btn btn-secondary" href="/plan">
+          Back
+        </a>
+      </form>
+    </main>
+  </body>
+</html>

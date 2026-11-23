@@ -6132,3 +6132,20 @@ html:has(dialog.gallery-lightbox[open]) {
   flex: 1 1 10rem;
   min-width: 0;
 }
+
+/* Setup wizard (internal/setup): which parts of the form show depends on
+ * what is chosen, so the wizard needs no script. */
+.setup { max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+.setup .when { display: none; }
+.setup .form-check { align-items: flex-start; }
+.setup .form-check input { margin-top: 0.2rem; }
+.setup pre.log { white-space: pre-wrap; max-height: 28rem; overflow: auto; }
+.setup table.forwards td,
+.setup table.forwards th { padding: 0.25rem 0.75rem 0.25rem 0; text-align: left; }
+.setup form:has(input[name=access][value=internet]:checked) .when-internet { display: block; }
+.setup form:has(input[name=access][value=proxy]:checked) .when-proxy { display: block; }
+.setup form:has(input[name=access][value=lan]:checked) .when-lan { display: block; }
+.setup form:has(input[name=challenge][value=dns-01]:checked) .when-dns { display: block; }
+.setup form:has(input[name=challenge][value=http-01]:checked) .when-http01 { display: block; }
+.setup form:has(input[name=ssh]:checked) .when-ssh { display: block; }
+.setup form:has(input[name=scope][value=system]:checked) .when-system { display: block; }

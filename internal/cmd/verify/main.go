@@ -75,6 +75,11 @@ func main() {
 		if ok := run("go vet", "go", "vet", "./..."); !ok && !*cont {
 			os.Exit(1)
 		}
+		// Images and distribution packages build without setup and the
+		// updater (cog_setup_nosetup.go); keep that build compiling.
+		if ok := run("go vet (nosetup)", "go", "vet", "-tags", "nosetup", "."); !ok && !*cont {
+			os.Exit(1)
+		}
 	}
 
 	if ok := run("go test (cross-package coverage)",

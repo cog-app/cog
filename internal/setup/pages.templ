@@ -1,0 +1,459 @@
+package setup
+
+import (
+	"fmt"
+	"git.duckfam.us/jj-software/cog/internal/certs"
+	"git.duckfam.us/jj-software/cog/internal/service"
+	"git.duckfam.us/jj-software/cog/ui"
+	"strconv"
+	"strings"
+)
+
+templ layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } — Cog setup</title>
+			<link rel="stylesheet" href={ ui.Static.URL("style.css") }/>
+			<link rel="icon" href={ ui.Static.URL("favicon.svg") } type="image/svg+xml"/>
+			<script src={ ui.Static.URL("htmx.min.js") }></script>
+			@templ.Raw("<style>" + wizardCSS() + "</style>")
+		</head>
+		<body>
+			<main class="content setup">
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+// wizardCSS shows each DNS provider's credentials only when it is the one
+// chosen. The rest of the wizard's rules are in style.css ("Setup
+// wizard"); these depend on the list of providers.
+func wizardCSS() string {
+	var b strings.Builder
+	for _, p := range certs.DNSProviders {
+		fmt.Fprintf(&b, ".setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=%s]:checked) .when-dns-%s{display:block}\n", p.Name, p.Name)
+	}
+	return b.String()
+}
+
+templ homePage(installs []Install) {
+	@layout("Cog is installed") {
+		@ui.PageHeader("Cog is already set up", nil)
+		for _, in := range installs {
+			@ui.Card(installTitle(in)) {
+				<p class="card-desc">
+					In { in.Dir }.
+					if in.Status.Running {
+						The server is running.
+					} else if in.Status.Installed {
+						The service is installed but not running.
+					} else {
+						No service runs it.
+					}
+					if in.ConfigErr != nil {
+						Its settings could not be read ({ in.ConfigErr.Error() }); changing it starts from the defaults.
+					}
+				</p>
+				<form method="post" action="/choose" class="btn-group">
+					<button class="btn btn-primary" name="action" value={ "reconfigure:" + in.Dir }>Change settings</button>
+					<button class="btn btn-secondary" name="action" value={ "reset:" + in.Dir }>Reset admin password</button>
+					<button class="btn btn-ghost text-danger" name="action" value={ "uninstall:" + in.Dir } onclick="return confirm('Stop Cog and remove its service? Its files and data stay where they are.')">Remove service</button>
+				</form>
+			}
+		}
+		@ui.Card("Install another copy") {
+			<p class="card-desc">A second, separate Cog with its own folder and data.</p>
+			<form method="post" action="/choose">
+				<input type="hidden" name="action" value="new"/>
+				<button class="btn btn-secondary">Set up a new install</button>
+			</form>
+		}
+		@quitForm()
+	}
+}
+
+func installTitle(in Install) string {
+	if in.Scope == service.System {
+		return "System service"
+	}
+	return "For this user"
+}
+
+templ quitForm() {
+	<form method="post" action="/quit">
+		<button class="btn btn-ghost">Close setup</button>
+	</form>
+}
+
+templ fieldProblem(prob Problem, field string) {
+	if prob.Field == field && prob.Message != "" {
+		<p class="form-help text-danger" role="alert">{ prob.Message }</p>
+	}
+}
+
+templ radio(name, value, current, label, help string) {
+	<label class="form-check">
+		<input type="radio" name={ name } value={ value } checked?={ value == current }/>
+		<span>
+			<strong>{ label }</strong>
+			if help != "" {
+				<br/>
+				<span class="form-help">{ help }</span>
+			}
+		</span>
+	</label>
+}
+
+templ checkbox(name string, checked bool, label, help string) {
+	<label class="form-check">
+		<input type="checkbox" name={ name } value="1" checked?={ checked }/>
+		<span>
+			{ label }
+			if help != "" {
+				<br/>
+				<span class="form-help">{ help }</span>
+			}
+		</span>
+	</label>
+}
+
+templ input(label, name, typ, value, help string, prob Problem) {
+	<div class="form-group">
+		<label for={ name }>{ label }</label>
+		<input class="form-control" type={ typ } id={ name } name={ name } value={ value } aria-invalid={ strconv.FormatBool(prob.Field == name) } autocomplete={ autocompleteFor(typ) }/>
+		if help != "" {
+			<p class="form-help">{ help }</p>
+		}
+		@fieldProblem(prob, name)
+	</div>
+}
+
+func autocompleteFor(typ string) string {
+	if typ == "password" {
+		return "new-password"
+	}
+	return "off"
+}
+
+func port(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+templ planPage(p Plan, prob Problem, lan string, admin bool) {
+	@layout("Set up Cog") {
+		if p.Mode == ModeReconfig {
+			@ui.PageHeader("Change Cog's settings", nil)
+		} else {
+			@ui.PageHeader("Set up Cog", nil)
+		}
+		if prob.Message != "" && prob.Field == "" {
+			@ui.Alert("error", prob.Message)
+		} else if prob.Message != "" {
+			@ui.Alert("error", "Something needs fixing below: "+prob.Message)
+		}
+		<form method="post" action="/plan">
+			@ui.Card("Where Cog runs") {
+				if p.Mode == ModeInstall {
+					@radio("scope", "user", string(p.Scope), "On this computer, for me", "Starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer.")
+					@radio("scope", "system", string(p.Scope), "As a system service", "Starts when the computer starts and runs as an account of its own. Needs administrator rights; for a computer that is a server.")
+					@fieldProblem(prob, "scope")
+					<p class="form-help when when-system">
+						if admin {
+							Setup is running with administrator rights.
+						} else {
+							Your computer will ask for an administrator's password when you install.
+						}
+					</p>
+				} else {
+					<p class="card-desc">
+						if p.Scope == service.System {
+							A system service.
+						} else {
+							On this computer, for its user.
+						}
+					</p>
+				}
+				@input("Folder", "dir", "text", p.Dir, "Cog keeps its program, settings and everyone's files here. Pick a disk with room for them.", prob)
+			}
+			@ui.Card("Admin account") {
+				if p.Mode == ModeReconfig {
+					<p class="card-desc">Leave these empty to keep the accounts as they are. A name that exists has its password reset and is made an admin.</p>
+				} else {
+					<p class="card-desc">The account you sign in with to manage Cog. You can add other people from the admin pages afterwards.</p>
+				}
+				@input("Name", "admin_user", "text", p.AdminUser, "", prob)
+				@input("Password", "admin_password", "password", "", "At least 8 characters. If Cog will be reachable from the internet, make it long.", prob)
+				@input("Password again", "admin_password_confirm", "password", "", "", prob)
+			}
+			@ui.Card("Who can reach Cog") {
+				@radio("access", AccessLocal, p.Access, "Only this computer", "Open Cog at http://localhost. Nothing else on the network can connect.")
+				@radio("access", AccessLAN, p.Access, "My home network", "Phones and computers on the same Wi-Fi reach it at http://"+lan+". Not encrypted, so only for a network you trust.")
+				@radio("access", AccessInternet, p.Access, "Anywhere, over HTTPS", "Cog gets a free certificate from Let's Encrypt and your router forwards the internet to this computer. You need a domain name.")
+				@radio("access", AccessProxy, p.Access, "Anywhere, behind my reverse proxy", "Caddy, nginx or similar already handles HTTPS and passes requests on to Cog.")
+				@fieldProblem(prob, "access")
+				@input("Port", "port", "number", port(p.Port), "The plain HTTP port. With HTTPS it answers only on this computer.", prob)
+				<div class="when when-internet">
+					<h3 class="card-subtitle">Your domain</h3>
+					@input("Domain name", "domain", "text", p.Domain, "A name that points at your home's public address, such as cloud.example.com. A dynamic DNS service (Duck DNS, deSEC) gives you one for free and keeps it pointing at you when your address changes.", prob)
+					@input("Email (optional)", "email", "email", p.Email, "Let's Encrypt writes here about problems with your certificate.", prob)
+					@input("HTTPS port on this computer", "https_port", "number", port(p.HTTPSPort), "Your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.", prob)
+					<h3 class="card-subtitle">How Let's Encrypt checks the name is yours</h3>
+					@radio("challenge", certs.TLSALPN01, p.Challenge, "Through the HTTPS port", "Simplest: only port 443 has to be forwarded.")
+					@radio("challenge", certs.HTTP01, p.Challenge, "Through port 80", "For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.")
+					@radio("challenge", certs.DNS01, p.Challenge, "Through my DNS host", "Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.")
+					@fieldProblem(prob, "challenge")
+					<div class="when when-http01">
+						@input("HTTP port on this computer", "http_port", "number", port(p.HTTPPort), "Your router forwards the internet's port 80 to this one.", prob)
+					</div>
+					<div class="when when-dns">
+						<div class="form-group">
+							<label for="dns_provider">DNS host</label>
+							<select class="form-control" id="dns_provider" name="dns_provider">
+								<option value="">Choose…</option>
+								for _, d := range certs.DNSProviders {
+									<option value={ d.Name } selected?={ d.Name == p.DNSProvider }>{ d.Label }</option>
+								}
+							</select>
+							@fieldProblem(prob, "dns_provider")
+						</div>
+						for _, d := range certs.DNSProviders {
+							<div class={ "when when-dns-" + d.Name }>
+								for _, v := range d.Vars {
+									@input(v.Label, "dns_env."+v.Name, inputType(v.Secret), p.DNSEnv[v.Name], "", prob)
+								}
+							</div>
+						}
+					</div>
+					@checkbox("staging", p.Staging, "Use Let's Encrypt's test service", "For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.")
+				</div>
+				<div class="when when-proxy">
+					@input("Public address", "public_url", "url", p.PublicURL, "The https:// address your proxy serves Cog at.", prob)
+					@input("Proxy addresses", "trusted_proxies", "text", p.TrustedProxies, "The proxy's address as a range, such as 127.0.0.1/32 or 172.16.0.0/12, so Cog sees visitors' real addresses. Separate several with commas.", prob)
+				</div>
+				<p class="form-help when when-lan">
+					To use Cog away from home later, run setup again and choose HTTPS.
+				</p>
+			}
+			@ui.Card("SSH and SFTP") {
+				@checkbox("ssh", p.SSH, "Serve SSH", "Sign in with an SSH key to reach your files over SFTP, rsync and scp, or use Cog's shell.")
+				<div class="when when-ssh">
+					@input("SSH port", "ssh_port", "number", port(p.SSHPort), "", prob)
+					@checkbox("ssh_account_passwords", p.SSHAccountPasswords, "Allow account passwords over SSH", "Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if your router forwards the SSH port.")
+				</div>
+			}
+			@ui.Card("Updates") {
+				@checkbox("update_check", p.UpdateCheck, "Check for new versions daily", "Admins see an update on the Admin > Updates page and install it with a click.")
+				@checkbox("update_auto", p.UpdateAuto, "Install new versions automatically", "Cog restarts itself, which interrupts uploads and downloads in progress.")
+			}
+			<div class="when when-system">
+				@ui.Card("Firewall") {
+					@checkbox("firewall", p.Firewall, "Open Cog's ports in the firewall", "Windows Firewall, ufw or firewalld, whichever this computer uses.")
+				}
+			</div>
+			<div class="form-actions">
+				<button class="btn btn-primary" type="submit">Review</button>
+			</div>
+		</form>
+		@quitForm()
+	}
+}
+
+func inputType(secret bool) string {
+	if secret {
+		return "password"
+	}
+	return "text"
+}
+
+templ reviewPage(p Plan, lan string, dns DNSCheck) {
+	@layout("Review") {
+		@ui.PageHeader("Ready to set up", nil)
+		@ui.Card("What setup will do") {
+			<ul>
+				if p.Mode == ModeInstall {
+					<li>Copy Cog to { p.Layout().Bin }.</li>
+				} else {
+					<li>Stop Cog, put this version in { p.Layout().Bin } and change its settings.</li>
+				}
+				<li>Keep settings in { p.Layout().Config } and data in { p.Dir }.</li>
+				if p.AdminUser != "" {
+					<li>Make { p.AdminUser } an admin, with the password you chose.</li>
+				}
+				if p.Scope == service.System {
+					<li>Install a system service that runs as { p.Account() } and starts with the computer.</li>
+				} else {
+					<li>Start Cog now and whenever you sign in.</li>
+				}
+				if p.Access == AccessInternet {
+					<li>Get a certificate for { p.Domain } from Let's Encrypt{ stagingNote(p) }.</li>
+				}
+				if p.Firewall {
+					<li>Open { portList(p.reachablePorts()) } in the firewall.</li>
+				}
+			</ul>
+		}
+		if p.Access == AccessInternet {
+			@ui.Card("Before you continue: your router") {
+				<p class="card-desc">
+					Add these port forwarding rules in your router's settings (often under "Port forwarding", "Virtual servers" or "NAT"), to this computer's address, { lan }. Setup checks the HTTPS one when it asks for the certificate.
+				</p>
+				<table class="forwards">
+					<thead><tr><th>Name</th><th>Protocol</th><th>Public port</th><th>To { lan }, port</th></tr></thead>
+					<tbody>
+						for _, f := range p.Forwards() {
+							<tr><td>Cog { f.Name }</td><td>TCP</td><td>{ strconv.Itoa(f.Public) }</td><td>{ strconv.Itoa(f.Local) }</td></tr>
+						}
+					</tbody>
+				</table>
+				<p class="form-help">
+					Give this computer a fixed address on your network (a "DHCP reservation" in the router), or the rules will point at the wrong device when its address changes.
+				</p>
+				if p.Challenge == certs.DNS01 {
+					<p class="form-help">The certificate does not need the forwarding rules, but anyone reaching Cog from outside does.</p>
+				}
+			}
+			@ui.Card("Your domain") {
+				if dns.Err != nil {
+					@ui.Alert("warning", fmt.Sprintf("%s does not resolve yet (%v). Point it at your public address first, or the certificate cannot be issued.", p.Domain, dns.Err))
+				} else if dns.Private {
+					@ui.Alert("warning", fmt.Sprintf("%s points at %s, an address inside a private network. Let's Encrypt cannot reach that: point it at your public address.", p.Domain, strings.Join(dns.Addrs, ", ")))
+				} else {
+					<p class="card-desc">{ p.Domain } points at { strings.Join(dns.Addrs, ", ") }. That should be your home's public address, which your router's status page shows.</p>
+				}
+			}
+			@ui.Card("Keeping it safe") {
+				<ul>
+					<li>Anyone on the internet can reach the sign-in page. Use a long admin password, and turn on two-factor sign-in under Settings > Security once you are in.</li>
+					<li>Cog limits how fast anyone can guess passwords. Plain HTTP answers only on this computer; everyone else gets HTTPS.</li>
+					if p.SSH {
+						if p.SSHAccountPasswords {
+							<li>SSH accepts account passwords. If you forward the SSH port, run setup again and turn that off, then add an SSH key under Settings > Security.</li>
+						} else {
+							<li>SSH accepts keys and app passwords only. Add an SSH key under Settings > Security. Forwarding its port is optional; leave it off if you only use SSH at home.</li>
+						}
+					}
+					if !p.UpdateCheck {
+						<li>Update checks are off: you will not hear about security fixes.</li>
+					}
+				</ul>
+			}
+		}
+		if p.Access == AccessProxy {
+			@ui.Card("Your proxy") {
+				<p class="card-desc">Point your proxy at http://{ lan }:{ strconv.Itoa(p.Port) } and have it pass the Host header and X-Forwarded-For. Cog will say it is at { p.PublicURL }.</p>
+			}
+		}
+		<form method="post" action="/apply" class="btn-group">
+			<button class="btn btn-primary" type="submit">
+				if p.Mode == ModeInstall {
+					Install
+				} else {
+					Apply changes
+				}
+			</button>
+			<a class="btn btn-secondary" href="/plan">Back</a>
+		</form>
+	}
+}
+
+func stagingNote(p Plan) string {
+	if p.Staging {
+		return " (test service: browsers will warn about it)"
+	}
+	return ""
+}
+
+func portList(ports []service.Port) string {
+	s := make([]string, len(ports))
+	for i, p := range ports {
+		s[i] = fmt.Sprintf("%d (%s)", p.Number, p.Name)
+	}
+	return strings.Join(s, ", ")
+}
+
+templ resetPage(p Plan, prob Problem) {
+	@layout("Reset admin password") {
+		@ui.PageHeader("Reset an admin's password", nil)
+		@ui.Card("") {
+			<p class="card-desc">Sets the password of this account and makes it an admin, signing it out everywhere. An account that does not exist is made.</p>
+			<form method="post" action="/reset">
+				@input("Name", "admin_user", "text", p.AdminUser, "", prob)
+				@input("New password", "admin_password", "password", "", "At least 8 characters.", prob)
+				@input("New password again", "admin_password_confirm", "password", "", "", prob)
+				<div class="form-actions btn-group">
+					<button class="btn btn-primary" type="submit">Set password</button>
+					<a class="btn btn-secondary" href="/">Back</a>
+				</div>
+			</form>
+		}
+	}
+}
+
+templ progressPage(s snapshot) {
+	@layout("Setting up") {
+		@ui.PageHeader(progressTitle(s), nil)
+		@progressBody(s)
+	}
+}
+
+func progressTitle(s snapshot) string {
+	switch s.Mode {
+	case ModeUninstall:
+		return "Removing the service"
+	case ModeResetAdmin:
+		return "Resetting the password"
+	}
+	return "Setting up Cog"
+}
+
+templ progressBody(s snapshot) {
+	<div
+		id="progress"
+		if !s.Done {
+			hx-get="/progress/log"
+			hx-trigger="every 1s"
+			hx-swap="outerHTML"
+		}
+	>
+		if s.Done && s.Err != nil {
+			@ui.Alert("error", "Setup stopped: "+s.Err.Error())
+		} else if s.Done {
+			for _, w := range s.Res.Warnings {
+				@ui.Alert("warning", w)
+			}
+			if s.Res.URL != "" {
+				<div class="alert alert-success" role="status">
+					<div class="alert-title">Cog is running.</div>
+					<a class="btn btn-primary" href={ templ.SafeURL(s.Res.URL) } target="_blank" rel="noopener">Open Cog</a>
+				</div>
+			} else {
+				@ui.Alert("success", "Done.")
+			}
+		}
+		@ui.Card("") {
+			<pre class="code-block log">{ s.Log }</pre>
+		}
+		if s.Done {
+			<div class="btn-group">
+				<form method="post" action="/quit"><button class="btn btn-secondary">Close setup</button></form>
+				if s.Err != nil {
+					<a class="btn btn-secondary" href="/plan">Back to settings</a>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ closedPage() {
+	@layout("Setup closed") {
+		@ui.PageHeader("Setup is closed", nil)
+		<p>You can close this tab. Run Cog's setup again to change anything.</p>
+	}
+}
