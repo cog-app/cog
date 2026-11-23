@@ -2174,6 +2174,7 @@ templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan,
 			} else {
 				<div class="card">
 					<h2 class="card-title">{ plural(len(plan.Renames), "file", "files") + " will be renamed" }</h2>
+					<p class="card-desc">Folders the rename leaves empty are removed, short of the scan folders themselves. A folder with anything else in it stays.</p>
 					if len(plan.Renames) > renameDetailLimit {
 						@renameKinds(SummarizeRenames(plan.Renames, renameDetailLimit))
 					} else {

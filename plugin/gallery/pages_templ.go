@@ -8058,7 +8058,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 655, "</h2>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 655, "</h2><p class=\"card-desc\">Folders the rename leaves empty are removed, short of the scan folders themselves. A folder with anything else in it stays.</p>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -8080,7 +8080,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var375 string
 							templ_7745c5c3_Var375, templ_7745c5c3_Err = templ.JoinStringErrs(p.OldPath)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2190, Col: 55}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2191, Col: 55}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var375))
 							if templ_7745c5c3_Err != nil {
@@ -8093,7 +8093,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var376 string
 							templ_7745c5c3_Var376, templ_7745c5c3_Err = templ.JoinStringErrs(p.NewPath)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2192, Col: 22}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2193, Col: 22}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var376))
 							if templ_7745c5c3_Err != nil {
@@ -8126,7 +8126,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var377 string
 					templ_7745c5c3_Var377, templ_7745c5c3_Err = templ.JoinStringErrs(csrfToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2204, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2205, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var377))
 					if templ_7745c5c3_Err != nil {
@@ -8139,7 +8139,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var378 string
 					templ_7745c5c3_Var378, templ_7745c5c3_Err = templ.JoinStringErrs(pattern)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2205, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2206, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var378))
 					if templ_7745c5c3_Err != nil {
@@ -8152,7 +8152,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var379 string
 					templ_7745c5c3_Var379, templ_7745c5c3_Err = templ.JoinStringErrs(string(policy))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2206, Col: 65}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2207, Col: 65}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var379))
 					if templ_7745c5c3_Err != nil {
@@ -8165,7 +8165,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var380 string
 					templ_7745c5c3_Var380, templ_7745c5c3_Err = templ.JoinStringErrs("Rename " + plural(len(plan.Renames), "file", "files"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2207, Col: 107}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2208, Col: 107}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var380))
 					if templ_7745c5c3_Err != nil {
@@ -8188,7 +8188,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 					var templ_7745c5c3_Var381 string
 					templ_7745c5c3_Var381, templ_7745c5c3_Err = templ.JoinStringErrs(plural(len(plan.Skipped), "file", "files") + " left alone")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2213, Col: 88}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2214, Col: 88}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var381))
 					if templ_7745c5c3_Err != nil {
@@ -8211,7 +8211,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var382 string
 							templ_7745c5c3_Var382, templ_7745c5c3_Err = templ.JoinStringErrs(k.Reason)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2226, Col: 21}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2227, Col: 21}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var382))
 							if templ_7745c5c3_Err != nil {
@@ -8224,7 +8224,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var383 string
 							templ_7745c5c3_Var383, templ_7745c5c3_Err = templ.JoinStringErrs(k.Example.Path)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2227, Col: 78}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2228, Col: 78}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var383))
 							if templ_7745c5c3_Err != nil {
@@ -8237,7 +8237,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var384 string
 							templ_7745c5c3_Var384, templ_7745c5c3_Err = templ.JoinStringErrs(k.Example.Reason)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2227, Col: 107}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2228, Col: 107}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var384))
 							if templ_7745c5c3_Err != nil {
@@ -8250,7 +8250,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var385 string
 							templ_7745c5c3_Var385, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(k.Count))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2229, Col: 75}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2230, Col: 75}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var385))
 							if templ_7745c5c3_Err != nil {
@@ -8278,7 +8278,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var386 string
 							templ_7745c5c3_Var386, templ_7745c5c3_Err = templ.JoinStringErrs(s.Path)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2245, Col: 53}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2246, Col: 53}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var386))
 							if templ_7745c5c3_Err != nil {
@@ -8291,7 +8291,7 @@ func renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, 
 							var templ_7745c5c3_Var387 string
 							templ_7745c5c3_Var387, templ_7745c5c3_Err = templ.JoinStringErrs(s.Reason)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2246, Col: 41}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/gallery/pages.templ`, Line: 2247, Col: 41}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var387))
 							if templ_7745c5c3_Err != nil {

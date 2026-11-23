@@ -219,6 +219,7 @@ func TestRenameRemovesEmptiedFolders(t *testing.T) {
 		return err == nil
 	}
 
+	e.preview(t, "Photos/out/{{.Original}}{{.Ext}}", gallery.ConflictSkip).Contains("Folders the rename leaves empty are removed")
 	e.apply(t, "Photos/out/{{.Original}}{{.Ext}}", gallery.ConflictSkip)
 	e.holds(t, "/Photos/out/a.jpg", "/Photos/phone/2020/a.jpg")
 	e.holds(t, "/Photos/out/c.jpg", "/Photos/deep/x/y/c.jpg")
