@@ -116,11 +116,11 @@ func (h searchHandler) SearchPartial(w http.ResponseWriter, r *http.Request) {
 	var help []search.Hit
 	helpFirst := onDocsPage(r)
 	if helpFirst {
-		help = h.docsSearch(q, limit)
+		help = h.docsSearch(q, limit, u.IsAdmin)
 		searchUser(limit - len(help))
 	} else {
 		searchUser(limit)
-		help = h.docsSearch(q, limit-len(userHits))
+		help = h.docsSearch(q, limit-len(userHits), u.IsAdmin)
 	}
 	if h.p.Search != nil && u.IsAdmin {
 		result, err := h.p.Search.SearchSystem(q, limit, 0)

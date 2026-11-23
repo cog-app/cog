@@ -20,6 +20,8 @@ import (
 type liveDocs struct {
 	docs  *docs.Docs
 	index *search.Index
+	// adminPages is how many pages the administrators' section has.
+	adminPages int
 }
 
 var appDocs = sync.OnceValues(func() (*liveDocs, error) {
@@ -34,7 +36,13 @@ var appDocs = sync.OnceValues(func() (*liveDocs, error) {
 	if err := idx.Batch(d.Documents(), nil); err != nil {
 		return nil, fmt.Errorf("docs: index: %w", err)
 	}
-	return &liveDocs{docs: d, index: idx}, nil
+	ld := &liveDocs{docs: d, index: idx}
+	for _, sec := range d.Nav {
+		if sec.Dir == docs.AdminSection {
+			ld.adminPages = len(sec.Pages)
+		}
+	}
+	return ld, nil
 })
 
 type docsHandler struct{ handler }
@@ -82,8 +90,9 @@ func (h docsHandler) part(w http.ResponseWriter, r *http.Request, p *docs.Page, 
 	}
 }
 
-// docsSearch is the help pages matching q, at most limit.
-func (h handler) docsSearch(q string, limit int) []search.Hit {
+// docsSearch is the help pages matching q, at most limit. Like the
+// sidebar, it leaves the administrators' pages out for everyone else.
+func (h handler) docsSearch(q string, limit int, admin bool) []search.Hit {
 	if limit <= 0 {
 		return nil
 	}
@@ -92,10 +101,29 @@ func (h handler) docsSearch(q string, limit int) []search.Hit {
 		h.p.Log.Error("search: docs", "err", err)
 		return nil
 	}
-	res, err := ld.index.Search(q, limit, 0)
+	if admin {
+		res, err := ld.index.Search(q, limit, 0)
+		if err != nil {
+			h.p.Log.Error("search: docs", "err", err)
+			return nil
+		}
+		return res.Hits
+	}
+	// Ask for as many more as there are administrators' pages, so that
+	// leaving them out still fills the list.
+	res, err := ld.index.Search(q, limit+ld.adminPages, 0)
 	if err != nil {
 		h.p.Log.Error("search: docs", "err", err)
 		return nil
 	}
-	return res.Hits
+	hits := make([]search.Hit, 0, limit)
+	for _, hit := range res.Hits {
+		if id, _ := hit.Fields["_id"].(string); strings.HasPrefix(id, docs.AdminSection+"/") {
+			continue
+		}
+		if hits = append(hits, hit); len(hits) == limit {
+			break
+		}
+	}
+	return hits
 }

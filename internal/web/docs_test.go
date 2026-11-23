@@ -57,6 +57,22 @@ func TestSearchPartialHelp(t *testing.T) {
 	require.True(t, help >= 0 && help < pages, "help first on a help page")
 }
 
+// TestSearchPartialHelpAdmin: like the sidebar, the search leaves the
+// administrators' help out for everyone else.
+func TestSearchPartialHelpAdmin(t *testing.T) {
+	env := cogtest.New(t)
+	admin := env.CreateUser(t, "root", "pass") // the first user is an administrator
+	alice := env.CreateUser(t, "alice", "pass")
+	find := func(u *cogtest.User) string {
+		return env.Get(t, "/api/search/partial?q=volumes", u.Auth,
+			cogtest.Header("HX-Current-URL", env.Providers.Config.BaseURL+"/docs/")).Status(http.StatusOK).ReadBody()
+	}
+	require.Contains(t, find(admin), `href="/docs/admin/volumes.html"`)
+	body := find(alice)
+	require.NotContains(t, body, `href="/docs/admin/`)
+	require.Contains(t, body, `href="/docs/using-cog/storage.html"`)
+}
+
 // TestBrowserDocs: a docs page in Cog's layout with the user's navbar, its
 // sidebar folded to the current section, and the search finding help.
 func TestBrowserDocs(t *testing.T) {
