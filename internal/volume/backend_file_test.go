@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 func tempFileBackend(t *testing.T) (*fileBackend, string) {
@@ -294,4 +295,22 @@ func TestFileBackend_GetMissingErrNotFoundLike(t *testing.T) {
 	require.True(t, err != nil)
 	// fileBackend wraps via os.IsNotExist semantics; just confirm an error.
 	_ = errors.Is(err, os.ErrNotExist)
+}
+
+func TestFileBackend_RemoveEmptyDir(t *testing.T) {
+	b, _ := tempFileBackend(t)
+	require.NoError(t, b.Mkdir("/empty"))
+	require.NoError(t, b.Put("/full/f.txt", strings.NewReader("x")))
+
+	require.NoError(t, b.RemoveEmptyDir("/empty"))
+	_, err := b.Stat("/empty")
+	require.True(t, err != nil)
+
+	require.True(t, errors.Is(b.RemoveEmptyDir("/full"), vfs.ErrNotEmpty))
+	got, err := b.ReadFile("/full/f.txt")
+	require.NoError(t, err)
+	require.Equal(t, "x", string(got))
+
+	require.True(t, b.RemoveEmptyDir("/full/f.txt") != nil)
+	require.True(t, b.RemoveEmptyDir("/") != nil)
 }

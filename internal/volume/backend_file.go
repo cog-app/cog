@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/vfs"
@@ -16,13 +17,14 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ vfs.FS            = (*fileBackend)(nil)
-	_ vfs.FileOpener    = (*fileBackend)(nil)
-	_ vfs.AttrSetter    = (*fileBackend)(nil)
-	_ vfs.DirReader     = (*fileBackend)(nil)
-	_ vfs.LocalRooter   = (*fileBackend)(nil)
-	_ vfs.AtomicCreator = (*fileBackend)(nil)
-	_ vfs.NoReplacer    = (*fileBackend)(nil)
+	_ vfs.FS              = (*fileBackend)(nil)
+	_ vfs.FileOpener      = (*fileBackend)(nil)
+	_ vfs.EmptyDirRemover = (*fileBackend)(nil)
+	_ vfs.AttrSetter      = (*fileBackend)(nil)
+	_ vfs.DirReader       = (*fileBackend)(nil)
+	_ vfs.LocalRooter     = (*fileBackend)(nil)
+	_ vfs.AtomicCreator   = (*fileBackend)(nil)
+	_ vfs.NoReplacer      = (*fileBackend)(nil)
 )
 
 // fileBackend serves a local directory. Every operation goes through an
@@ -140,6 +142,28 @@ func (b *fileBackend) Delete(p string) error {
 		return errors.New("delete: refusing to delete the volume root")
 	}
 	return b.with(func(r *os.Root) error { return r.RemoveAll(name) })
+}
+
+// RemoveEmptyDir is rmdir(2), which refuses a folder with anything in it.
+func (b *fileBackend) RemoveEmptyDir(p string) error {
+	name := rel(p)
+	if name == "." {
+		return errors.New("remove: refusing to remove the volume root")
+	}
+	return b.with(func(r *os.Root) error {
+		fi, err := r.Lstat(name)
+		if err != nil {
+			return err
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("%s: %w", p, syscall.ENOTDIR)
+		}
+		err = r.Remove(name)
+		if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST) {
+			return fmt.Errorf("%s: %w", p, vfs.ErrNotEmpty)
+		}
+		return err
+	})
 }
 
 func (b *fileBackend) Rename(oldPath, newPath string) error {

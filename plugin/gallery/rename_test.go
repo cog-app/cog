@@ -201,3 +201,40 @@ func TestRenameKeepsFileTheIndexHasNotSeen(t *testing.T) {
 	e.holds(t, "/Photos/a.jpg", "/Photos/a.jpg")
 	require.Equal(t, "/Photos/a.jpg", e.mediaPath(t, id))
 }
+
+// Folders a rename empties go, and so do the folders they leave empty in
+// turn; a folder with anything else in it stays, even a file the index has
+// never seen, and so does the scan folder itself. Undo puts the folders
+// back and clears away the ones it empties.
+func TestRenameRemovesEmptiedFolders(t *testing.T) {
+	e := newRenameEnv(t, "/Photos/phone/2020/a.jpg", "/Photos/phone/2021/b.jpg", "/Photos/deep/x/y/c.jpg", "/Photos/kept/d.jpg")
+	e.upload(t, "/Photos/kept/notes.txt", []byte("not a photo"))
+	hidden := e.diskPath(t, "/Photos/phone/2021/.nomedia")
+	require.NoError(t, os.WriteFile(hidden, nil, 0o600))
+	exists := func(p string) bool {
+		_, err := os.Stat(e.diskPath(t, p))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return err == nil
+	}
+
+	e.apply(t, "Photos/out/{{.Original}}{{.Ext}}", gallery.ConflictSkip)
+	e.holds(t, "/Photos/out/a.jpg", "/Photos/phone/2020/a.jpg")
+	e.holds(t, "/Photos/out/c.jpg", "/Photos/deep/x/y/c.jpg")
+	for p, want := range map[string]bool{
+		"/Photos/phone/2020": false,
+		"/Photos/phone/2021": true,
+		"/Photos/phone":      true,
+		"/Photos/deep":       false,
+		"/Photos/kept":       true,
+		"/Photos":            true,
+	} {
+		require.Equal(t, want, exists(p), p)
+	}
+
+	e.undo(t)
+	e.holds(t, "/Photos/phone/2020/a.jpg", "/Photos/phone/2020/a.jpg")
+	e.holds(t, "/Photos/deep/x/y/c.jpg", "/Photos/deep/x/y/c.jpg")
+	require.False(t, exists("/Photos/out"), "/Photos/out")
+}

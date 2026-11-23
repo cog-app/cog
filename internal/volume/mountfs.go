@@ -17,11 +17,12 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ vfs.FS         = (*MountFS)(nil)
-	_ vfs.Unwrapper  = (*MountFS)(nil)
-	_ vfs.FileOpener = (*MountFS)(nil)
-	_ vfs.AttrSetter = (*MountFS)(nil)
-	_ vfs.DirReader  = (*MountFS)(nil)
+	_ vfs.FS              = (*MountFS)(nil)
+	_ vfs.Unwrapper       = (*MountFS)(nil)
+	_ vfs.FileOpener      = (*MountFS)(nil)
+	_ vfs.AttrSetter      = (*MountFS)(nil)
+	_ vfs.DirReader       = (*MountFS)(nil)
+	_ vfs.EmptyDirRemover = (*MountFS)(nil)
 )
 
 // MountFS routes VFS operations to backends based on mount path prefixes.
@@ -339,6 +340,17 @@ func (m *MountFS) Delete(p string) error {
 		return err
 	}
 	return backend.Delete(subpath)
+}
+
+func (m *MountFS) RemoveEmptyDir(p string) error {
+	if m.isMountPoint(p) {
+		return ErrMountPoint
+	}
+	backend, subpath, err := m.checkWrite(p)
+	if err != nil {
+		return err
+	}
+	return vfs.RemoveEmptyDir(backend, subpath)
 }
 
 func (m *MountFS) Rename(oldPath, newPath string) error {

@@ -263,6 +263,23 @@ func (o *OverlayFS) Rename(oldPath, newPath string) error {
 	return o.rename(oldPath, newPath, FS.Rename)
 }
 
+func (o *OverlayFS) RemoveEmptyDir(p string) error {
+	p = o.clean(p)
+	if _, ok := o.files[p]; ok {
+		return fmt.Errorf("cannot delete virtual file: %s", p)
+	}
+	if mfs, sub, ok := o.resolveMount(p); ok {
+		return RemoveEmptyDir(mfs, sub)
+	}
+	if o.dirs[p] {
+		return fmt.Errorf("cannot delete virtual directory: %s", p)
+	}
+	if o.base == nil {
+		return ErrNotFound
+	}
+	return RemoveEmptyDir(o.base, p)
+}
+
 // RenameNoReplace is Rename that leaves a file already at newPath alone.
 func (o *OverlayFS) RenameNoReplace(oldPath, newPath string) error {
 	return o.rename(oldPath, newPath, RenameNoReplace)

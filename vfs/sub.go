@@ -101,6 +101,17 @@ func (s *subFS) Delete(p string) error {
 	return s.fs.Delete(full)
 }
 
+func (s *subFS) RemoveEmptyDir(p string) error {
+	if path.Clean("/"+p) == "/" {
+		return fmt.Errorf("delete /: %w", fs.ErrPermission)
+	}
+	full, err := s.write(p)
+	if err != nil {
+		return err
+	}
+	return RemoveEmptyDir(s.fs, full)
+}
+
 func (s *subFS) Rename(oldPath, newPath string) error {
 	from, err := s.write(oldPath)
 	if err != nil {

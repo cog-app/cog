@@ -695,6 +695,39 @@ func (p *Plugin) HardDelete(username, filePath string) error {
 	return nil
 }
 
+// RemoveEmptyDir removes a folder only if nothing is in it, deciding that
+// as it removes, so a file that arrives meanwhile is never taken with it.
+// A folder with anything in it gives an error matching vfs.ErrNotEmpty;
+// a shared folder, or storage that cannot decide that as it removes, one
+// matching errors.ErrUnsupported.
+func (p *Plugin) RemoveEmptyDir(username, dirPath string) error {
+	dirPath = normalizePath(dirPath)
+	if dirPath == "/" {
+		return fmt.Errorf("remove /: %w", iofs.ErrPermission)
+	}
+	if _, ok, err := p.shared(username, dirPath); err != nil {
+		return err
+	} else if ok {
+		return fmt.Errorf("remove shared folder %s: %w", dirPath, errors.ErrUnsupported)
+	}
+	db, err := p.DB(username)
+	if err != nil {
+		return err
+	}
+	fsys, err := p.userFS(username)
+	if err != nil {
+		return err
+	}
+	if err := vfs.RemoveEmptyDir(fsys, dirPath); err != nil {
+		return err
+	}
+	if err := forgetRows(db, dirPath); err != nil {
+		return err
+	}
+	p.treeChanged()
+	return nil
+}
+
 // Rename moves/renames a file or directory, preserving its stable ID.
 // Whatever is at newPath is replaced.
 func (p *Plugin) Rename(username, oldPath, newPath string) (*FileMeta, error) {

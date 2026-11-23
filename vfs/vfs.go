@@ -121,6 +121,28 @@ func RenameNoReplace(fsys FS, oldPath, newPath string) error {
 	return fmt.Errorf("rename %s without replacing: %w", oldPath, errors.ErrUnsupported)
 }
 
+// EmptyDirRemover is implemented by file systems that can remove a folder
+// only if it is empty, deciding that in the same step as removing it, so a
+// file that arrives a moment before is not deleted with it.
+// RemoveEmptyDir fails with an error matching ErrNotEmpty when it is not.
+type EmptyDirRemover interface {
+	RemoveEmptyDir(path string) error
+}
+
+// ErrNotEmpty is the error RemoveEmptyDir gives for a folder with
+// anything in it.
+var ErrNotEmpty = errors.New("folder not empty")
+
+// RemoveEmptyDir removes the folder at p if it is empty. A file system that
+// cannot decide that as it removes fails with errors.ErrUnsupported rather
+// than check first and race.
+func RemoveEmptyDir(fsys FS, p string) error {
+	if r, ok := fsys.(EmptyDirRemover); ok {
+		return r.RemoveEmptyDir(p)
+	}
+	return fmt.Errorf("remove empty folder %s: %w", p, errors.ErrUnsupported)
+}
+
 // DirReader provides os-level fs.FileInfo/fs.DirEntry (SFTP, shell stat/readdir).
 type DirReader interface {
 	StatInfo(path string) (fs.FileInfo, error)

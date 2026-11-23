@@ -1,10 +1,12 @@
 package gallery
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"git.duckfam.us/jj-software/cog/plugin/files"
+	"git.duckfam.us/jj-software/cog/vfs"
 )
 
 // RenameData is the template context for file rename patterns.
@@ -572,12 +575,14 @@ func (p *Plugin) ApplyRename(username string, renames []RenamePreview) error {
 	// are reported together at the end. A file waiting on the failed one's
 	// name then finds it taken and stays put too.
 	var errs []error
+	var left []string
 	for _, s := range renameSteps(renames) {
 		if err := moveNoReplace(fp, username, s.From, s.To); err != nil {
 			p.log.Error("rename", "from", s.From, "to", s.To, "err", err)
 			errs = append(errs, fmt.Errorf("%s: %w", s.From, err))
 			continue
 		}
+		left = append(left, path.Dir(s.From))
 
 		// Log for undo first: a renamed file the batch does not know of
 		// could not be put back.
@@ -592,7 +597,39 @@ func (p *Plugin) ApplyRename(username string, renames []RenamePreview) error {
 		}
 	}
 
+	p.removeEmptied(fp, username, ParseScanFolders(db), left)
 	return renameErrors(errs, len(renames))
+}
+
+// removeEmptied removes the folders a rename left empty, and the folders
+// above them that are left empty in turn, short of a scan folder's own
+// root, which the gallery goes on looking in. Every folder is tried after
+// all those below it, so one emptied by its last subfolder going goes too.
+func (p *Plugin) removeEmptied(fp *files.Plugin, username string, scanFolders, dirs []string) {
+	keep := map[string]bool{"/": true}
+	for _, f := range scanFolders {
+		keep[path.Clean("/"+scanFolderDir(f))] = true
+	}
+	candidates := map[string]bool{}
+	for _, dir := range dirs {
+		for ; !keep[dir] && !candidates[dir]; dir = path.Dir(dir) {
+			candidates[dir] = true
+		}
+	}
+	order := slices.SortedFunc(maps.Keys(candidates), func(a, b string) int {
+		return cmp.Or(strings.Count(b, "/")-strings.Count(a, "/"), strings.Compare(a, b))
+	})
+	for _, dir := range order {
+		err := fp.RemoveEmptyDir(username, dir)
+		switch {
+		case err == nil, errors.Is(err, vfs.ErrNotEmpty), errors.Is(err, fs.ErrNotExist):
+		case errors.Is(err, errors.ErrUnsupported):
+			p.log.Warn("rename: emptied folders kept", "err", err)
+			return
+		default:
+			p.log.Warn("rename: emptied folder kept", "dir", dir, "err", err)
+		}
+	}
 }
 
 // renameErrors summarises the failures of a batch of n renames, or is nil.
@@ -624,18 +661,21 @@ func (p *Plugin) UndoLastRename(username string) error {
 
 	// Backwards, so each name is free again by the time it is wanted.
 	var errs []error
+	var left []string
 	for _, e := range slices.Backward(entries) {
 		if err := moveNoReplace(fp, username, e.NewPath, e.OldPath); err != nil {
 			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
 			errs = append(errs, fmt.Errorf("%s: %w", e.NewPath, err))
 			continue
 		}
+		left = append(left, path.Dir(e.NewPath))
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE file_id = ?`, e.OldPath, e.FileID); err != nil {
 			p.log.Error("undo update media path", "file_id", e.FileID, "err", err)
 			errs = append(errs, fmt.Errorf("%s: update gallery: %w", e.OldPath, err))
 		}
 	}
 
+	p.removeEmptied(fp, username, ParseScanFolders(db), left)
 	if err := DeleteRenameBatch(db, batchID); err != nil {
 		errs = append(errs, fmt.Errorf("forget batch: %w", err))
 	}

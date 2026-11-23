@@ -279,6 +279,14 @@ func (t *sharedTree) Delete(p string) error {
 	return fsys.Delete(rel)
 }
 
+func (t *sharedTree) RemoveEmptyDir(p string) error {
+	fsys, rel, err := t.within(p)
+	if err != nil {
+		return err
+	}
+	return vfs.RemoveEmptyDir(fsys, rel)
+}
+
 // pair resolves both ends of a move, which must be in one shared folder.
 func (t *sharedTree) pair(oldPath, newPath string) (vfs.FS, string, string, error) {
 	from, fromRel, err := t.within(oldPath)
