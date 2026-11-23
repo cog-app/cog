@@ -1664,7 +1664,7 @@ templ settingsPage(db *sql.DB, total int, csrfToken string) {
 				<div id="folder-preview" class="gallery-folder-preview" aria-live="polite"></div>
 			</form>
 		}
-		@ui.Card("Rename files") {
+		@ui.HelpCard("Rename files", "apps/gallery.html#file-renaming") {
 			<form method="get" action="/apps/gallery/rename/preview">
 				<div class="form-group">
 					<label for="gallery-rename-pattern">Pattern</label>
@@ -1724,7 +1724,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pr
 	</header>
 	@scanStatusCard(stats, scan, progress, viewer, csrfToken)
 	@workersCard(workers, csrfToken)
-	@ui.Card("Tag classification") {
+	@ui.HelpCard("Tag classification", "apps/gallery.html#image-recognition") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="tags"/>
@@ -1765,7 +1765,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pr
 			</script>
 		</form>
 	}
-	@ui.Card("Face detection") {
+	@ui.HelpCard("Face detection", "apps/gallery.html#image-recognition") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="faces"/>
@@ -1822,7 +1822,7 @@ templ systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pr
 			<button type="submit" class="btn btn-primary">Save</button>
 		</form>
 	}
-	@ui.Card("Text recognition (OCR)") {
+	@ui.HelpCard("Text recognition (OCR)", "apps/gallery.html#image-recognition") {
 		<form method="post" action="/admin/plugins/gallery">
 			<input type="hidden" name="csrf_token" value={ csrfToken }/>
 			<input type="hidden" name="_section" value="ocr"/>
@@ -1971,7 +1971,7 @@ templ scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgr
 			hx-swap="outerHTML"
 		}
 	>
-		@ui.Card("Background scan") {
+		@ui.HelpCard("Background scan", "apps/gallery.html#background-scanning") {
 			if progress.Active() {
 				<div class="mb-2">
 					<div class="progress mb-1" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={ strconv.Itoa(int(progress.Percent())) }>

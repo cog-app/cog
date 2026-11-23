@@ -46,7 +46,7 @@ func adminUpdatesPage(pd ui.PageData, current string, st *update.Status, flash, 
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Updates", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Updates", "admin/updates.html", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

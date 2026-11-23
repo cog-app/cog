@@ -6155,7 +6155,7 @@ func settingsPage(db *sql.DB, total int, csrfToken string) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Rename files").Render(templ.WithChildren(ctx, templ_7745c5c3_Var281), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("Rename files", "apps/gallery.html#file-renaming").Render(templ.WithChildren(ctx, templ_7745c5c3_Var281), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6390,7 +6390,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Tag classification").Render(templ.WithChildren(ctx, templ_7745c5c3_Var290), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Tag classification", "apps/gallery.html#image-recognition").Render(templ.WithChildren(ctx, templ_7745c5c3_Var290), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6481,7 +6481,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Face detection").Render(templ.WithChildren(ctx, templ_7745c5c3_Var293), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Face detection", "apps/gallery.html#image-recognition").Render(templ.WithChildren(ctx, templ_7745c5c3_Var293), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6634,7 +6634,7 @@ func systemSettingsPage(db *sql.DB, stats RecognitionStats, scan ScanStatus, pro
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Text recognition (OCR)").Render(templ.WithChildren(ctx, templ_7745c5c3_Var300), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Text recognition (OCR)", "apps/gallery.html#image-recognition").Render(templ.WithChildren(ctx, templ_7745c5c3_Var300), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -7629,7 +7629,7 @@ func scanStatusCard(stats RecognitionStats, scan ScanStatus, progress ScanProgre
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Background scan").Render(templ.WithChildren(ctx, templ_7745c5c3_Var325), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Background scan", "apps/gallery.html#background-scanning").Render(templ.WithChildren(ctx, templ_7745c5c3_Var325), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

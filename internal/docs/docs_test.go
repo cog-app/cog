@@ -172,3 +172,24 @@ func TestBrowserSite(t *testing.T) {
 	b.WaitVisible(t, "#search-results a[href='../using-cog/webdav.html']")
 	b.Snapshot(t, webtest.State("search"))
 }
+
+// TestPart: a heading's part runs to the next heading as high, and the
+// introduction to the first subheading.
+func TestPart(t *testing.T) {
+	d, err := Load(fstest.MapFS{"index.md": file("# Cog\n\nIntro.\n\n## Sharing\n\nShare.\n\n### Links\n\nLink.\n\n## Search\n\nFind.\n")}, Data{})
+	require.NoError(t, err)
+	p := d.Page("")
+	flat := func(id string) string {
+		h, ok := p.Part(id)
+		require.True(t, ok, id)
+		return strings.Join(strings.Fields(string(h)), " ")
+	}
+	require.Equal(t, `<h1 id="cog">Cog</h1> <p>Intro.</p>`, flat(""))
+	require.Equal(t, `<h2 id="sharing">Sharing</h2> <p>Share.</p> <h3 id="links">Links</h3> <p>Link.</p>`, flat("sharing"))
+	require.Equal(t, `<h3 id="links">Links</h3> <p>Link.</p>`, flat("links"))
+	require.Equal(t, `<h2 id="search">Search</h2> <p>Find.</p>`, flat("search"))
+	_, ok := p.Part("cog")
+	require.False(t, ok, "the title is the introduction")
+	_, ok = p.Part("missing")
+	require.False(t, ok)
+}

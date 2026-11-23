@@ -10,14 +10,26 @@ import (
 	bleveQuery "github.com/blevesearch/bleve/v2/search/query"
 )
 
+// nameBoost weighs a term found in a document's name against one found
+// anywhere in it.
+const nameBoost = 5
+
 // toBleveQuery converts a parsed query Expr into a Bleve query.
 func toBleveQuery(expr query.Expr) bleveQuery.Query {
 	switch e := expr.(type) {
 	case *query.TextExpr:
-		// Match query (tokenized) OR prefix query for partial matches.
+		// Match query (tokenized) OR prefix query for partial matches,
+		// anywhere, and again on the name: a document named for a word
+		// outranks one that only mentions it.
 		matchQ := bleve.NewMatchQuery(e.Value)
 		prefixQ := bleve.NewPrefixQuery(strings.ToLower(e.Value))
-		return bleve.NewDisjunctionQuery(matchQ, prefixQ)
+		nameMatch := bleve.NewMatchQuery(e.Value)
+		nameMatch.SetField("name")
+		nameMatch.SetBoost(nameBoost)
+		namePrefix := bleve.NewPrefixQuery(strings.ToLower(e.Value))
+		namePrefix.SetField("name")
+		namePrefix.SetBoost(nameBoost)
+		return bleve.NewDisjunctionQuery(matchQ, prefixQ, nameMatch, namePrefix)
 
 	case *query.PhraseExpr:
 		return bleve.NewMatchPhraseQuery(e.Value)

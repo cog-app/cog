@@ -17,7 +17,7 @@ import (
 // --- Users ---
 templ adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired []user.RetiredName, flash string, flashKind string, agentOwners map[string]string, blocked []blockedSignIn) {
 	@ui.AdminSidebarPage(pd, "users") {
-		@ui.PageHeader("Users", nil) {
+		@ui.HelpPageHeader("Users", "admin/users-and-groups.html#users", nil) {
 			<a class="btn btn-primary" href="/admin/users/new">
 				@ui.Icon("plus")
 				New user
@@ -224,7 +224,7 @@ templ adminUserEditPage(pd ui.PageData, u *user.User, flash string, flashKind st
 // --- Groups ---
 templ adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "groups") {
-		@ui.PageHeader("Groups", nil)
+		@ui.HelpPageHeader("Groups", "admin/users-and-groups.html#groups", nil)
 		@ui.Alert(flashKind, flash)
 		@ui.Card("Create group") {
 			<form method="post" action="/admin/groups" class="form-inline">
@@ -357,7 +357,7 @@ templ envValue(v, unset string) {
 // --- Email ---
 templ adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, overrideText string, defaultHTML string, defaultText string, flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "email") {
-		@ui.PageHeader("Email", nil)
+		@ui.HelpPageHeader("Email", "admin/email.html", nil)
 		@ui.Alert(flashKind, flash)
 		<form method="post" action="/admin/email">
 			<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>

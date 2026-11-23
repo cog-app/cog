@@ -82,7 +82,7 @@ func adminUsersPage(pd ui.PageData, users iter.Seq2[user.User, error], retired [
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.PageHeader("Users", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Users", "admin/users-and-groups.html#users", nil).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -822,7 +822,7 @@ func adminGroupsPage(pd ui.PageData, groups []group.Group, flash string, flashKi
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Groups", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Groups", "admin/users-and-groups.html#groups", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1434,7 +1434,7 @@ func adminEmailPage(pd ui.PageData, smtp smtpSettingsData, overrideHTML string, 
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Email", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Email", "admin/email.html", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -17,7 +17,7 @@ templ sharedIcon() {
 // sharedPage lists what others shared with the user, by owner.
 templ sharedPage(pd ui.PageData, owners []SharedOwner) {
 	@filesLayout(pd, "shared") {
-		@ui.PageHeader("Shared with me", nil)
+		@ui.HelpPageHeader("Shared with me", "using-cog/sharing.html#shared-with-me", nil)
 		if len(owners) == 0 {
 			<div class="card">
 				@ui.EmptyState("Nothing is shared with you yet", "Folders, files and volumes others share with you appear here.")

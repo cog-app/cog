@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,7 +40,7 @@ var appDocs = sync.OnceValues(func() (*liveDocs, error) {
 type docsHandler struct{ handler }
 
 // Serve handles GET /docs/...: the documentation in Cog's layout, readable
-// signed out.
+// signed out; with ?part=id, only the page's part under that heading.
 func (h docsHandler) Serve(w http.ResponseWriter, r *http.Request) {
 	ld, err := appDocs()
 	if err != nil {
@@ -52,6 +53,10 @@ func (h docsHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if q := r.URL.Query(); q.Has("part") {
+		h.part(w, r, p, q.Get("part"))
+		return
+	}
 	pd := pageDataWithNav(r, p.Title, h.p.CSRFSecret, h.p.Plugins)
 	sidebar, err := ld.docs.Sidebar("/docs/", p, pd.IsAdmin)
 	if err != nil {
@@ -59,6 +64,20 @@ func (h docsHandler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := ui.DocsPage(pd, string(sidebar), string(p.Body), ld.docs.Data.Version).Render(r.Context(), w); err != nil {
+		httperr.Log(r, err)
+	}
+}
+
+// part writes the part of page p under heading id ("" for its
+// introduction) on its own: what a Help icon's popover shows.
+func (h docsHandler) part(w http.ResponseWriter, r *http.Request, p *docs.Page, id string) {
+	html, ok := p.Part(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := io.WriteString(w, string(html)); err != nil {
 		httperr.Log(r, err)
 	}
 }

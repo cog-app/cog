@@ -15,3 +15,19 @@ templ DocsPage(pd PageData, sidebar, body, version string) {
 		</div>
 	}
 }
+
+// Help is a help icon beside what it explains. It links to the docs at ref,
+// a page and heading under /docs/ ("using-cog/sharing.html#permissions"),
+// and hovering or focusing it shows that heading's part in a popover.
+// about names what it explains, for screen readers ("Help: about").
+//
+// A test checks that every ref in a .templ file is a heading in the docs.
+templ Help(ref, about string) {
+	<a class="help-icon" href={ templ.SafeURL("/docs/" + ref) } target="_blank" rel="noopener" aria-label={ "Help: " + about } data-help>
+		@icon() {
+			<circle cx="12" cy="12" r="10"></circle>
+			<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+			<line x1="12" y1="17" x2="12.01" y2="17"></line>
+		}
+	</a>
+}

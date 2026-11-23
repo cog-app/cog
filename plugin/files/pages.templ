@@ -761,7 +761,7 @@ templ fileViewPage(pd ui.PageData, fp string, meta *FileMeta, kind string, textC
 
 templ volumesPage(pd ui.PageData, volumes []plugin.VolumeInfo) {
 	@filesLayout(pd, "volumes") {
-		@ui.PageHeader("Volumes", nil)
+		@ui.HelpPageHeader("Volumes", "using-cog/files.html#volumes-and-mounts", nil)
 		if len(volumes) == 0 {
 			<div class="card">
 				@ui.EmptyState("No volumes available", "An administrator can add storage volumes and give you access to them.")

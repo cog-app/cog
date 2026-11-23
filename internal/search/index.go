@@ -53,7 +53,8 @@ func OpenWithSchemas(path string, schemas map[string]*query.Schema) (*Index, err
 	return &Index{idx: idx, reg: newSchemaRegistry(schemas), regSchemas: schemas}, nil
 }
 
-// OpenMemory creates an in-memory Bleve index for testing.
+// OpenMemory creates an in-memory Bleve index, for what is rebuilt at
+// start (the docs) and for tests.
 func OpenMemory() (*Index, error) {
 	idx, err := bleve.NewMemOnly(buildMapping())
 	if err != nil {

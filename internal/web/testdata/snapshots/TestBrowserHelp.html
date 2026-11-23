@@ -1,0 +1,449 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Security — Cog
+    </title>
+    <link href="/static/style.css?v=a7c754ce4ae8" rel="stylesheet" />
+    <link href="/static/favicon.svg" rel="icon" type="image/svg+xml" />
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body hx-headers="{\"X-CSRF-Token\":\"«hex»\"}">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog home" class="navbar-brand" href="/">
+        <svg aria-hidden="true" fill="none" height="20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="20">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span class="brand-text">
+          Cog
+        </span>
+      </a>
+      <ul class="navbar-nav">
+        <li>
+          <a href="/" title="Dashboard">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span class="nav-label">
+              Dashboard
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="/apps/files" title="Files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="nav-label">
+              Files
+            </span>
+          </a>
+        </li>
+      </ul>
+      <div class="dropdown navbar-apps">
+        <button aria-controls="apps-menu" aria-expanded="false" aria-label="Apps" class="btn-icon" data-dropdown-toggle="" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <rect height="7" width="7" x="3" y="3" />
+            <rect height="7" width="7" x="14" y="3" />
+            <rect height="7" width="7" x="3" y="14" />
+            <rect height="7" width="7" x="14" y="14" />
+          </svg>
+        </button>
+        <div class="dropdown-menu" id="apps-menu">
+          <a href="/">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
+          </a>
+          <a href="/apps/files">
+            <svg class="nav-icon" viewBox="0 0 24 24">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Files
+          </a>
+          <div class="dropdown-divider" />
+          <button data-search-open="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" x2="16.65" y1="21" y2="16.65" />
+            </svg>
+            Search
+          </button>
+          <a class="active" href="/settings/profile">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <line x1="4" x2="4" y1="21" y2="14" />
+              <line x1="4" x2="4" y1="10" y2="3" />
+              <line x1="12" x2="12" y1="21" y2="12" />
+              <line x1="12" x2="12" y1="8" y2="3" />
+              <line x1="20" x2="20" y1="21" y2="16" />
+              <line x1="20" x2="20" y1="12" y2="3" />
+              <line x1="1" x2="7" y1="14" y2="14" />
+              <line x1="9" x2="15" y1="8" y2="8" />
+              <line x1="17" x2="23" y1="16" y2="16" />
+            </svg>
+            Settings
+          </a>
+          <a class="" href="/admin/">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Admin
+          </a>
+        </div>
+      </div>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" hx-get="/api/search/partial" hx-target="#search-results" hx-trigger="input changed delay:200ms, search" id="search-box" name="q" placeholder="Search (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results" />
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <div class="dropdown notif-dropdown" id="notif">
+          <button aria-controls="notif-panel" aria-expanded="false" aria-label="Notifications" class="btn-icon" data-dropdown-toggle="" type="button">
+            <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span class="notif-badge" hidden="" id="notif-badge">
+              0
+            </span>
+          </button>
+          <div class="dropdown-menu" id="notif-panel">
+            <div class="tray-notices" hidden="" id="tray-notices">
+              <div class="tray-heading">
+                Notifications
+                <button class="tray-clear" data-tray-clear="" type="button">
+                  Clear
+                </button>
+              </div>
+              <div id="tray-notice-list" />
+            </div>
+            <div class="tray-heading">
+              <label for="tray-filter">
+                Recent activity
+              </label>
+              <select aria-label="Show" class="tray-filter" id="tray-filter">
+                <option value="">
+                  All
+                </option>
+                <option value="notifications">
+                  Notifications
+                </option>
+              </select>
+            </div>
+            <div id="tray-activity">
+              <p class="tray-empty">
+                No activity yet.
+              </p>
+            </div>
+            <label class="tray-desktop" id="tray-desktop-row">
+              <input id="tray-desktop" type="checkbox" />
+              Show notifications on the desktop
+            </label>
+          </div>
+        </div>
+        <div class="dropdown">
+          <button aria-controls="user-menu" aria-expanded="false" aria-label="Account menu for alice" class="dropdown-toggle" data-dropdown-toggle="" type="button">
+            <img alt="" class="avatar-sm" src="/avatar/«hex»" />
+            <span class="dropdown-username">
+              alice
+            </span>
+            <span aria-hidden="true" class="dropdown-caret">
+              ▾
+            </span>
+          </button>
+          <div class="dropdown-menu" id="user-menu">
+            <div class="dropdown-header">
+              <strong>
+                alice
+              </strong>
+            </div>
+            <div class="dropdown-divider" />
+            <a class="" href="/settings/profile">
+              Profile
+            </a>
+            <a class="active" href="/settings/security">
+              Security
+            </a>
+            <a class="" href="/settings/storage">
+              Storage
+            </a>
+            <a class="" href="/settings/groups">
+              Groups
+            </a>
+            <a class="" href="/settings/data">
+              Import and export
+            </a>
+            <div class="dropdown-divider" />
+            <a class="" href="/admin/">
+              Admin
+            </a>
+            <div class="dropdown-divider" />
+            <a class="" href="/docs/">
+              Help
+            </a>
+            <form action="/logout" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <button type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Security" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Security" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Section" class="sidebar" id="sidebar-1">
+          <a class="sidebar-item" href="/settings/profile">
+            Profile
+          </a>
+          <a aria-current="page" class="sidebar-item active" href="/settings/security">
+            Security
+          </a>
+          <a class="sidebar-item" href="/settings/storage">
+            Storage
+          </a>
+          <a class="sidebar-item" href="/settings/groups">
+            Groups
+          </a>
+          <a class="sidebar-item" href="/settings/agents">
+            Agents
+          </a>
+          <a class="sidebar-item" href="/settings/data">
+            Import and export
+          </a>
+        </nav>
+        <div class="sidebar-content">
+          <header class="page-header">
+            <div class="page-heading">
+              <h1>
+                Security
+              </h1>
+            </div>
+            <div class="page-actions" />
+          </header>
+          <div class="card">
+            <h2 class="card-title">
+              Two-factor authentication
+              <a aria-label="Help: Two-factor authentication" class="help-icon" data-help="" href="/docs/using-cog/mfa.html" rel="noopener" target="_blank">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" x2="12.01" y1="17" y2="17" />
+                </svg>
+              </a>
+            </h2>
+            <p class="card-desc">
+              Ask for a second step, a code or a passkey, when you log in.
+            </p>
+            <div class="btn-group">
+              <form action="/settings/totp/setup" method="post">
+                <input name="csrf_token" type="hidden" value="«hex»" />
+                <button class="btn btn-primary" type="submit">
+                  Use an authenticator app
+                </button>
+              </form>
+            </div>
+            <p class="form-help">
+              To get codes by email, add an email address to
+              <a href="/settings/profile">
+                your profile
+              </a>
+              .
+            </p>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Passkeys
+              <a aria-label="Help: Passkeys" class="help-icon" data-help="" href="/docs/using-cog/mfa.html#webauthn--passkeys" rel="noopener" target="_blank">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" x2="12.01" y1="17" y2="17" />
+                </svg>
+              </a>
+            </h2>
+            <p class="empty-state empty-state-sm">
+              No passkeys yet.
+            </p>
+            <h3 class="card-subtitle">
+              Add a passkey
+            </h3>
+            <div class="form-inline">
+              <label class="sr-only" for="webauthn-name">
+                Passkey name
+              </label>
+              <input class="form-control" id="webauthn-name" placeholder="Name, e.g. Phone" type="text" />
+              <button class="btn btn-primary" id="webauthn-register-btn" onclick="registerPasskey()" type="button">
+                Add passkey
+              </button>
+            </div>
+            <div class="mt-1" id="webauthn-register-status" />
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Change password
+            </h2>
+            <form action="/settings/password" id="password" method="post">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <div class="form-group">
+                <label for="current_password">
+                  Current password
+                </label>
+                <input aria-invalid="false" autocomplete="current-password" class="form-control w-md" id="current_password" name="current_password" required="" type="password" />
+              </div>
+              <div class="form-group">
+                <label for="new_password">
+                  New password
+                </label>
+                <input aria-invalid="false" autocomplete="new-password" class="form-control w-md" id="new_password" name="new_password" required="" type="password" />
+              </div>
+              <div class="form-group">
+                <label for="confirm_password">
+                  Confirm new password
+                </label>
+                <input aria-invalid="false" autocomplete="new-password" class="form-control w-md" id="confirm_password" name="confirm_password" required="" type="password" />
+              </div>
+              <div class="form-group">
+                <label class="form-check">
+                  <input name="revoke_app_passwords" type="checkbox" value="1" />
+                  Also sign out my apps (revoke every app password)
+                </label>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">
+                  Change password
+                </button>
+              </div>
+            </form>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              Where you're signed in
+            </h2>
+            <div id="sessions">
+              <p class="card-desc">
+                You stay signed in on a device until you sign out or don't use Cog there for 30 days.
+              </p>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>
+                        Device
+                      </th>
+                      <th class="col-shrink">
+                        Last active
+                      </th>
+                      <th class="col-shrink hide-mobile">
+                        Signed in
+                      </th>
+                      <th class="col-actions">
+                        <span class="sr-only">
+                          Actions
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr id="session-«hex»">
+                      <td title="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36">
+                        Chrome on macOS
+                        <div class="text-sm text-muted break-anywhere">
+                          127.0.0.1
+                        </div>
+                      </td>
+                      <td class="nowrap">
+                        2026-03-14
+                      </td>
+                      <td class="nowrap hide-mobile">
+                        2026-03-14
+                      </td>
+                      <td class="col-actions">
+                        <span class="badge badge-neutral">
+                          This device
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h2 class="card-title">
+              App passwords
+              <a aria-describedby="help-popover" aria-label="Help: App passwords" class="help-icon" data-help="" href="/docs/using-cog/app-passwords.html" rel="noopener" target="_blank">
+                <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" x2="12.01" y1="17" y2="17" />
+                </svg>
+              </a>
+            </h2>
+            <p class="card-desc">
+              App passwords let other apps, like the Nextcloud desktop client, sign in without your main password.
+            </p>
+            <div id="app-passwords">
+              <p class="empty-state empty-state-sm">
+                No app passwords yet.
+              </p>
+            </div>
+            <h3 class="card-subtitle">
+              Create an app password
+            </h3>
+            <div id="new-app-pw" />
+            <form class="form-inline" hx-on::after-request="if(event.detail.successful) this.reset()" hx-post="/settings/app-passwords" hx-swap="innerHTML" hx-target="#new-app-pw">
+              <input name="csrf_token" type="hidden" value="«hex»" />
+              <label class="sr-only" for="app-password-name">
+                App password name
+              </label>
+              <input class="form-control" id="app-password-name" name="name" placeholder="Name, e.g. Laptop" required="" type="text" />
+              <button class="btn btn-primary" type="submit">
+                Create
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
+    <div class="help-popover prose" id="help-popover" role="tooltip" style="left: 518.156px; top: 1359.3px;">
+      <h1 id="app-passwords">
+        App Passwords
+      </h1>
+      <p>
+        App passwords are alternative credentials for use with third-party clients and scripts. They work anywhere your main password works (WebDAV, SFTP, API) but can be individually revoked without changing your main password.
+      </p>
+      <a class="help-more" href="http://127.0.0.1:«port»/docs/using-cog/app-passwords.html" rel="noopener" target="_blank">
+        Read more in the docs
+      </a>
+    </div>
+  </body>
+</html>

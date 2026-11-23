@@ -124,3 +124,29 @@ func TestIndexOpenCloseSearch(t *testing.T) {
 		t.Fatalf("expected 0 hits after delete, got %d", result.Total)
 	}
 }
+
+// TestIndexNameBoost: a document named for the word searched outranks one
+// that mentions it more often.
+func TestIndexNameBoost(t *testing.T) {
+	idx, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("open memory index: %v", err)
+	}
+	defer idx.Close()
+	docs := []Document{
+		{ID: "docs:index", Fields: map[string]any{"name": "Cog", "content": "webdav sharing webdav sync webdav apps webdav"}},
+		{ID: "docs:webdav", Fields: map[string]any{"name": "WebDAV", "content": "Connect a drive over the network, with many words about clients and mounting."}},
+	}
+	if err := idx.Batch(docs, nil); err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	for _, q := range []string{"webdav", "webd"} {
+		res, err := idx.Search(q, 10, 0)
+		if err != nil {
+			t.Fatalf("search %q: %v", q, err)
+		}
+		if len(res.Hits) != 2 || res.Hits[0].ID != "docs:webdav" {
+			t.Fatalf("search %q: want docs:webdav first, got %+v", q, res.Hits)
+		}
+	}
+}

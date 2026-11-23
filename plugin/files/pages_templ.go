@@ -2482,7 +2482,7 @@ func volumesPage(pd ui.PageData, volumes []plugin.VolumeInfo) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Volumes", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Volumes", "using-cog/files.html#volumes-and-mounts", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

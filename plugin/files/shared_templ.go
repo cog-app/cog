@@ -76,7 +76,7 @@ func sharedPage(pd ui.PageData, owners []SharedOwner) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Shared with me", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Shared with me", "using-cog/sharing.html#shared-with-me", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

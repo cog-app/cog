@@ -56,7 +56,7 @@ func settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups 
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = ui.PageHeader("Groups", nil).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpPageHeader("Groups", "admin/users-and-groups.html#groups", nil).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -175,7 +175,7 @@ func settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups 
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = ui.Card("Invitations").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ui.HelpCard("Invitations", "admin/users-and-groups.html#invitations").Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1181,7 +1181,7 @@ func groupDetailContent(pd ui.PageData, d groupDetailData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Invitations").Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("Invitations", "admin/users-and-groups.html#invitations").Render(templ.WithChildren(ctx, templ_7745c5c3_Var46), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -1049,7 +1049,8 @@ templ calBirthdaysCard(v *settingsView, csrfToken string) {
 // davAccessCard says how to connect a CalDAV app.
 templ davAccessCard(id, title, intro, davURL, username string) {
 	<div class="card" id={ id }>
-		<h2 class="card-title">{ title }</h2>
+		<h2 class="card-title">{ title } @ui.Help("apps/calendar.html#caldav", title)
+</h2>
 		<p class="card-desc">{ intro }</p>
 		<dl class="kv">
 			if davURL != "" {

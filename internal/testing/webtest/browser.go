@@ -257,6 +257,18 @@ func (b *Browser) Submit(t testing.TB, sel string) {
 	}
 }
 
+// Hover moves the mouse over the element.
+func (b *Browser) Hover(t testing.TB, sel string) {
+	t.Helper()
+	el, err := b.el(sel)
+	if err != nil {
+		t.Fatalf("webtest: hover %s: %v", sel, err)
+	}
+	if err := el.Hover(); err != nil {
+		t.Fatalf("webtest: hover %s: %v", sel, err)
+	}
+}
+
 // Focus focuses the element.
 func (b *Browser) Focus(t testing.TB, sel string) {
 	t.Helper()

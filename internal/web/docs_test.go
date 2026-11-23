@@ -1,9 +1,15 @@
 package web_test
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	cogdocs "git.duckfam.us/jj-software/cog/DOCS"
 
 	"git.duckfam.us/jj-software/cog/internal/docs"
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
@@ -67,4 +73,76 @@ func TestBrowserDocs(t *testing.T) {
 	b.WaitVisible(t, "#search-results a[href='/docs/using-cog/webdav.html']")
 	b.Snapshot(t, webtest.State("search"))
 	b.Snapshot(t, webtest.Mobile)
+}
+
+// TestDocsPart: a page's part under one heading, on its own, for a Help
+// popover.
+func TestDocsPart(t *testing.T) {
+	env := cogtest.New(t)
+	body := env.Get(t, "/docs/using-cog/sharing.html?part=permissions").Status(http.StatusOK).ReadBody()
+	require.True(t, strings.HasPrefix(body, `<h2 id="permissions">Permissions</h2>`), body)
+	require.NotContains(t, body, "<html")
+	require.NotContains(t, body, `id="public-links"`, "ends at the next heading")
+	env.Get(t, "/docs/using-cog/sharing.html?part=").Status(http.StatusOK).Contains(`<h1 id="sharing">Sharing</h1>`)
+	env.Get(t, "/docs/using-cog/sharing.html?part=missing").Status(http.StatusNotFound)
+}
+
+// helpRef finds the docs a .templ file's Help icons point at.
+var helpRef = regexp.MustCompile(`@(?:ui\.)?(?:Help\(|Help(?:Card|PageHeader)\("[^"]*",\s*)"([^"]*)"`)
+
+// TestHelpRefs: every Help icon in Cog's templates points at a heading in
+// the docs Cog serves.
+func TestHelpRefs(t *testing.T) {
+	d, err := docs.Load(cogdocs.FS, docs.Data{})
+	require.NoError(t, err)
+	root := filepath.Join("..", "..")
+	n := 0
+	err = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if e.IsDir() && path != root && strings.HasPrefix(e.Name(), ".") || e.IsDir() && e.Name() == "tmp" {
+			return filepath.SkipDir
+		}
+		if e.IsDir() || filepath.Ext(path) != ".templ" {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range helpRef.FindAllStringSubmatch(string(src), -1) {
+			n++
+			page, id, _ := strings.Cut(m[1], "#")
+			p := d.Page(page)
+			if p == nil {
+				t.Errorf("%s: help for %s: no such page", path, m[1])
+				continue
+			}
+			if _, ok := p.Part(id); !ok {
+				t.Errorf("%s: help for %s: no such heading", path, m[1])
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, n >= 20, "found the Help icons")
+}
+
+// TestBrowserHelp: hovering a Help icon shows its part of the docs, with
+// links that lead to the docs.
+func TestBrowserHelp(t *testing.T) {
+	env := cogtest.New(t)
+	env.CreateUser(t, "alice", "pass")
+	eng := webtest.New(env)
+	t.Cleanup(eng.Close)
+	b := eng.Start(t)
+	b.Login(t, "alice", "pass")
+	b.Navigate(t, "/settings/security")
+	b.Hover(t, `a[data-help][href="/docs/using-cog/app-passwords.html"]`)
+	b.WaitVisible(t, "#help-popover h1")
+	require.Equal(t, "App Passwords", b.Eval(t, `document.querySelector("#help-popover h1").textContent`))
+	require.Equal(t, "/docs/using-cog/app-passwords.html",
+		b.Eval(t, `new URL(document.querySelector("#help-popover .help-more").href).pathname`))
+	b.Snapshot(t)
 }

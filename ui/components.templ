@@ -4,9 +4,27 @@ import "fmt"
 
 // Card renders a card wrapper with an optional title.
 templ Card(title string) {
+	@card(title, "") {
+		{ children... }
+	}
+}
+
+// HelpCard is a Card whose title has a Help icon for the docs at ref.
+templ HelpCard(title, ref string) {
+	@card(title, ref) {
+		{ children... }
+	}
+}
+
+templ card(title, help string) {
 	<div class="card">
 		if title != "" {
-			<h2 class="card-title">{ title }</h2>
+			<h2 class="card-title">
+				{ title }
+				if help != "" {
+					@Help(help, title)
+				}
+			</h2>
 		}
 		{ children... }
 	</div>
@@ -201,12 +219,31 @@ templ Breadcrumbs(crumbs []Crumb) {
 //
 // crumbs lead to the page: pass the ancestors only, the title is the last step.
 templ PageHeader(title string, crumbs []Crumb) {
+	@pageHeader(title, "", crumbs) {
+		{ children... }
+	}
+}
+
+// HelpPageHeader is a PageHeader whose title has a Help icon for the docs
+// at ref.
+templ HelpPageHeader(title, ref string, crumbs []Crumb) {
+	@pageHeader(title, ref, crumbs) {
+		{ children... }
+	}
+}
+
+templ pageHeader(title, help string, crumbs []Crumb) {
 	<header class="page-header">
 		<div class="page-heading">
 			if len(crumbs) > 0 {
 				@Breadcrumbs(append(crumbs, Crumb{Label: title}))
 			}
-			<h1>{ title }</h1>
+			<h1>
+				{ title }
+				if help != "" {
+					@Help(help, title)
+				}
+			</h1>
 		</div>
 		<div class="page-actions">
 			{ children... }

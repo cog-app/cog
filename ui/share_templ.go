@@ -51,7 +51,7 @@ func SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []Sh
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"share-panel\"><h3>Sharing</h3>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"share-panel\"><h3>Sharing @Help(\"using-cog/sharing.html#permissions\", \"sharing\")</h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

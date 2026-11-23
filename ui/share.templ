@@ -11,7 +11,7 @@ import (
 // instead of calling this template directly.
 templ SharePanel(panelID, resourceType, resourceID, csrfToken string, shares []ShareDisplayItem, levels []PermissionLevelChoice) {
 	<div id={ panelID } class="share-panel">
-		<h3>Sharing</h3>
+		<h3>Sharing @Help("using-cog/sharing.html#permissions", "sharing")</h3>
 		if len(shares) > 0 {
 			<div class="table-wrap mb-2">
 				<table class="table table-sm">

@@ -56,6 +56,9 @@ type Page struct {
 
 	headings []string
 	text     string
+	// sections are the page's parts by heading ID, "" for its
+	// introduction: what Help popovers show.
+	sections map[string]template.HTML
 }
 
 // Section is a sidebar group of pages.
@@ -232,12 +235,66 @@ func render(name string, source []byte, link func(target string) (string, error)
 		return nil, errors.New("no # title")
 	}
 	p.text = strings.Join(strings.Fields(words.String()), " ")
-	var body bytes.Buffer
-	if err := md.Renderer().Render(&body, source, doc); err != nil {
-		return nil, fmt.Errorf("render: %w", err)
+	// Each top-level block on its own, so a heading's section is the
+	// blocks from it to the next heading as high.
+	type block struct {
+		level int // a heading's, 0 for any other block
+		id    string
+		html  string
+	}
+	var blocks []block
+	var body strings.Builder
+	for c := doc.FirstChild(); c != nil; c = c.NextSibling() {
+		var b bytes.Buffer
+		if err := md.Renderer().Render(&b, source, c); err != nil {
+			return nil, fmt.Errorf("render: %w", err)
+		}
+		bl := block{html: b.String()}
+		if h, ok := c.(*ast.Heading); ok {
+			bl.level = h.Level
+			if id, ok := h.AttributeString("id"); ok {
+				bl.id = string(id.([]byte))
+			}
+		}
+		blocks = append(blocks, bl)
+		body.WriteString(bl.html)
 	}
 	p.Body = template.HTML(body.String())
+	join := func(bs []block) template.HTML {
+		var b strings.Builder
+		for _, bl := range bs {
+			b.WriteString(bl.html)
+		}
+		return template.HTML(b.String())
+	}
+	p.sections = map[string]template.HTML{}
+	intro := slices.IndexFunc(blocks, func(b block) bool { return b.level > 1 })
+	if intro < 0 {
+		intro = len(blocks)
+	}
+	p.sections[""] = join(blocks[:intro])
+	for i, bl := range blocks {
+		if bl.id == "" || bl.level == 1 {
+			continue
+		}
+		end := len(blocks)
+		for j := i + 1; j < len(blocks); j++ {
+			if blocks[j].level > 0 && blocks[j].level <= bl.level {
+				end = j
+				break
+			}
+		}
+		p.sections[bl.id] = join(blocks[i:end])
+	}
 	return p, nil
+}
+
+// Part is the part of the page under the heading with ID id, to the
+// next heading as high; for "", the page's introduction. ok is false if
+// the page has no such heading.
+func (p *Page) Part(id string) (html template.HTML, ok bool) {
+	html, ok = p.sections[id]
+	return html, ok
 }
 
 // pageLink is the page a link in page from points at, if it points at one

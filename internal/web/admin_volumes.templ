@@ -10,7 +10,7 @@ import (
 
 templ adminVolumesPage(pd ui.PageData, volumes iter.Seq2[volume.Volume, error], flash string, flashKind string) {
 	@ui.AdminSidebarPage(pd, "volumes") {
-		@ui.PageHeader("Volumes", nil) {
+		@ui.HelpPageHeader("Volumes", "admin/volumes.html", nil) {
 			<a class="btn btn-primary" href="/admin/volumes/new">
 				@ui.Icon("plus")
 				New volume

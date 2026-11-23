@@ -7,7 +7,7 @@ import (
 
 templ adminUpdatesPage(pd ui.PageData, current string, st *update.Status, flash, flashKind string) {
 	@ui.AdminSidebarPage(pd, "updates") {
-		@ui.PageHeader("Updates", nil)
+		@ui.HelpPageHeader("Updates", "admin/updates.html", nil)
 		@ui.Alert(flashKind, flash)
 		@ui.Card("This server") {
 			<p>Cog { current }</p>

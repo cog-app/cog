@@ -443,7 +443,7 @@ func settingsSecurityPage(pd ui.PageData, flash securityFlash, appPasswords []au
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("App passwords").Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("App passwords", "using-cog/app-passwords.html").Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -916,7 +916,7 @@ func settingsSSHKeysCard(pd ui.PageData, flash securityFlash, sshKeys []keys.SSH
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("SSH keys").Render(templ.WithChildren(ctx, templ_7745c5c3_Var31), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("SSH keys", "using-cog/sftp.html#authentication").Render(templ.WithChildren(ctx, templ_7745c5c3_Var31), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1373,7 +1373,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("Mounts").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("Mounts", "admin/volumes.html#mounting-volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1534,7 +1534,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.Card("My volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("My volumes", "admin/volumes.html#system-vs-user-volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1734,7 +1734,7 @@ func settingsTOTPCard(pd ui.PageData, flash string, flashKind string, mfaMethod 
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Two-factor authentication").Render(templ.WithChildren(ctx, templ_7745c5c3_Var72), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Two-factor authentication", "using-cog/mfa.html").Render(templ.WithChildren(ctx, templ_7745c5c3_Var72), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1880,7 +1880,7 @@ func settingsWebAuthnCard(pd ui.PageData, mfaMethod string, creds []auth.WebAuth
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ui.Card("Passkeys").Render(templ.WithChildren(ctx, templ_7745c5c3_Var82), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ui.HelpCard("Passkeys", "using-cog/mfa.html#webauthn--passkeys").Render(templ.WithChildren(ctx, templ_7745c5c3_Var82), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
