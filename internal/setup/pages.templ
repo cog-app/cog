@@ -158,8 +158,7 @@ func boolValue(b bool) string {
 	return "0"
 }
 
-// The answers to each question, shared by the guided pages and the quick
-// setup.
+// The answers to each question.
 templ scopeFields(p Plan, probs Problems, admin bool) {
 	@choice("scope", "user", string(p.Scope), "On this computer, for me", "Cog starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer or laptop.")
 	@choice("scope", "system", string(p.Scope), "As a server", "Cog starts with the computer, before anyone signs in, and runs as an account of its own. Needs administrator rights.")
@@ -202,17 +201,15 @@ templ plainPortField(p Plan, probs Problems) {
 	@input("Cog's HTTP port", "port", "number", port(p.Port), "Where Cog listens on this computer. Change it only if something else uses it.", probs)
 }
 
-templ networkFields(p Plan, probs Problems, lan string, withPort bool) {
+templ networkFields(p Plan, probs Problems, lan string) {
 	@choice("lan_https", "0", boolValue(p.LANHTTPS), "No, plain HTTP", "Simplest. Anyone on your network could read what is sent, so only for a network you trust.")
 	@choice("lan_https", "1", boolValue(p.LANHTTPS), "Yes, HTTPS with a certificate Cog makes", "Encrypted. Each browser warns the first time, because no one vouches for the certificate but Cog; you compare its fingerprint, shown when setup finishes, and accept it once.")
-	if withPort {
-		<div class="when when-lan-https">
-			<details class="advanced" open?={ probs.For("https_port") != "" }>
-				<summary>Port</summary>
-				@input("HTTPS port", "https_port", "number", port(p.HTTPSPort), "Cog would be at https://"+lan+":"+port(p.HTTPSPort)+".", probs)
-			</details>
-		</div>
-	}
+	<div class="when when-lan-https">
+		<details class="advanced" open?={ probs.For("https_port") != "" }>
+			<summary>Port</summary>
+			@input("HTTPS port", "https_port", "number", port(p.HTTPSPort), "Cog would be at https://"+lan+":"+port(p.HTTPSPort)+".", probs)
+		</details>
+	</div>
 }
 
 templ tailscaleFields(p Plan, probs Problems, ts TailscaleStatus) {
@@ -232,7 +229,7 @@ templ httpsPortField(p Plan, probs Problems) {
 	@input("HTTPS port on this computer", "https_port", "number", port(p.HTTPSPort), "With a domain, your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.", probs)
 }
 
-templ certificateFields(p Plan, probs Problems, withPort bool) {
+templ certificateFields(p Plan, probs Problems) {
 	@choice("challenge", certs.TLSALPN01, p.Challenge, "Through the HTTPS port (recommended)", "Simplest: only port 443 has to be forwarded.")
 	@choice("challenge", certs.HTTP01, p.Challenge, "Through port 80", "For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.")
 	@choice("challenge", certs.DNS01, p.Challenge, "Through my DNS host", "Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.")
@@ -261,9 +258,7 @@ templ certificateFields(p Plan, probs Problems, withPort bool) {
 	</div>
 	<details class="advanced" open?={ probs.For("https_port") != "" || p.Staging }>
 		<summary>More options</summary>
-		if withPort {
-			@httpsPortField(p, probs)
-		}
+		@httpsPortField(p, probs)
 		@checkbox("staging", p.Staging, "Use Let's Encrypt's test service", "For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.")
 	</details>
 }
@@ -341,9 +336,6 @@ templ stepPage(v stepView) {
 				</button>
 			</div>
 		</form>
-		if v.Index == 0 && v.Plan.Mode == ModeInstall {
-			<p class="form-help">Know what you want? <a href="/quick">Show every setting on one page</a>.</p>
-		}
 	}
 }
 
@@ -383,13 +375,13 @@ templ stepFields(v stepView) {
 				@plainPortField(v.Plan, v.Problems)
 			</details>
 		case "network":
-			@networkFields(v.Plan, v.Problems, v.LAN, true)
+			@networkFields(v.Plan, v.Problems, v.LAN)
 		case "tailscale":
 			@tailscaleFields(v.Plan, v.Problems, v.Tailscale)
 		case "domain":
 			@domainFields(v.Plan, v.Problems)
 		case "certificate":
-			@certificateFields(v.Plan, v.Problems, true)
+			@certificateFields(v.Plan, v.Problems)
 		case "proxy":
 			@proxyFields(v.Plan, v.Problems, v.LAN)
 		case "ssh":
@@ -398,72 +390,6 @@ templ stepFields(v stepView) {
 			@updateFields(v.Plan)
 		case "admin":
 			@adminFields(v.Plan, v.Problems)
-	}
-}
-
-// The quick setup: every question on one page.
-templ quickPage(p Plan, probs Problems, lan string, admin bool, ts TailscaleStatus) {
-	@layout("Set up Cog") {
-		if p.Mode == ModeReconfig {
-			@ui.PageHeader("Change Cog's settings", nil)
-		} else {
-			@ui.PageHeader("Set up Cog", nil)
-			<p class="form-help"><a href={ templ.SafeURL("/step/" + Steps[0].ID) }>Answer one question at a time instead</a></p>
-		}
-		if len(probs) > 0 {
-			@ui.Alert("error", "Something needs fixing below: "+probs.First())
-		}
-		<form method="post" action="/quick">
-			@ui.Card("How Cog runs") {
-				if p.Mode == ModeInstall {
-					@scopeFields(p, probs, admin)
-				} else {
-					<p class="card-desc">{ scopeSummary(p) }</p>
-				}
-				@storageFields(p, probs)
-			}
-			@ui.Card("Admin account") {
-				@adminFields(p, probs)
-			}
-			@ui.Card("Where you use Cog from") {
-				@accessChoices(p, probs, lan, ts)
-				@plainPortField(p, probs)
-				<div class="when when-lan">
-					<h3 class="card-subtitle">Encryption on your network</h3>
-					@networkFields(p, probs, lan, false)
-				</div>
-				<div class="when when-https">
-					@httpsPortField(p, probs)
-				</div>
-				<div class="when when-tailscale">
-					@tailscaleFields(p, probs, ts)
-				</div>
-				<div class="when when-internet">
-					<h3 class="card-subtitle">Your domain</h3>
-					@domainFields(p, probs)
-					<h3 class="card-subtitle">How Let's Encrypt checks the name is yours</h3>
-					@certificateFields(p, probs, false)
-				</div>
-				<div class="when when-proxy">
-					@proxyFields(p, probs, lan)
-				</div>
-			}
-			@ui.Card("SFTP and SSH") {
-				@sshFields(p, probs)
-			}
-			@ui.Card("Updates") {
-				@updateFields(p)
-			}
-			<div class="when when-system">
-				@ui.Card("Firewall") {
-					@checkbox("firewall", p.Firewall, "Open Cog's ports in the firewall", "Windows Firewall, ufw or firewalld, whichever this computer uses.")
-				}
-			</div>
-			<div class="form-actions">
-				<button class="btn btn-primary" type="submit">Review</button>
-			</div>
-		</form>
-		@quitForm()
 	}
 }
 
@@ -591,7 +517,6 @@ templ reviewPage(p Plan, lan string, dns DNSCheck) {
 				@summaryRow("Updates", updateSummary(p), "updates")
 				@summaryRow("Admin", adminSummary(p), "admin")
 			</dl>
-			<p class="form-help"><a href="/quick">Edit every setting on one page</a></p>
 		}
 		@ui.Card("What setup will do") {
 			<ul>

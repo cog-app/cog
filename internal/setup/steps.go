@@ -15,9 +15,6 @@ import (
 // home). Each page owns the plan fields it asks about: a problem with one
 // of them keeps the person on that page, and problems with fields later
 // pages own wait for those pages.
-//
-// The quick setup (/quick) asks everything on one page, for people who
-// know what they want.
 
 // Step is a page of the guided wizard.
 type Step struct {

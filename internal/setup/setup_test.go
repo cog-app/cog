@@ -398,7 +398,7 @@ func TestWizardGuard(t *testing.T) {
 	w, client, start := wizard(t)
 	base := "http://" + w.addr
 
-	res, err := client.Get(base + "/quick")
+	res, err := client.Get(base + "/step/run")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, res.StatusCode, "no token yet")
 
@@ -409,7 +409,7 @@ func TestWizardGuard(t *testing.T) {
 	res, err = client.Get(start)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusSeeOther, res.StatusCode)
-	res, err = client.Get(base + "/quick")
+	res, err = client.Get(base + "/step/run")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
@@ -420,7 +420,7 @@ func TestWizardGuard(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// DNS rebinding: a page on another name that resolves here.
-	req, err := http.NewRequest(http.MethodGet, base+"/quick", nil)
+	req, err := http.NewRequest(http.MethodGet, base+"/step/run", nil)
 	require.NoError(t, err)
 	req.Host = "evil.example.com"
 	res, err = client.Do(req)
@@ -434,46 +434,6 @@ func TestWizardGuard(t *testing.T) {
 	res, err = client.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, res.StatusCode)
-}
-
-// TestWizardQuick: the one-page form's answers become a plan, and a
-// problem sends the person back to the field.
-func TestWizardQuick(t *testing.T) {
-	w, client, start := wizard(t)
-	base := "http://" + w.addr
-	_, err := client.Get(start)
-	require.NoError(t, err)
-	post := func(path string, form url.Values) *http.Response {
-		req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(form.Encode()))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", base)
-		res, err := client.Do(req)
-		require.NoError(t, err)
-		return res
-	}
-	form := url.Values{
-		"scope": {"user"}, "dir": {w.draft.Dir}, "admin_user": {"admin"},
-		"admin_password": {"correct horse"}, "admin_password_confirm": {"different"},
-		"access": {"local"}, "port": {strconv.Itoa(freePort(t))}, "ssh": {"1"}, "ssh_port": {"8522"},
-	}
-	res := post("/quick", form)
-	require.Equal(t, "/quick#admin_password_confirm", res.Header.Get("Location"))
-	page, err := client.Get(base + "/quick")
-	require.NoError(t, err)
-	body, err := io.ReadAll(page.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(body), "The passwords do not match.")
-	require.NotContains(t, string(body), "correct horse", "a password is not shown again")
-
-	form.Set("admin_password_confirm", "correct horse")
-	res = post("/quick", form)
-	require.Equal(t, "/review", res.Header.Get("Location"))
-	page, err = client.Get(base + "/review")
-	require.NoError(t, err)
-	body, err = io.ReadAll(page.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(body), "Ready to set up")
 }
 
 // TestWizardGuided: one question a page, the pages a plan needs and no

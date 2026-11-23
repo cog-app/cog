@@ -6142,18 +6142,12 @@ html:has(dialog.gallery-lightbox[open]) {
 .setup pre.log { white-space: pre-wrap; max-height: 28rem; overflow: auto; }
 .setup table.forwards td,
 .setup table.forwards th { padding: 0.25rem 0.75rem 0.25rem 0; text-align: left; }
-.setup form:has(input[name=access][value=internet]:checked) .when-internet { display: block; }
-.setup form:has(input[name=access][value=proxy]:checked) .when-proxy { display: block; }
-.setup form:has(input[name=access][value=lan]:checked) .when-lan { display: block; }
 .setup form:has(input[name=challenge][value=dns-01]:checked) .when-dns { display: block; }
 .setup form:has(input[name=challenge][value=http-01]:checked) .when-http01 { display: block; }
 .setup form:has(input[name=ssh]:checked) .when-ssh { display: block; }
 .setup form:has(input[name=scope][value=system]:checked) .when-system { display: block; }
-.setup form:has(input[name=access][value=tailscale]:checked) .when-tailscale { display: block; }
 .setup form:has(input[name=lan_https][value="1"]:checked) .when-lan-https { display: block; }
 .setup form:has(input[name=update_check]:checked) .when-update-check { display: block; }
-.setup form:has(input[name=access][value=internet]:checked) .when-https,
-.setup form:has(input[name=access][value=lan]:checked):has(input[name=lan_https][value="1"]:checked) .when-https { display: block; }
 .setup .steps { color: var(--color-text-muted); font-size: 0.875rem; margin-bottom: 0.25rem; }
 .setup .question { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .setup .lead { color: var(--color-text-muted); margin-bottom: 1.5rem; }

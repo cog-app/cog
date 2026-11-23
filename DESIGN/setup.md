@@ -35,7 +35,7 @@ form must come with `Origin` set to the wizard. Pages reuse the server's
 stylesheet; which parts of the form show depends on CSS `:has()` so the
 wizard needs no script beyond htmx polling the progress log.
 
-**Guided and quick.** The browser wizard asks one question a page
+**One question a page.** The browser wizard asks one question a page
 (`Steps` in `steps.go`), skipping the pages a plan does not need: there is
 no domain page unless Cog is to be reached from the internet. Each page
 owns the plan fields it asks; `Plan.Problems` lists everything wrong with
@@ -43,8 +43,7 @@ a plan, and a page shows only its own, so an unanswered later question
 does not block an earlier page. Once the review has been seen, a saved
 page returns to it, by way of any page the change has left unanswered (a
 new way in asks its own questions). A change to an install starts at the
-review, a summary with a link to each question. `/quick` asks everything
-on one form for people who know what they want; both fill the same plan.
+review, a summary with a link to each question.
 
 **Plan and apply.** The wizard (browser or terminal) makes a `Plan`: scope,
 folder, admin, access (local, LAN over HTTP or self-signed HTTPS,

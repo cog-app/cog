@@ -9,7 +9,7 @@ import (
 
 // TestBrowserWizard: the guided wizard as a person sees it: one question
 // a page, the certificate page with only the chosen DNS host's fields
-// showing, and the review; then the one-page quick setup.
+// showing, and the review.
 func TestBrowserWizard(t *testing.T) {
 	saved := LANAddress
 	LANAddress = func() string { return "192.168.1.20" }
@@ -67,9 +67,4 @@ func TestBrowserWizard(t *testing.T) {
 	b.Submit(t, "form[action='/step/network']")
 	b.WaitText(t, "Ready to set up")
 	b.Snapshot(t, webtest.State("review"))
-
-	b.Click(t, "a[href='/quick']")
-	b.WaitVisible(t, "form[action='/quick']")
-	b.Click(t, "input[name=access][value=tailscale]")
-	b.Snapshot(t, webtest.State("quick"))
 }

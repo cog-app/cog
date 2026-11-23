@@ -124,8 +124,6 @@ func (w *Wizard) Handler() http.Handler {
 	mux.HandleFunc("POST /choose", w.choose)
 	mux.HandleFunc("GET /step/{id}", w.stepForm)
 	mux.HandleFunc("POST /step/{id}", w.saveStep)
-	mux.HandleFunc("GET /quick", w.quickForm)
-	mux.HandleFunc("POST /quick", w.saveQuick)
 	mux.HandleFunc("GET /review", w.review)
 	mux.HandleFunc("POST /apply", w.apply)
 	mux.HandleFunc("GET /reset", w.resetForm)
@@ -337,53 +335,6 @@ func (w *Wizard) saveStep(rw http.ResponseWriter, r *http.Request) {
 		http.Redirect(rw, r, "/step/"+steps[i+1].ID, http.StatusSeeOther)
 		return
 	}
-	http.Redirect(rw, r, "/review", http.StatusSeeOther)
-}
-
-func (w *Wizard) quickForm(rw http.ResponseWriter, r *http.Request) {
-	w.mu.Lock()
-	p, probs := w.draft, w.problems
-	w.mu.Unlock()
-	w.render(rw, r, quickPage(p, probs, LANAddress(), service.IsAdmin(), CheckTailscale(r.Context())))
-}
-
-// saveQuick takes the one-page form into the draft and, if it holds
-// together, moves on to the review.
-func (w *Wizard) saveQuick(rw http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	p := w.draft
-	f := r.PostForm
-	var extra Problems
-	for _, st := range Steps {
-		if st.ID == "run" && p.Mode != ModeInstall {
-			continue
-		}
-		if st.ID == "run" {
-			// The form's folder and ports win over the scope's defaults.
-			p.Scope = service.Scope(f.Get("scope"))
-			continue
-		}
-		extra = append(extra, readStep(r.Context(), st.ID, f, &p)...)
-	}
-	p.Firewall = p.Scope == service.System && f.Get("firewall") == "1"
-	probs, err := p.Problems()
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	probs = append(extra, probs...)
-	if len(probs) > 0 {
-		p.AdminPassword = ""
-		w.draft, w.problems = p, probs
-		http.Redirect(rw, r, "/quick#"+probs[0].Field, http.StatusSeeOther)
-		return
-	}
-	w.draft, w.problems, w.reviewing = p, nil, true
 	http.Redirect(rw, r, "/review", http.StatusSeeOther)
 }
 
