@@ -231,6 +231,33 @@ func (p *Plugin) ensurePreview(username, filePath string, size int, generated *b
 	return cache, name, nil
 }
 
+// carryThumbnails renames a file's cached thumbnails from its old etag to
+// its new one. A move changes the etag but not a pixel, and without this a
+// rename of a photo library regenerates every thumbnail in it. A thumbnail
+// that cannot be carried is only made again, so failures are logged.
+func (p *Plugin) carryThumbnails(username, oldETag, newETag string) {
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		p.log.Warn("carry thumbnails", "user", username, "err", err)
+		return
+	}
+	sizes, err := cache.ReadDir(thumbDir)
+	if err != nil {
+		p.log.Warn("carry thumbnails", "user", username, "err", err)
+		return
+	}
+	for _, size := range sizes {
+		if !size.IsDir() {
+			continue
+		}
+		dir := thumbDir + "/" + size.Name() + "/"
+		from, to := dir+path.Base(oldETag)+".jpg", dir+path.Base(newETag)+".jpg"
+		if _, err := cache.Take(to, cache, from); err != nil && !errors.Is(err, iofs.ErrNotExist) {
+			p.log.Warn("carry thumbnail", "user", username, "from", from, "err", err)
+		}
+	}
+}
+
 // generatePreview makes a size×size-bounded JPEG of an image, turned upright,
 // and stores it in the cache as name.
 func (p *Plugin) generatePreview(username, filePath string, meta *FileMeta, cache plugin.Storage, name string, size int) error {

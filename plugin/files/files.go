@@ -781,7 +781,7 @@ func (p *Plugin) rename(username, oldPath, newPath string, move func(vfs.FS, str
 		}
 	}
 
-	moved, err := p.moveRows(db, oldPath, newPath)
+	moved, err := p.moveRows(db, username, oldPath, newPath)
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +813,7 @@ func (p *Plugin) renameMount(db *sql.DB, u *user.User, oldPath, newPath string) 
 	if err := fs.Mkdir(filepath.Dir(newPath)); err != nil {
 		return nil, true, fmt.Errorf("mkdir new parent: %w", err)
 	}
-	moved, err := p.moveRows(db, oldPath, newPath)
+	moved, err := p.moveRows(db, u.Username, oldPath, newPath)
 	if err != nil {
 		return nil, true, err
 	}
@@ -884,7 +884,7 @@ func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string, mov
 	if _, err := p.rename(from.owner, from.path, to.path, move); err != nil {
 		return nil, true, err
 	}
-	moved, err := p.moveRows(db, oldPath, newPath)
+	moved, err := p.moveRows(db, username, oldPath, newPath)
 	if err != nil {
 		return nil, true, err
 	}
@@ -899,11 +899,17 @@ func (p *Plugin) renameShared(db *sql.DB, username, oldPath, newPath string, mov
 // moveRows carries the rows of oldPath and everything beneath it to newPath
 // after the move on disk, keeping their IDs, and reports how many rows
 // oldPath itself had (0 or 1).
-func (p *Plugin) moveRows(db *sql.DB, oldPath, newPath string) (int64, error) {
+func (p *Plugin) moveRows(db *sql.DB, username, oldPath, newPath string) (int64, error) {
 	newParent := filepath.Dir(newPath)
 	newName := filepath.Base(newPath)
 	now := p.ctx.Now().Unix()
 	etag := generateETag()
+
+	var oldETag string
+	err := db.QueryRow(`SELECT etag FROM files WHERE path = ? AND is_dir = 0`, oldPath).Scan(&oldETag)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("read etag of %s: %w", oldPath, err)
+	}
 
 	// Atomically rename the row and reparent any children. A crash between
 	// the two statements would otherwise strand children under the old path.
@@ -949,6 +955,9 @@ func (p *Plugin) moveRows(db *sql.DB, oldPath, newPath string) (int64, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit rename: %w", err)
+	}
+	if oldETag != "" {
+		p.carryThumbnails(username, oldETag, etag)
 	}
 	return moved, nil
 }

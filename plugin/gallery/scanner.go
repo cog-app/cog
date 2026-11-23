@@ -347,6 +347,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 
 	now := p.ctx.Now().Unix()
 	var moved, reset, inserted, deleted int
+	carried := map[string]string{} // old etag → new, of media that moved
 	err = inTx(galleryDB, func(tx *sql.Tx) error {
 		for _, f := range changed {
 			if ctx.Err() != nil {
@@ -360,6 +361,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 					return fmt.Errorf("move media %s: %w", f.Path, err)
 				}
 				moved++
+				carried[existing[f.ID].ETag] = f.ETag
 				continue
 			}
 			if err := ResetMediaByFileID(tx, f.ID, f.Path, f.ETag, f.MimeType, key, now); err != nil {
@@ -381,6 +383,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 					}
 					delete(vanished, key)
 					moved++
+					carried[old.ETag] = f.ETag
 					continue
 				}
 			}
@@ -412,6 +415,7 @@ func (p *Plugin) discoverFiles(ctx context.Context, galleryDB, filesDB *sql.DB, 
 	if err != nil {
 		return err
 	}
+	p.carryVideoThumbs(username, carried)
 	p.log.Info("discovered media", "user", username,
 		"added", inserted, "changed", reset, "moved", moved, "deleted", deleted)
 	return nil
@@ -992,6 +996,39 @@ func (p *Plugin) videoThumbnail(username string, m *Media, size int) (cogplugin.
 	return cache.Open(name)
 }
 
+// carryVideoThumbs renames the cached thumbnails of videos that moved from
+// their old etag to the new one, which names them, so a rename does not make
+// them again. A thumbnail that cannot be carried is only made again, so
+// failures are logged.
+func (p *Plugin) carryVideoThumbs(username string, etags map[string]string) {
+	if len(etags) == 0 {
+		return
+	}
+	cache, err := p.ctx.UserCache(username)
+	if err != nil {
+		p.log.Warn("carry video thumbnails", "user", username, "err", err)
+		return
+	}
+	entries, err := cache.ReadDir(videoThumbDir)
+	if err != nil {
+		p.log.Warn("carry video thumbnails", "user", username, "err", err)
+		return
+	}
+	for _, e := range entries {
+		etag, size, ok := strings.Cut(e.Name(), "_")
+		next, moved := etags[etag]
+		if !ok || !moved {
+			continue
+		}
+		from, to := videoThumbDir+"/"+e.Name(), videoThumbDir+"/"+path.Base(next)+"_"+size
+		if _, err := cache.Take(to, cache, from); err != nil {
+			p.log.Warn("carry video thumbnail", "user", username, "from", from, "err", err)
+		}
+	}
+}
+
+const videoThumbDir = "video_thumbs"
+
 func videoThumbName(m *Media, size int) string {
-	return fmt.Sprintf("video_thumbs/%s_%d.jpg", path.Base(m.FileETag), cogplugin.ThumbnailSize(size))
+	return fmt.Sprintf("%s/%s_%d.jpg", videoThumbDir, path.Base(m.FileETag), cogplugin.ThumbnailSize(size))
 }
