@@ -1373,7 +1373,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.HelpCard("Mounts", "admin/volumes.html#mounting-volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("Mounts", "using-cog/storage.html#mounts").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1534,7 +1534,7 @@ func settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts 
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = ui.HelpCard("My volumes", "admin/volumes.html#system-vs-user-volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ui.HelpCard("My volumes", "using-cog/storage.html#your-own-volumes").Render(templ.WithChildren(ctx, templ_7745c5c3_Var62), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

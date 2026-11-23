@@ -23,7 +23,7 @@ Files are stored on disk with their original names. Admins can copy files direct
 
 ## Volumes and mounts
 
-Your file tree can include mounted volumes -- external storage backends that appear as folders. See [Volumes](../admin/volumes.md) for admin setup and **Settings > Storage** to mount volumes in your own file tree.
+Your file tree can include other storage at folders you choose: volumes, storage shared with you, and your own WebDAV servers. See [Storage](storage.md).
 
 ## Access methods
 

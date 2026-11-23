@@ -35,9 +35,13 @@ Admins can set storage quotas per user from the admin panel at **Admin > Users >
 
 ## Groups
 
-Groups are collections of users. Groups can contain other groups for nested membership.
+Groups are collections of users, and can contain other groups. Anyone can create a group and manage the ones they own: see [Groups](../using-cog/groups.md) for how owners and members use them. This section is what an administrator has besides.
 
-### Creating groups
+### Managing groups
+
+**Admin > Groups** lists every group, whoever owns it. An administrator can manage any group as its owner would, and delete one.
+
+From the command line:
 
 ```bash
 cog group create engineering
@@ -45,20 +49,6 @@ cog group add-member engineering alice
 cog group add-member engineering bob
 ```
 
-Groups can also be managed from the web UI at **Settings > Groups** (for groups you own) or **Admin > Groups** (for system-wide management).
+### Invitations by email
 
-### Group nesting
-
-Groups can contain other groups:
-
-- Group "Engineering" contains users Alice, Bob, and group "Frontend"
-- Group "Frontend" contains user Charlie
-- Sharing a resource with "Engineering" grants access to Alice, Bob, and Charlie
-
-### Invitations
-
-Group owners can invite users via invitation links. Invited users can accept from a link without needing admin intervention.
-
-### Sharing with groups
-
-Any shareable resource (files, calendars, bookmarks folders, etc.) can be shared with a group. All current and future members of the group receive the specified permissions. See [Sharing](../using-cog/sharing.md) for details.
+Owners can invite people by email only when [email](email.md) is set up. Without it, they get a link to send themselves.

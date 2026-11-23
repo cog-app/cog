@@ -91,7 +91,8 @@ func TestDocsPart(t *testing.T) {
 var helpRef = regexp.MustCompile(`@(?:ui\.)?(?:Help\(|Help(?:Card|PageHeader)\("[^"]*",\s*)"([^"]*)"`)
 
 // TestHelpRefs: every Help icon in Cog's templates points at a heading in
-// the docs Cog serves.
+// the docs Cog serves, and only administrators' pages (admin*.templ) point
+// at the administrators' docs.
 func TestHelpRefs(t *testing.T) {
 	d, err := docs.Load(cogdocs.FS, docs.Data{})
 	require.NoError(t, err)
@@ -121,6 +122,9 @@ func TestHelpRefs(t *testing.T) {
 			}
 			if _, ok := p.Part(id); !ok {
 				t.Errorf("%s: help for %s: no such heading", path, m[1])
+			}
+			if strings.HasPrefix(page, docs.AdminSection+"/") && !strings.HasPrefix(filepath.Base(path), "admin") {
+				t.Errorf("%s: help for %s: a page for everyone points at the administrators' docs", path, m[1])
 			}
 		}
 		return nil

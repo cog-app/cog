@@ -328,7 +328,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				</div>
 			}
 		}
-		@ui.HelpCard("Mounts", "admin/volumes.html#mounting-volumes") {
+		@ui.HelpCard("Mounts", "using-cog/storage.html#mounts") {
 			<p class="card-desc">Folders from a volume, storage you keep on one, and folders shared with you, at the path you choose in your files.</p>
 			if len(mounts) == 0 {
 				<p class="empty-state empty-state-sm">No mounts yet.</p>
@@ -415,7 +415,7 @@ templ settingsStoragePage(pd ui.PageData, flash string, flashKind string, mounts
 				</form>
 			}
 		}
-		@ui.HelpCard("My volumes", "admin/volumes.html#system-vs-user-volumes") {
+		@ui.HelpCard("My volumes", "using-cog/storage.html#your-own-volumes") {
 			if len(ownedVolumes) == 0 {
 				<p class="empty-state empty-state-sm">You haven't added any volumes. Add a WebDAV server below to use its storage here.</p>
 			} else {

@@ -638,8 +638,9 @@ templ contactsSettingsPage(books []AddressBook, davURL, username, csrfToken stri
 // davAccessCard says how to connect a CalDAV or CardDAV app.
 templ davAccessCard(id, title, intro, davURL, username string) {
 	<div class="card" id={ id }>
-		<h2 class="card-title">{ title } @ui.Help("apps/contacts.html#carddav", title)
-</h2>
+		<h2 class="card-title">
+			{ title } @ui.Help("apps/contacts.html#carddav", title)
+		</h2>
 		<p class="card-desc">{ intro }</p>
 		<dl class="kv">
 			if davURL != "" {

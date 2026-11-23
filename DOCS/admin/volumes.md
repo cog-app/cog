@@ -27,7 +27,7 @@ Go to **Admin > Volumes** to create and manage volumes.
 ## System vs user volumes
 
 - **System volumes** are created by admins and have no owner. They can be shared with any user or group.
-- **User volumes** are created by individual users from **Settings > Storage** for their own use.
+- **User volumes** are created by individual users from **Settings > Storage** for their own use (see [Storage](../using-cog/storage.md#your-own-volumes)).
 
 ## Mounting volumes
 
@@ -39,7 +39,7 @@ cog volume mount shared-photos alice /Photos/Shared
 
 This makes the volume's contents appear at `/Photos/Shared` in Alice's file browser, WebDAV, and SFTP.
 
-Users can also mount volumes themselves from **Settings > Storage** in the web UI.
+Users mount volumes shared with them themselves: see [Storage](../using-cog/storage.md).
 
 ## Sharing volumes
 

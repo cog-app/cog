@@ -17,10 +17,10 @@ type pendingInvite struct {
 
 templ settingsGroupsPage(pd ui.PageData, ownedGroups []group.Group, memberGroups []group.Group, invites []pendingInvite, flash string, flashKind string) {
 	@ui.SidebarPage(pd, settingsSidebar("groups")) {
-		@ui.HelpPageHeader("Groups", "admin/users-and-groups.html#groups", nil)
+		@ui.HelpPageHeader("Groups", "using-cog/groups.html", nil)
 		@ui.Alert(flashKind, flash)
 		if len(invites) > 0 {
-			@ui.HelpCard("Invitations", "admin/users-and-groups.html#invitations") {
+			@ui.HelpCard("Invitations", "using-cog/groups.html#invitations") {
 				<p class="card-desc">Joining a group shares with you whatever is shared with it.</p>
 				for _, inv := range invites {
 					<div class="flex items-center gap-2 mb-2">
@@ -238,7 +238,7 @@ templ groupDetailContent(pd ui.PageData, d groupDetailData) {
 		</div>
 	}
 	if d.IsOwner {
-		@ui.HelpCard("Invitations", "admin/users-and-groups.html#invitations") {
+		@ui.HelpCard("Invitations", "using-cog/groups.html#invitations") {
 			<form method="post" action={ templ.SafeURL(d.BasePath + "/" + d.Group.ID + "/invites") }>
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				<div class="form-row">
