@@ -71,6 +71,9 @@ type Plugin struct {
 	progress progressTracker
 
 	clustered sync.Map // username → clusterInputs after the last clustering
+
+	renamesMu sync.Mutex
+	renames   map[string]*renameJob // username → the running or last rename
 }
 
 // New creates a new Gallery plugin instance.
@@ -205,6 +208,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAPI("api/face/{id}/thumbnail", http.HandlerFunc(pages.FaceThumbnail))
 	ctx.RegisterAPI("api/shared/{owner}/album/{id}/media/{media_id}/thumbnail", http.HandlerFunc(pages.SharedAlbumThumbnail))
 	ctx.RegisterAPI("api/scan-status", http.HandlerFunc(pages.ScanStatusPartial))
+	ctx.RegisterAPI("api/rename-status", http.HandlerFunc(pages.RenameStatusPartial))
 	ctx.RegisterAPI("api/user-scan-status", http.HandlerFunc(pages.UserScanStatusPartial))
 	ctx.RegisterAPI("api/tags/search", http.HandlerFunc(pages.SearchTagsAPI))
 	ctx.RegisterAPI("api/people/search", http.HandlerFunc(pages.SearchPeopleAPI))
@@ -268,6 +272,7 @@ func (p *Plugin) Register(ctx plugin.PluginContext) error {
 	ctx.RegisterAction("POST", "duplicates/{id}/delete-member", http.HandlerFunc(pages.DeleteDuplicateMember))
 	ctx.RegisterAction("POST", "duplicates/{id}/delete-all", http.HandlerFunc(pages.DeleteAllDuplicates))
 	ctx.RegisterAction("POST", "duplicates/{id}/dismiss", http.HandlerFunc(pages.DismissDuplicateGroup))
+	ctx.RegisterPage("rename", http.HandlerFunc(pages.RenameStatus))
 	ctx.RegisterPage("rename/preview", http.HandlerFunc(pages.RenamePreview))
 	ctx.RegisterAction("POST", "rename/apply", http.HandlerFunc(pages.RenameApply))
 	ctx.RegisterAction("POST", "rename/undo", http.HandlerFunc(pages.RenameUndo))

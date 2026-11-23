@@ -552,7 +552,7 @@ func SummarizeSkips(skipped []RenameSkip) []SkipKind {
 // ApplyRename executes the planned renames using the files plugin. It never
 // replaces a file: one that appeared at a new path since the plan was made
 // leaves that photo where it is.
-func (p *Plugin) ApplyRename(username string, renames []RenamePreview) error {
+func (p *Plugin) ApplyRename(username string, renames []RenamePreview, job *renameJob) error {
 	fp, err := p.filesPlugin()
 	if err != nil {
 		return err
@@ -575,25 +575,36 @@ func (p *Plugin) ApplyRename(username string, renames []RenamePreview) error {
 	// are reported together at the end. A file waiting on the failed one's
 	// name then finds it taken and stays put too.
 	var errs []error
+	fail := func(err error) {
+		errs = append(errs, err)
+		job.fail(err)
+	}
 	var left []string
-	for _, s := range renameSteps(renames) {
+	steps := renameSteps(renames)
+	job.begin(len(steps))
+	for _, s := range steps {
 		if err := moveNoReplace(fp, username, s.From, s.To); err != nil {
 			p.log.Error("rename", "from", s.From, "to", s.To, "err", err)
-			errs = append(errs, fmt.Errorf("%s: %w", s.From, err))
+			fail(fmt.Errorf("%s: %w", s.From, err))
 			continue
 		}
 		left = append(left, path.Dir(s.From))
 
 		// Log for undo first: a renamed file the batch does not know of
 		// could not be put back.
+		var stepErrs []error
 		if err := LogRename(db, batchID, s.FileID, s.From, s.To); err != nil {
 			p.log.Error("log rename", "from", s.From, "err", err)
-			errs = append(errs, fmt.Errorf("%s: record for undo: %w", s.From, err))
+			stepErrs = append(stepErrs, fmt.Errorf("record for undo: %w", err))
 		}
-
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE id = ?`, s.To, s.MediaID); err != nil {
 			p.log.Error("update media path", "media_id", s.MediaID, "err", err)
-			errs = append(errs, fmt.Errorf("%s: update gallery: %w", s.From, err))
+			stepErrs = append(stepErrs, fmt.Errorf("update gallery: %w", err))
+		}
+		if len(stepErrs) > 0 {
+			fail(fmt.Errorf("%s: %w", s.From, errors.Join(stepErrs...)))
+		} else {
+			job.step()
 		}
 	}
 
@@ -641,7 +652,7 @@ func renameErrors(errs []error, n int) error {
 }
 
 // UndoLastRename reverses the most recent rename batch.
-func (p *Plugin) UndoLastRename(username string) error {
+func (p *Plugin) UndoLastRename(username string, job *renameJob) error {
 	fp, err := p.filesPlugin()
 	if err != nil {
 		return err
@@ -661,23 +672,30 @@ func (p *Plugin) UndoLastRename(username string) error {
 
 	// Backwards, so each name is free again by the time it is wanted.
 	var errs []error
+	fail := func(err error) {
+		errs = append(errs, err)
+		job.fail(err)
+	}
 	var left []string
+	job.begin(len(entries))
 	for _, e := range slices.Backward(entries) {
 		if err := moveNoReplace(fp, username, e.NewPath, e.OldPath); err != nil {
 			p.log.Error("undo rename", "from", e.NewPath, "to", e.OldPath, "err", err)
-			errs = append(errs, fmt.Errorf("%s: %w", e.NewPath, err))
+			fail(fmt.Errorf("%s: %w", e.NewPath, err))
 			continue
 		}
 		left = append(left, path.Dir(e.NewPath))
 		if _, err := db.Exec(`UPDATE media SET file_path = ? WHERE file_id = ?`, e.OldPath, e.FileID); err != nil {
 			p.log.Error("undo update media path", "file_id", e.FileID, "err", err)
-			errs = append(errs, fmt.Errorf("%s: update gallery: %w", e.OldPath, err))
+			fail(fmt.Errorf("%s: update gallery: %w", e.OldPath, err))
+		} else {
+			job.step()
 		}
 	}
 
 	p.removeEmptied(fp, username, ParseScanFolders(db), left)
 	if err := DeleteRenameBatch(db, batchID); err != nil {
-		errs = append(errs, fmt.Errorf("forget batch: %w", err))
+		fail(fmt.Errorf("forget batch: %w", err))
 	}
 	return renameErrors(errs, len(entries))
 }

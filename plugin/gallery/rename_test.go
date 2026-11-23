@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/cogtest"
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
@@ -41,11 +42,30 @@ func (e *renameEnv) apply(t *testing.T, pattern string, policy gallery.ConflictP
 	t.Helper()
 	e.PostForm(t, "/apps/gallery/rename/apply", url.Values{"pattern": {pattern}, "conflicts": {string(policy)}},
 		e.cookie, e.csrf, cogtest.StopRedirect).Status(303)
+	e.waitRename(t)
 }
 
 func (e *renameEnv) undo(t *testing.T) {
 	t.Helper()
 	e.PostForm(t, "/apps/gallery/rename/undo", url.Values{}, e.cookie, e.csrf, cogtest.StopRedirect).Status(303)
+	e.waitRename(t)
+}
+
+// waitRename waits for the rename running in the background to finish.
+func (e *renameEnv) waitRename(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		job, ok := e.g.RenameStatus(e.alice.Username)
+		require.True(t, ok, "no rename started")
+		if !job.Running() {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("rename still running")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // holds asserts that path holds the photo first uploaded as from.
@@ -128,10 +148,12 @@ func TestRenameSwap(t *testing.T) {
 
 	e.preview(t, pattern, gallery.ConflictNumber).Contains("2 files will be renamed").NotContains("numbered")
 	e.apply(t, pattern, gallery.ConflictNumber)
+	e.Get(t, "/apps/gallery/rename", e.alice.Auth).Status(200).Contains("Renamed 3 files.").NotContains("api/rename-status")
 	e.holds(t, "/Photos/a.jpg", "/Photos/b.jpg")
 	e.holds(t, "/Photos/b.jpg", "/Photos/a.jpg")
 
 	e.undo(t)
+	e.Get(t, "/apps/gallery/rename", e.alice.Auth).Status(200).Contains("Put back 3 files.")
 	e.holds(t, "/Photos/a.jpg", "/Photos/a.jpg")
 	e.holds(t, "/Photos/b.jpg", "/Photos/b.jpg")
 }

@@ -2054,7 +2054,8 @@ func (h *Pages) RenamePreview(w http.ResponseWriter, r *http.Request) {
 		plan = &RenamePlan{}
 	}
 	plugin.SetTitle(w, "Rename Preview")
-	ui.Render(w, r, renamePreviewPage(pattern, policy, plan, patternErr, plugin.CSRFToken(r)))
+	job, _ := h.plugin.RenameStatus(plugin.Username(r))
+	ui.Render(w, r, renamePreviewPage(pattern, policy, plan, patternErr, job.Running(), plugin.CSRFToken(r)))
 }
 
 // unscannedNote explains that n files the rename cannot see yet stay put.
@@ -2072,6 +2073,8 @@ func renamePreviewURL(pattern string, policy ConflictPolicy) string {
 
 // RenameApply executes the rename operation, and remembers the pattern and
 // conflict policy as the ones to offer next time.
+// RenameApply starts the rename in the background and shows its progress:
+// a library of thousands of photos takes longer than a request should.
 func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
@@ -2081,14 +2084,8 @@ func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	username := plugin.Username(r)
 	pattern := r.FormValue("pattern")
 	policy := ParseConflictPolicy(r.FormValue("conflicts"))
-	filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	plan, err := PlanRename(db, filesDB, pattern, policy)
-	if err != nil {
-		flashRedirect(w, r, "error", "Nothing was renamed: "+err.Error(), renamePreviewURL(pattern, policy))
+	if err := h.plugin.StartRename(username, pattern, policy); err != nil {
+		h.renameRefused(w, r, err)
 		return
 	}
 	if err := SettingRenamePattern.Set(db, pattern); err != nil {
@@ -2097,21 +2094,48 @@ func (h *Pages) RenameApply(w http.ResponseWriter, r *http.Request) {
 	if err := SettingRenameConflicts.Set(db, policy); err != nil {
 		h.plugin.log.Error("remember rename conflicts", "user", username, "err", err)
 	}
-	if err := h.plugin.ApplyRename(username, plan.Renames); err != nil {
-		flashRedirect(w, r, "error", "The rename stopped part way: "+err.Error()+". Undo Last Rename puts back what was renamed.", "/apps/gallery/settings")
-		return
-	}
-	flashRedirect(w, r, "success", "Renamed "+plural(len(plan.Renames), "file", "files")+".", "/apps/gallery/settings")
+	http.Redirect(w, r, renameStatusURL, http.StatusSeeOther)
 }
 
-// RenameUndo reverses the most recent rename batch.
+// RenameUndo starts undoing the most recent rename in the background.
 func (h *Pages) RenameUndo(w http.ResponseWriter, r *http.Request) {
-	username := plugin.Username(r)
-	if err := h.plugin.UndoLastRename(username); err != nil {
-		flashRedirect(w, r, "error", "The last rename could not be undone: "+err.Error(), "/apps/gallery/settings")
+	if err := h.plugin.StartUndo(plugin.Username(r)); err != nil {
+		h.renameRefused(w, r, err)
 		return
 	}
-	flashRedirect(w, r, "success", "Undid the last rename.", "/apps/gallery/settings")
+	http.Redirect(w, r, renameStatusURL, http.StatusSeeOther)
+}
+
+func (h *Pages) renameRefused(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errRenameRunning) {
+		flashRedirect(w, r, "error", "A rename is already running. Wait for it to finish before starting another.", renameStatusURL)
+		return
+	}
+	h.serverError(w, r, err)
+}
+
+const renameStatusURL = "/apps/gallery/rename"
+
+// RenameStatus shows the user's rename running, or the last one.
+func (h *Pages) RenameStatus(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.plugin.RenameStatus(plugin.Username(r))
+	if !ok {
+		http.Redirect(w, r, "/apps/gallery/settings", http.StatusSeeOther)
+		return
+	}
+	plugin.SetTitle(w, "Rename")
+	ui.Render(w, r, renameStatusPage(job))
+}
+
+// RenameStatusPartial is the rename's progress card, which polls itself
+// while the rename runs.
+func (h *Pages) RenameStatusPartial(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.plugin.RenameStatus(plugin.Username(r))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	ui.Render(w, r, renameJobCard(job))
 }
 
 // plural is "1 photo" or "3 photos".

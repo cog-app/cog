@@ -2109,6 +2109,63 @@ templ renameConflictsField(policy ConflictPolicy) {
 	</div>
 }
 
+templ renameStatusPage(job RenameJob) {
+	@galleryLayout("/apps/gallery/settings") {
+		if job.Undo {
+			@ui.PageHeader("Undo rename", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
+		} else {
+			@ui.PageHeader("Rename", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
+		}
+		@renameJobCard(job)
+	}
+}
+
+templ renameJobCard(job RenameJob) {
+	<div
+		id="rename-job"
+		class="card"
+		if job.Running() {
+			hx-get="/apps/gallery/api/rename-status"
+			hx-trigger="every 1s"
+			hx-swap="outerHTML"
+		}
+	>
+		if job.Running() {
+			if job.Total == 0 {
+				<p>Working out the new names…</p>
+			} else {
+				<div class="progress mb-1" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={ strconv.Itoa(job.Percent()) }>
+					<div class="progress-bar" style={ "width:" + strconv.Itoa(job.Percent()) + "%" }></div>
+				</div>
+				<p class="text-sm">{ strconv.Itoa(job.Done+job.Failed) } of { strconv.Itoa(job.Total) } files ({ strconv.Itoa(job.Percent()) }%)</p>
+			}
+			<p class="text-sm text-muted">It goes on if you leave this page.</p>
+		} else if job.Err != "" {
+			@ui.Alert("error", "Nothing was renamed: "+job.Err)
+		} else {
+			if job.Undo {
+				<p>{ "Put back " + plural(job.Done, "file", "files") + "." }</p>
+			} else {
+				<p>{ "Renamed " + plural(job.Done, "file", "files") + "." }</p>
+			}
+		}
+		if job.Failed > 0 {
+			<p class="text-danger">{ plural(job.Failed, "file", "files") } could not be moved and stayed where they were:</p>
+			<ul class="text-sm mono">
+				for _, f := range job.Failures {
+					<li>{ firstLine(f) }</li>
+				}
+				if job.Failed > len(job.Failures) {
+					<li>{ "and " + strconv.Itoa(job.Failed-len(job.Failures)) + " more" }</li>
+				}
+			</ul>
+		}
+		if !job.Running() {
+			<a href="/apps/gallery/settings" class="btn">Back to settings</a>
+		}
+	</div>
+}
+
 templ renameKinds(sum RenameSummary) {
 	<p class="card-desc">{ "Too many to list one by one, so here they are by kind, with an example of each: " }<span class="mono">#</span> is any number, <span class="mono">*</span> any folder, and <span class="mono">{ "{name}" }</span> the file's own name.</p>
 	<table class="table table-stack gallery-rename-table">
@@ -2148,7 +2205,7 @@ templ renameKinds(sum RenameSummary) {
 	</table>
 }
 
-templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, patternErr string, csrfToken string) {
+templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, patternErr string, renaming bool, csrfToken string) {
 	@galleryLayout("/apps/gallery/settings") {
 		@ui.PageHeader("Rename preview", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
 		<form method="get" action="/apps/gallery/rename/preview" class="card">
@@ -2201,13 +2258,17 @@ templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan,
 						</table>
 					}
 				</div>
-				<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
-					<input type="hidden" name="csrf_token" value={ csrfToken }/>
-					<input type="hidden" name="pattern" value={ pattern }/>
-					<input type="hidden" name="conflicts" value={ string(policy) }/>
-					<button type="submit" class="btn btn-primary">{ "Rename " + plural(len(plan.Renames), "file", "files") }</button>
-					<a href="/apps/gallery/settings" class="btn">Cancel</a>
-				</form>
+				if renaming {
+					<div class="alert alert-info">A rename is running. <a href="/apps/gallery/rename">See how far it has got</a>; this one can start once it finishes.</div>
+				} else {
+					<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<input type="hidden" name="pattern" value={ pattern }/>
+						<input type="hidden" name="conflicts" value={ string(policy) }/>
+						<button type="submit" class="btn btn-primary">{ "Rename " + plural(len(plan.Renames), "file", "files") }</button>
+						<a href="/apps/gallery/settings" class="btn">Cancel</a>
+					</form>
+				}
 			}
 			if len(plan.Skipped) > 0 {
 				<div class="card">

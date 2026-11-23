@@ -1,8 +1,10 @@
 package gallery
 
 import (
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/testing/require"
 )
@@ -63,4 +65,41 @@ func TestSummarizeSkipsByReason(t *testing.T) {
 	require.Equal(t, "… is already taken.", kinds[0].Reason)
 	require.Equal(t, 2, kinds[0].Count)
 	require.Equal(t, "The pattern failed", kinds[1].Reason)
+}
+
+// A second rename or undo is refused while one runs: two at once race for
+// every file.
+func TestRenameJobRunsOneAtATime(t *testing.T) {
+	p := New()
+	release := make(chan struct{})
+	require.NoError(t, p.startRenameJob("alice", false, func(j *renameJob) error {
+		j.begin(2)
+		j.step()
+		<-release
+		j.step()
+		return nil
+	}))
+	require.True(t, errors.Is(p.StartUndo("alice"), errRenameRunning))
+	job, ok := p.RenameStatus("alice")
+	require.True(t, ok)
+	for job.Done == 0 {
+		time.Sleep(time.Millisecond)
+		job, _ = p.RenameStatus("alice")
+	}
+	require.True(t, job.Running())
+	require.Equal(t, 50, job.Percent())
+
+	close(release)
+	for job.Running() {
+		time.Sleep(time.Millisecond)
+		job, _ = p.RenameStatus("alice")
+	}
+	require.Equal(t, 2, job.Done)
+	require.Equal(t, "", job.Err)
+
+	require.NoError(t, p.startRenameJob("alice", true, func(*renameJob) error { return errors.New("no rename batch to undo") }))
+	for job, _ = p.RenameStatus("alice"); job.Running(); job, _ = p.RenameStatus("alice") {
+		time.Sleep(time.Millisecond)
+	}
+	require.Equal(t, "no rename batch to undo", job.Err)
 }
