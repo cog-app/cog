@@ -500,8 +500,10 @@ func testPNG(t *testing.T, w, h int, c color.RGBA) []byte {
 			}
 		}
 	}
+	// Uncompressed, so the file's size, which the duplicates page shows, does
+	// not change with the Go release's deflate.
 	var buf bytes.Buffer
-	require.NoError(t, png.Encode(&buf, img))
+	require.NoError(t, (&png.Encoder{CompressionLevel: png.NoCompression}).Encode(&buf, img))
 	return buf.Bytes()
 }
 
