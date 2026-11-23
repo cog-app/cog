@@ -111,6 +111,12 @@ cog update
 
 Prints the version.
 
+### `cog docs`
+
+Builds this documentation as a static website, the same pages Cog serves
+at `/docs/`, with a search that runs in the browser. `--out <folder>` (default
+`public`) is replaced with the site; `--serve localhost:8080` then serves it.
+
 Every command takes `--config <file>` to read a configuration file other
 than the one beside the installed program.
 

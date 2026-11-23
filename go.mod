@@ -6,7 +6,6 @@ tool (
 	connectrpc.com/connect/cmd/protoc-gen-connect-go
 	git.duckfam.us/jj-software/cog/internal/cmd/davfixtures
 	git.duckfam.us/jj-software/cog/internal/cmd/dev
-	git.duckfam.us/jj-software/cog/internal/cmd/docs
 	git.duckfam.us/jj-software/cog/internal/cmd/migratesql
 	git.duckfam.us/jj-software/cog/internal/cmd/protoc
 	git.duckfam.us/jj-software/cog/internal/cmd/release

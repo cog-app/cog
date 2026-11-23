@@ -149,12 +149,27 @@ including tags, to GitHub. A tag `v*` there runs
   each native binary must report its tag (`cog version`);
 - `publish` writes `SHA256SUMS` and creates the GitHub release (a tag with
   a `-` suffix is a prerelease);
-- `pages` rebuilds the site: the docs (`go tool docs`) and
+- `pages` rebuilds the site: the docs (`cog docs`, see below) and
   `releases.json`, which `go tool release manifest` builds from every
   GitHub release and its `SHA256SUMS`, signed with `COG_RELEASE_KEY`. The
   site is its own repository, `cog-app/cog-app.github.io`, served from its
   `main` branch at <https://cog-app.github.io>; the job pushes the result
   there with a deploy key. It also runs on every push to master.
+
+**Docs.** The website is the documentation every Cog serves at `/docs/`
+(readable signed out, linked from the account menu as Help). `DOCS/` is a
+Go package embedding the Markdown; `internal/docs` renders it with one
+`html/template` layout in Cog's stylesheet, for both. `cog docs --out
+public` writes the static site: the pages, `search.json`, and the
+`ui/static` files they load. Search is the same in both: every query word
+must start a word of the page, the title counting most; Cog's navbar
+search lists matching pages under Help (`Docs.Search`), and the docs'
+own box runs `docs-search.js` over `search.json`, so the website searches
+with no server. Each page is a `text/template` first: `.Site` is true on
+the website, `.Version` is Cog's, and `{{ skip }}` leaves a page out
+(installation, inside an installed Cog). A link to a page left out of Cog
+goes to the website instead; a link to no page fails the build, and
+`TestCogDocs` builds both.
 
 Assets are named `cog-<goos>-<goarch>[.exe]`; the manifest keys them by
 `<goos>-<goarch>`, which is what `version.Platform()` reports.

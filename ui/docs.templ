@@ -1,0 +1,17 @@
+package ui
+
+// DocsPage renders a page of the docs in Cog's layout: sidebar and body are
+// HTML internal/docs rendered.
+templ DocsPage(pd PageData, sidebar, body, version string) {
+	@Base(pd) {
+		<div class="sidebar-layout">
+			@templ.Raw(sidebar)
+			<article class="sidebar-content prose docs-page">
+				@templ.Raw(body)
+				if version != "" {
+					<p class="docs-version">For Cog { version }</p>
+				}
+			</article>
+		</div>
+	}
+}

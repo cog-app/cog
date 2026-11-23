@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"git.duckfam.us/jj-software/cog/internal/httperr"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"git.duckfam.us/jj-software/cog/internal/auth"
 	"git.duckfam.us/jj-software/cog/internal/search"
@@ -95,28 +97,48 @@ func (h searchHandler) SearchPartial(w http.ResponseWriter, r *http.Request) {
 
 	pages := ui.MatchPages(q, u.IsAdmin, buildNav(r.URL.Path, h.p.Plugins))
 
-	var userHits []search.Hit
-	var systemHits []search.Hit
-
-	if h.p.Search != nil {
-		result, err := h.p.Search.SearchUser(u.Username, q, 10, 0)
+	// The help pages have an index of their own, shared by everyone. On a
+	// help page they come first and the user's own results fill what is
+	// left of the list; elsewhere the other way round.
+	const limit = 10
+	var userHits, systemHits []search.Hit
+	searchUser := func(limit int) {
+		if h.p.Search == nil || limit <= 0 {
+			return
+		}
+		result, err := h.p.Search.SearchUser(u.Username, q, limit, 0)
 		if err != nil {
 			h.p.Log.Error("search partial: user search", "user", u.Username, "err", err)
 		} else if result != nil {
 			userHits = result.Hits
 		}
-		if u.IsAdmin {
-			result, err := h.p.Search.SearchSystem(q, 10, 0)
-			if err != nil {
-				h.p.Log.Error("search partial: system search", "err", err)
-			} else if result != nil {
-				systemHits = result.Hits
-			}
+	}
+	var help []search.Hit
+	helpFirst := onDocsPage(r)
+	if helpFirst {
+		help = h.docsSearch(q, limit)
+		searchUser(limit - len(help))
+	} else {
+		searchUser(limit)
+		help = h.docsSearch(q, limit-len(userHits))
+	}
+	if h.p.Search != nil && u.IsAdmin {
+		result, err := h.p.Search.SearchSystem(q, limit, 0)
+		if err != nil {
+			h.p.Log.Error("search partial: system search", "err", err)
+		} else if result != nil {
+			systemHits = result.Hits
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := ui.SearchResults(q, pages, userHits, systemHits, u.IsAdmin).Render(r.Context(), w); err != nil {
+	if err := ui.SearchResults(q, pages, userHits, systemHits, help, helpFirst, u.IsAdmin).Render(r.Context(), w); err != nil {
 		h.p.Log.Error("search partial: render", "err", err)
 	}
+}
+
+// onDocsPage reports whether the search box asking is on a help page.
+func onDocsPage(r *http.Request) bool {
+	cur, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	return err == nil && strings.HasPrefix(cur.Path, "/docs/")
 }

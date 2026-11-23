@@ -223,6 +223,7 @@ func Main(plugins ...plugin.Plugin) {
 	root.AddCommand(shellCmd(plugins))
 	root.AddCommand(doctorCmd(plugins))
 	root.AddCommand(versionCmd())
+	root.AddCommand(docsCmd())
 	addSetupCommands(root, plugins)
 
 	// Discover and register plugin CLI commands, which means opening the

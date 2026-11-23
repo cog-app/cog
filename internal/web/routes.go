@@ -72,6 +72,7 @@ func New(p *services.Providers) http.Handler {
 
 	// --- Static assets (content-hash cache busting via ui.Static) ---
 	mux.Handle("GET /static/", http.StripPrefix("/static/", ui.Static))
+	mux.HandleFunc("GET /docs/", docsHandler{handler{p}}.Serve)
 
 	// Build quota checker for plugins.
 	var fp *filesPlugin.Plugin

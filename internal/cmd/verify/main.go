@@ -329,7 +329,6 @@ func reportCoverage(profile string) {
 			strings.Contains(line, "plugpb") ||
 			strings.Contains(line, "cmd/cog") ||
 			strings.Contains(line, "cmd/dev") ||
-			strings.Contains(line, "cmd/docs") ||
 			strings.Contains(line, "cmd/verify") ||
 			strings.Contains(line, "cmd/migratesql") ||
 			strings.Contains(line, "testing/") ||

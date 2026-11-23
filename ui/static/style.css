@@ -6163,3 +6163,51 @@ html:has(dialog.gallery-lightbox[open]) {
 .setup .wizard-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 1.5rem; }
 .setup .wizard-actions .spacer { flex: 1; }
 .setup code.fingerprint { word-break: break-all; }
+
+/* ==== docs (/docs/ and the website) ==== */
+.docs-page {
+  max-width: 48rem;
+}
+/* chroma's light theme sets the block's background inline. */
+.docs-page pre {
+  border: 1px solid var(--color-border);
+}
+.docs-page .docs-version {
+  margin-top: var(--space-8);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+/* A section of the docs' sidebar folds away; the current page's is open. */
+.sidebar-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius);
+}
+.sidebar-section > summary::-webkit-details-marker {
+  display: none;
+}
+.sidebar-section > summary::after {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.sidebar-section[open] > summary::after {
+  transform: rotate(45deg);
+}
+.sidebar-section > summary:hover {
+  color: var(--color-text);
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

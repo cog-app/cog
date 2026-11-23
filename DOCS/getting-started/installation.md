@@ -1,3 +1,5 @@
+{{/* A running Cog is installed already: this page is for the website. */ -}}
+{{ if not .Site }}{{ skip }}{{ end -}}
 # Installation
 
 Cog is one program. Download it, run it, and setup takes care of the rest:
@@ -58,8 +60,7 @@ one or the other.
 ## What setup asks
 
 Setup asks one question a page, and skips the pages your answers make
-unnecessary. If you already know what you want, **Show every setting on
-one page** on the first page puts them all on one form.
+unnecessary.
 
 1. **How Cog runs.** *On this computer, for me* starts Cog when you sign
    in and runs it as you, with no administrator rights: the right choice

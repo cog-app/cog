@@ -305,6 +305,7 @@ templ UserDropdown(pd PageData) {
 				<a href="/admin/" class={ dropdownActive(pd.RequestPath, "/admin") }>Admin</a>
 			}
 			<div class="dropdown-divider"></div>
+			<a href="/docs/" class={ dropdownActive(pd.RequestPath, "/docs/") }>Help</a>
 			<form method="post" action="/logout">
 				<input type="hidden" name="csrf_token" value={ pd.CSRFToken }/>
 				<button type="submit">Log out</button>
@@ -354,6 +355,8 @@ func hitURL(hit search.Hit) string {
 		return "/apps/rss/"
 	case "calendar":
 		return "/apps/calendar/"
+	case "docs":
+		return "/docs/" + idPart
 	default:
 		return "/"
 	}
@@ -376,11 +379,16 @@ func hitSubtext(hit search.Hit) string {
 }
 
 // SearchResults renders the search results dropdown partial.
-templ SearchResults(query string, pages []PageLink, userHits, systemHits []search.Hit, isAdmin bool) {
-	if len(pages) == 0 && len(userHits) == 0 && len(systemHits) == 0 {
+// help are the docs' pages, listed first when helpFirst (the search box is
+// on a help page).
+templ SearchResults(query string, pages []PageLink, userHits, systemHits, help []search.Hit, helpFirst, isAdmin bool) {
+	if len(pages) == 0 && len(userHits) == 0 && len(systemHits) == 0 && len(help) == 0 {
 		<div class="search-empty">
 			No results for <strong>“{ query }”</strong>
 		</div>
+	}
+	if helpFirst {
+		@helpHits(help)
 	}
 	if len(pages) > 0 {
 		<div class="search-section">Pages</div>
@@ -410,6 +418,23 @@ templ SearchResults(query string, pages []PageLink, userHits, systemHits []searc
 			<a class="search-hit" href={ templ.SafeURL(hitURL(hit)) }>
 				<span class="search-hit-name">{ hitName(hit) }</span>
 				<span class="badge badge-admin">{ hit.Source }</span>
+			</a>
+		}
+	}
+	if !helpFirst {
+		@helpHits(help)
+	}
+}
+
+templ helpHits(hits []search.Hit) {
+	if len(hits) > 0 {
+		<div class="search-section">Help</div>
+		for _, hit := range hits {
+			<a class="search-hit" href={ templ.SafeURL(hitURL(hit)) }>
+				<span class="search-hit-name">{ hitName(hit) }</span>
+				if hitSubtext(hit) != "" {
+					<span class="search-hit-sub">{ hitSubtext(hit) }</span>
+				}
 			</a>
 		}
 	}

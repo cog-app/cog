@@ -32,7 +32,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Docs
-        run: go tool docs -out public
+        run: go run ./cmd/cog docs --out public
       - name: Release list
         env:
           COG_RELEASE_KEY: ${{ secrets.COG_RELEASE_KEY }}

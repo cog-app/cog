@@ -42,7 +42,7 @@ Recognition processes images in the background. Results appear as tags and face 
 Organize photos into folders based on EXIF metadata using Go template patterns:
 
 ```
-{{.Year}}/{{.Month}}/{{.Day}}/{{.Original}}{{.Ext}}
+{{`{{.Year}}/{{.Month}}/{{.Day}}/{{.Original}}{{.Ext}}`}}
 ```
 
 Available fields: `Year`, `Month`, `Day`, `Hour`, `Minute`, `Second`, `Camera`, `Lens`, `Original`, `Ext`, `Place`, `Country`, `Width`, `Height`.

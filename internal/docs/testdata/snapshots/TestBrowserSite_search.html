@@ -1,0 +1,736 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Installation — Cog docs
+    </title>
+    <link href="../static/style.css" rel="stylesheet" />
+    <link href="../static/favicon.svg" rel="icon" type="image/svg+xml" />
+  </head>
+  <body class="docs">
+    <nav aria-label="Main" class="navbar">
+      <a aria-label="Cog docs home" class="navbar-brand" href="../index.html">
+        <img alt="" height="20" src="../static/favicon.svg" width="20" />
+        <span class="brand-text">
+          Cog docs
+        </span>
+      </a>
+      <div class="navbar-spacer" />
+      <div class="navbar-search" role="search">
+        <label class="sr-only" for="search-box">
+          Search the docs
+        </label>
+        <input aria-controls="search-results" autocomplete="off" class="form-control search-input" data-docs-index="../search.json" data-docs-root="../" id="search-box" placeholder="Search the docs (/)…" type="search" />
+        <div aria-live="polite" class="search-results" id="search-results">
+          <div class="search-section">
+            Help
+          </div>
+          <a class="search-hit search-hit-active" href="../using-cog/webdav.html">
+            <span class="search-hit-name">
+              WebDAV
+            </span>
+            <span class="search-hit-sub">
+              Using Cog
+            </span>
+          </a>
+          <a class="search-hit" href="../plugins/registration.html">
+            <span class="search-hit-name">
+              Registration
+            </span>
+            <span class="search-hit-sub">
+              Plugin development
+            </span>
+          </a>
+          <a class="search-hit" href="../admin/volumes.html">
+            <span class="search-hit-name">
+              Volumes
+            </span>
+            <span class="search-hit-sub">
+              Administration
+            </span>
+          </a>
+          <a class="search-hit" href="../index.html">
+            <span class="search-hit-name">
+              Cog
+            </span>
+          </a>
+          <a class="search-hit" href="../using-cog/app-passwords.html">
+            <span class="search-hit-name">
+              App Passwords
+            </span>
+            <span class="search-hit-sub">
+              Using Cog
+            </span>
+          </a>
+          <a class="search-hit" href="../using-cog/files.html">
+            <span class="search-hit-name">
+              Files
+            </span>
+            <span class="search-hit-sub">
+              Using Cog
+            </span>
+          </a>
+          <a class="search-hit" href="../nextcloud/overview.html">
+            <span class="search-hit-name">
+              NextCloud Compatibility
+            </span>
+            <span class="search-hit-sub">
+              NextCloud
+            </span>
+          </a>
+          <a class="search-hit" href="../admin/https.html">
+            <span class="search-hit-name">
+              Reaching Cog from Anywhere
+            </span>
+            <span class="search-hit-sub">
+              Administration
+            </span>
+          </a>
+          <a class="search-hit" href="../admin/reverse-proxy.html">
+            <span class="search-hit-name">
+              Reverse Proxy
+            </span>
+            <span class="search-hit-sub">
+              Administration
+            </span>
+          </a>
+          <a class="search-hit" href="../admin/users-and-groups.html">
+            <span class="search-hit-name">
+              Users and Groups
+            </span>
+            <span class="search-hit-sub">
+              Administration
+            </span>
+          </a>
+        </div>
+      </div>
+      <button aria-controls="search-box" aria-expanded="false" aria-label="Search" class="btn-icon search-toggle" data-search-open="" type="button">
+        <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" x2="16.65" y1="21" y2="16.65" />
+        </svg>
+      </button>
+      <div class="navbar-end">
+        <a class="btn btn-primary btn-sm" href="https://github.com/cog-app/cog/releases/latest">
+          Download
+        </a>
+      </div>
+    </nav>
+    <main class="content">
+      <div class="sidebar-layout has-sidebar-toggle">
+        <button aria-controls="sidebar-1" aria-expanded="false" aria-label="Menu: Installation" class="sidebar-toggle" type="button">
+          <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+            <line x1="3" x2="21" y1="6" y2="6" />
+            <line x1="3" x2="21" y1="12" y2="12" />
+            <line x1="3" x2="21" y1="18" y2="18" />
+          </svg>
+          <span class="sidebar-toggle-label" data-label="Installation" />
+          <svg aria-hidden="true" class="sidebar-toggle-chevron" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <nav aria-label="Documentation" class="sidebar docs-sidebar" id="sidebar-1">
+          <a class="sidebar-item" href="../index.html">
+            Overview
+          </a>
+          <details class="sidebar-section" open="">
+            <summary class="sidebar-heading">
+              Getting started
+            </summary>
+            <a class="sidebar-item" href="../getting-started/configuration.html">
+              Configuration
+            </a>
+            <a class="sidebar-item" href="../getting-started/first-run.html">
+              First Run
+            </a>
+            <a aria-current="page" class="sidebar-item active" href="../getting-started/installation.html">
+              Installation
+            </a>
+          </details>
+          <details class="sidebar-section">
+            <summary class="sidebar-heading">
+              Using Cog
+            </summary>
+            <a class="sidebar-item" href="../using-cog/app-passwords.html">
+              App Passwords
+            </a>
+            <a class="sidebar-item" href="../using-cog/files.html">
+              Files
+            </a>
+            <a class="sidebar-item" href="../using-cog/mfa.html">
+              Multi-Factor Authentication
+            </a>
+            <a class="sidebar-item" href="../using-cog/sftp.html">
+              SFTP
+            </a>
+            <a class="sidebar-item" href="../using-cog/search.html">
+              Search
+            </a>
+            <a class="sidebar-item" href="../using-cog/sharing.html">
+              Sharing
+            </a>
+            <a class="sidebar-item" href="../using-cog/webdav.html">
+              WebDAV
+            </a>
+          </details>
+          <details class="sidebar-section">
+            <summary class="sidebar-heading">
+              Apps
+            </summary>
+            <a class="sidebar-item" href="../apps/bookmarks.html">
+              Bookmarks
+            </a>
+            <a class="sidebar-item" href="../apps/calendar.html">
+              Calendar
+            </a>
+            <a class="sidebar-item" href="../apps/contacts.html">
+              Contacts
+            </a>
+            <a class="sidebar-item" href="../apps/dashboard.html">
+              Dashboard
+            </a>
+            <a class="sidebar-item" href="../apps/gallery.html">
+              Gallery
+            </a>
+            <a class="sidebar-item" href="../apps/notes.html">
+              Notes
+            </a>
+            <a class="sidebar-item" href="../apps/rss.html">
+              RSS / News
+            </a>
+            <a class="sidebar-item" href="../apps/tasks.html">
+              Tasks
+            </a>
+          </details>
+          <details class="sidebar-section">
+            <summary class="sidebar-heading">
+              Administration
+            </summary>
+            <a class="sidebar-item" href="../admin/backup.html">
+              Backup and Restore
+            </a>
+            <a class="sidebar-item" href="../admin/cli.html">
+              CLI Reference
+            </a>
+            <a class="sidebar-item" href="../admin/email.html">
+              Email Configuration
+            </a>
+            <a class="sidebar-item" href="../admin/https.html">
+              Reaching Cog from Anywhere
+            </a>
+            <a class="sidebar-item" href="../admin/reverse-proxy.html">
+              Reverse Proxy
+            </a>
+            <a class="sidebar-item" href="../admin/updates.html">
+              Updates
+            </a>
+            <a class="sidebar-item" href="../admin/users-and-groups.html">
+              Users and Groups
+            </a>
+            <a class="sidebar-item" href="../admin/volumes.html">
+              Volumes
+            </a>
+          </details>
+          <details class="sidebar-section">
+            <summary class="sidebar-heading">
+              NextCloud
+            </summary>
+            <a class="sidebar-item" href="../nextcloud/clients.html">
+              Compatible Clients
+            </a>
+            <a class="sidebar-item" href="../nextcloud/login-flow.html">
+              Login Flow v2
+            </a>
+            <a class="sidebar-item" href="../nextcloud/overview.html">
+              NextCloud Compatibility
+            </a>
+          </details>
+          <details class="sidebar-section">
+            <summary class="sidebar-heading">
+              Plugin development
+            </summary>
+            <a class="sidebar-item" href="../plugins/cli-commands.html">
+              CLI Commands
+            </a>
+            <a class="sidebar-item" href="../plugins/custom-builds.html">
+              Custom Builds
+            </a>
+            <a class="sidebar-item" href="../plugins/getting-started.html">
+              Getting Started with Plugin Development
+            </a>
+            <a class="sidebar-item" href="../plugins/databases.html">
+              Plugin Databases
+            </a>
+            <a class="sidebar-item" href="../plugins/plugin-interface.html">
+              Plugin Interface Reference
+            </a>
+            <a class="sidebar-item" href="../plugins/overview.html">
+              Plugin System Overview
+            </a>
+            <a class="sidebar-item" href="../plugins/registration.html">
+              Registration
+            </a>
+            <a class="sidebar-item" href="../plugins/search.html">
+              Search Indexing
+            </a>
+            <a class="sidebar-item" href="../plugins/settings.html">
+              Settings Pages
+            </a>
+            <a class="sidebar-item" href="../plugins/sharing.html">
+              Sharing Resources
+            </a>
+            <a class="sidebar-item" href="../plugins/grpc-plugins.html">
+              gRPC Plugins
+            </a>
+          </details>
+        </nav>
+        <article class="sidebar-content prose docs-page">
+          <h1 id="installation">
+            Installation
+          </h1>
+          <p>
+            Cog is one program. Download it, run it, and setup takes care of the rest: where it lives, the admin account, starting with your computer, and, if you want it, reaching it from anywhere over HTTPS.
+          </p>
+          <h2 id="download">
+            Download
+          </h2>
+          <p>
+            Get the file for your computer from the
+            <a href="https://github.com/cog-app/cog/releases/latest">
+              releases page
+            </a>
+            :
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  Computer
+                </th>
+                <th>
+                  File
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Windows (most PCs)
+                </td>
+                <td>
+                  <code>
+                    cog-windows-amd64.exe
+                  </code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Mac with Apple silicon (M1 and later)
+                </td>
+                <td>
+                  <code>
+                    cog-darwin-arm64
+                  </code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Mac with an Intel processor
+                </td>
+                <td>
+                  <code>
+                    cog-darwin-amd64
+                  </code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Linux on a PC
+                </td>
+                <td>
+                  <code>
+                    cog-linux-amd64
+                  </code>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  Linux on a Raspberry Pi 4/5 or other 64-bit ARM
+                </td>
+                <td>
+                  <code>
+                    cog-linux-arm64
+                  </code>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <h2 id="run-setup">
+            Run setup
+          </h2>
+          <h3 id="windows">
+            Windows
+          </h3>
+          <p>
+            Double-click
+            <code>
+              cog-windows-amd64.exe
+            </code>
+            . Setup opens in your browser.
+          </p>
+          <p>
+            The first time, Windows SmartScreen may say it protected your PC from an unrecognised app: choose
+            <strong>
+              More info
+            </strong>
+            , then
+            <strong>
+              Run anyway
+            </strong>
+            . When Cog first listens on the network, Windows Firewall asks whether to allow it; allow it on private networks, and on public ones too if you will forward ports to it.
+          </p>
+          <h3 id="macos">
+            macOS
+          </h3>
+          <p>
+            Double-click the file. macOS opens it in Terminal, and setup opens in your browser.
+          </p>
+          <p>
+            Downloaded programs that are not from the App Store are blocked the first time. Open
+            <strong>
+              System Settings > Privacy & Security
+            </strong>
+            , find the message about
+            <code>
+              cog-darwin-arm64
+            </code>
+            near the bottom, and choose
+            <strong>
+              Open Anyway
+            </strong>
+            . Or, in Terminal:
+          </p>
+          <pre style="background-color:#fff;" tabindex="0">
+            <code>
+              <span style="display:flex;">
+                <span>
+                  chmod +x ~/Downloads/cog-darwin-arm64
+                </span>
+              </span>
+              <span style="display:flex;">
+                <span>
+                  xattr -d com.apple.quarantine ~/Downloads/cog-darwin-arm64
+                </span>
+              </span>
+              <span style="display:flex;">
+                <span>
+                  ~/Downloads/cog-darwin-arm64
+                </span>
+              </span>
+            </code>
+          </pre>
+          <h3 id="linux">
+            Linux
+          </h3>
+          <pre style="background-color:#fff;" tabindex="0">
+            <code>
+              <span style="display:flex;">
+                <span>
+                  chmod +x cog-linux-amd64
+                </span>
+              </span>
+              <span style="display:flex;">
+                <span>
+                  ./cog-linux-amd64 setup
+                </span>
+              </span>
+            </code>
+          </pre>
+          <p>
+            With a desktop, setup opens in your browser; over SSH or on a server with no desktop, it asks its questions in the terminal.
+            <code>
+              --cli
+            </code>
+            and
+            <code>
+              --web
+            </code>
+            choose one or the other.
+          </p>
+          <h2 id="what-setup-asks">
+            What setup asks
+          </h2>
+          <p>
+            Setup asks one question a page, and skips the pages your answers make unnecessary.
+          </p>
+          <ol>
+            <li>
+              <p>
+                <strong>
+                  How Cog runs.
+                </strong>
+                <em>
+                  On this computer, for me
+                </em>
+                starts Cog when you sign in and runs it as you, with no administrator rights: the right choice for a home computer.
+                <em>
+                  As a server
+                </em>
+                starts it with the computer, as an account of its own, and needs an administrator's password.
+              </p>
+            </li>
+            <li>
+              <p>
+                <strong>
+                  Where to keep your files.
+                </strong>
+                One folder holds Cog's program, settings and everyone's files. Pick a disk with room.
+              </p>
+            </li>
+            <li>
+              <p>
+                <strong>
+                  Where you will use Cog from:
+                </strong>
+              </p>
+              <ul>
+                <li>
+                  <em>
+                    only on this computer
+                  </em>
+                  ;
+                </li>
+                <li>
+                  <em>
+                    at home, on your network
+                  </em>
+                  , over plain HTTP or over HTTPS with a certificate Cog makes (browsers warn once per device; setup shows the fingerprint to compare);
+                </li>
+                <li>
+                  <em>
+                    anywhere, on your devices with Tailscale
+                  </em>
+                  , if Tailscale runs on this computer: no ports to open, and Tailscale Funnel if people without Tailscale need share links;
+                </li>
+                <li>
+                  <em>
+                    anywhere, including people you share with
+                  </em>
+                  , over HTTPS with your router forwarding ports to you;
+                </li>
+                <li>
+                  <em>
+                    through a reverse proxy you already run
+                  </em>
+                  .
+                </li>
+              </ul>
+              <p>
+                See
+                <a href="../admin/https.html">
+                  Reaching Cog from anywhere
+                </a>
+                .
+              </p>
+            </li>
+            <li>
+              <p>
+                <strong>
+                  SFTP and SSH
+                </strong>
+                , and whether account passwords may sign in over it.
+              </p>
+            </li>
+            <li>
+              <p>
+                <strong>
+                  Updates
+                </strong>
+                : check daily, and whether to install them automatically.
+              </p>
+            </li>
+            <li>
+              <p>
+                <strong>
+                  The admin account
+                </strong>
+                you sign in with.
+              </p>
+            </li>
+          </ol>
+          <p>
+            Setup then shows your answers, each with a link to change it, and what it will do, including the port forwarding rules to add to your router. Then it does it: copies Cog into the folder, writes its settings, makes the admin account, gets a certificate, starts the service, and gives you the link to open.
+          </p>
+          <h2 id="running-setup-again">
+            Running setup again
+          </h2>
+          <p>
+            Run the downloaded file again, or the installed one (
+            <code>
+              bin/cog
+            </code>
+            in the folder you chose), to:
+          </p>
+          <ul>
+            <li>
+              change any setting: setup opens on a summary of the current ones, each with a link to the question that sets it;
+            </li>
+            <li>
+              reset an admin's password, for when you are locked out;
+            </li>
+            <li>
+              remove the service (your files and data stay in the folder).
+            </li>
+          </ul>
+          <h2 id="containers-and-distribution-packages">
+            Containers and distribution packages
+          </h2>
+          <p>
+            The container image is built without setup or the updater: you configure it with
+            <a href="configuration.html">
+              environment variables
+            </a>
+            and update it by pulling a new image.
+          </p>
+          <pre style="background-color:#fff;" tabindex="0">
+            <code>
+              <span style="display:flex;">
+                <span>
+                  docker build -t cog .
+                </span>
+              </span>
+              <span style="display:flex;">
+                <span>
+                  docker run -p 8580:8580 -p 8522:8522 -v cog-data:/data cog
+                </span>
+              </span>
+            </code>
+          </pre>
+          <p>
+            To build such a binary yourself, use the
+            <code>
+              nosetup
+            </code>
+            build tag:
+            <code>
+              go build -tags nosetup ./cmd/cog
+            </code>
+            .
+          </p>
+          <h2 id="from-source">
+            From source
+          </h2>
+          <p>
+            Requires Go 1.26 or later and a C compiler (for SQLite).
+          </p>
+          <pre style="background-color:#fff;" tabindex="0">
+            <code>
+              <span style="display:flex;">
+                <span>
+                  go install git.duckfam.us/jj-software/cog/cmd/cog@latest
+                </span>
+              </span>
+              <span style="display:flex;">
+                <span>
+                  cog setup
+                </span>
+              </span>
+            </code>
+          </pre>
+          <h2 id="optional-tools">
+            Optional tools
+          </h2>
+          <p>
+            Some features use other programs when they are installed. Run
+            <code>
+              cog doctor
+            </code>
+            to see which are available.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  Tool
+                </th>
+                <th>
+                  Used by
+                </th>
+                <th>
+                  For
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  ffmpeg / ffprobe
+                </td>
+                <td>
+                  Gallery, Feeds
+                </td>
+                <td>
+                  Video thumbnails, metadata, media packaging
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  LibreOffice
+                </td>
+                <td>
+                  Files
+                </td>
+                <td>
+                  Document previews
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  tesseract
+                </td>
+                <td>
+                  Search
+                </td>
+                <td>
+                  Text in images
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  yt-dlp
+                </td>
+                <td>
+                  Feeds
+                </td>
+                <td>
+                  Video downloads
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Everything else is built into the one program.
+          </p>
+          <h2 id="next-steps">
+            Next steps
+          </h2>
+          <ul>
+            <li>
+              <a href="first-run.html">
+                First Run
+              </a>
+              -- sign in and look around
+            </li>
+            <li>
+              <a href="configuration.html">
+                Configuration
+              </a>
+              -- the settings file and environment variables
+            </li>
+          </ul>
+        </article>
+      </div>
+    </main>
+  </body>
+</html>
