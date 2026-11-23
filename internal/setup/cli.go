@@ -65,6 +65,9 @@ func (c *CLI) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if res.Fingerprint != "" {
+		fmt.Fprintf(c.Out, "\nThe certificate's SHA-256 fingerprint, to compare with what your browser shows:\n  %s\n", res.Fingerprint)
+	}
 	if res.URL != "" {
 		fmt.Fprintf(c.Out, "\nCog is running: open %s\n", res.URL)
 	}
@@ -119,22 +122,43 @@ func (c *CLI) ask(p *Plan) error {
 		return err
 	}
 
-	fmt.Fprintln(c.Out, "\nWho can reach Cog?")
-	accesses := []string{AccessLocal, AccessLAN, AccessInternet, AccessProxy}
-	fmt.Fprintln(c.Out, "  1) Only this computer")
-	fmt.Fprintf(c.Out, "  2) My home network (http://%s, not encrypted)\n", LANAddress())
-	fmt.Fprintln(c.Out, "  3) Anywhere, over HTTPS: a Let's Encrypt certificate, with your router forwarding ports here")
-	fmt.Fprintln(c.Out, "  4) Anywhere, behind my reverse proxy")
+	fmt.Fprintln(c.Out, "\nWhere will you use Cog from?")
+	accesses := []string{AccessLocal, AccessLAN, AccessTailscale, AccessInternet, AccessProxy}
+	fmt.Fprintln(c.Out, "  1) Only on this computer")
+	fmt.Fprintf(c.Out, "  2) At home, on my network (%s)\n", LANAddress())
+	fmt.Fprintln(c.Out, "  3) Anywhere, on my devices with Tailscale")
+	fmt.Fprintln(c.Out, "  4) Anywhere, including people I share with: HTTPS from Let's Encrypt, your router forwarding ports here")
+	fmt.Fprintln(c.Out, "  5) Through a reverse proxy I already run")
 	def := 1
 	for i, a := range accesses {
 		if a == p.Access {
 			def = i + 1
 		}
 	}
-	p.Access = accesses[c.choice("Choose", def, len(accesses))-1]
-	p.Port = c.number("Plain HTTP port", p.Port)
+	for {
+		p.Access = accesses[c.choice("Choose", def, len(accesses))-1]
+		if p.Access != AccessTailscale {
+			break
+		}
+		st := CheckTailscale(context.Background())
+		if msg := st.Problem(); msg == "" || c.eof {
+			p.TailscaleName = st.Name
+			break
+		} else {
+			fmt.Fprintln(c.Out, msg)
+		}
+	}
+	p.Port = c.number("Cog's HTTP port on this computer", p.Port)
 
 	switch p.Access {
+	case AccessLAN:
+		p.LANHTTPS = c.yes("Encrypt with HTTPS, using a certificate Cog makes (browsers warn once per device)?", p.LANHTTPS)
+		if p.LANHTTPS {
+			p.HTTPSPort = c.number("HTTPS port", p.HTTPSPort)
+		}
+	case AccessTailscale:
+		fmt.Fprintf(c.Out, "Cog will be at https://%s for your devices on Tailscale.\n", p.TailscaleName)
+		p.Funnel = c.yes("Also let people without Tailscale in, with Tailscale Funnel (for share links)?", p.Funnel)
 	case AccessInternet:
 		p.Domain = c.text("Domain name pointing at your public address (e.g. cloud.example.com)", p.Domain)
 		p.Email = c.text("Email for Let's Encrypt (optional)", p.Email)
@@ -189,14 +213,17 @@ func (c *CLI) ask(p *Plan) error {
 	p.SSH = c.yes("\nServe SSH and SFTP?", p.SSH)
 	if p.SSH {
 		p.SSHPort = c.number("SSH port", p.SSHPort)
-		p.SSHAccountPasswords = c.yes("Allow account passwords over SSH (no means keys and app passwords only)?", p.SSHAccountPasswords && p.Access != AccessInternet)
+		public := p.Access == AccessInternet || (p.Access == AccessTailscale && p.Funnel)
+		p.SSHAccountPasswords = c.yes("Allow account passwords over SSH (no means keys and app passwords only)?", p.SSHAccountPasswords && !public)
 	}
 	p.UpdateCheck = c.yes("Check for new versions daily?", p.UpdateCheck)
 	if p.UpdateCheck {
 		p.UpdateAuto = c.yes("Install them automatically (restarts Cog)?", p.UpdateAuto)
 	}
-	if p.Scope == service.System {
+	if p.Scope == service.System && len(p.reachablePorts()) > 0 {
 		p.Firewall = c.yes("Open Cog's ports in the firewall?", p.Firewall)
+	} else {
+		p.Firewall = false
 	}
 	if c.eof {
 		return errInputEnded
@@ -248,6 +275,17 @@ func (c *CLI) review(ctx context.Context, p Plan) {
 		fmt.Fprintf(c.Out, "It runs as a system service, as %s.\n", p.Account())
 	} else {
 		fmt.Fprintln(c.Out, "It runs as you, from when you sign in.")
+	}
+	switch p.Access {
+	case AccessTailscale:
+		fmt.Fprintf(c.Out, "\nTailscale will serve https://%s and pass it on to Cog.\n", p.TailscaleName)
+		if p.Funnel {
+			fmt.Fprintln(c.Out, "With Funnel anyone can reach the sign-in page: turn on two-factor sign-in under Settings > Security.")
+		}
+	case AccessLAN:
+		if p.LANHTTPS {
+			fmt.Fprintln(c.Out, "\nBrowsers will warn about the certificate the first time; setup shows its fingerprint to compare.")
+		}
 	}
 	if p.Access == AccessInternet {
 		lan := LANAddress()

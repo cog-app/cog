@@ -1,0 +1,66 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      How should Cog run? — Cog setup
+    </title>
+    <link href="/static/style.css?v=8dc957e713e4" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+    <style>
+      .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
+    </style>
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body>
+    <main class="content setup">
+      <p class="steps">
+        Step 1 of 6
+      </p>
+      <h1 class="question">
+        How should Cog run?
+      </h1>
+      <p class="lead">
+        Most people run Cog on a computer at home. You can change this later by running setup again.
+      </p>
+      <form action="/step/run" method="post">
+        <label class="choice">
+          <input checked="" name="scope" type="radio" value="user" />
+          <strong>
+            On this computer, for me
+          </strong>
+          <span class="form-help">
+            Cog starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer or laptop.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="scope" type="radio" value="system" />
+          <strong>
+            As a server
+          </strong>
+          <span class="form-help">
+            Cog starts with the computer, before anyone signs in, and runs as an account of its own. Needs administrator rights.
+          </span>
+        </label>
+        <p class="form-help when when-system">
+          Your computer will ask for an administrator's password when you install.
+        </p>
+        <div class="wizard-actions">
+          <span class="spacer" />
+          <button class="btn btn-primary" type="submit">
+            Continue
+          </button>
+        </div>
+      </form>
+      <p class="form-help">
+        Know what you want?
+        <a href="/quick">
+          Show every setting on one page
+        </a>
+        .
+      </p>
+    </main>
+  </body>
+</html>

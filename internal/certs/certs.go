@@ -1,6 +1,6 @@
 // Package certs serves the server's own TLS certificate: from files an
-// admin manages, or from an ACME CA (Let's Encrypt by default) through lego,
-// renewed while the server runs.
+// admin manages, from an ACME CA (Let's Encrypt by default) through lego,
+// or made and signed by the server itself, renewed while the server runs.
 //
 // Challenges are answered by the server's own listeners rather than by
 // servers lego starts: tls-alpn-01 by the HTTPS listener's GetCertificate,
@@ -58,9 +58,10 @@ const renewBefore = 30 * 24 * time.Hour
 
 // Manager holds the server's certificate and answers ACME challenges.
 type Manager struct {
-	cfg config.TLS
-	dir string // where the account and certificates are kept
-	log *slog.Logger
+	cfg     config.TLS
+	dir     string // where the ACME account and certificates are kept
+	selfDir string // where the self-signed certificate is kept
+	log     *slog.Logger
 
 	mu   sync.RWMutex
 	cert *tls.Certificate
@@ -80,7 +81,12 @@ func New(cfg config.TLS, dataDir string, log *slog.Logger) (*Manager, error) {
 	if cfg.Challenge == "" {
 		cfg.Challenge = TLSALPN01
 	}
-	m := &Manager{cfg: cfg, dir: filepath.Join(dataDir, "acme"), log: log.With("component", "certs")}
+	m := &Manager{
+		cfg:     cfg,
+		dir:     filepath.Join(dataDir, "acme"),
+		selfDir: filepath.Join(dataDir, "tls"),
+		log:     log.With("component", "certs"),
+	}
 	// lego logs through a package logger of its own; send it where the
 	// server's log goes. There is one server, so one destination.
 	legolog.Logger = slog.NewLogLogger(m.log.Handler(), slog.LevelDebug)
@@ -106,6 +112,13 @@ func New(cfg config.TLS, dataDir string, log *slog.Logger) (*Manager, error) {
 			return nil, errors.New("the dns-01 challenge needs dns_provider")
 		}
 		if err := m.loadStored(); err != nil {
+			return nil, err
+		}
+	case SelfSigned:
+		if len(m.cfg.Domains) == 0 {
+			m.cfg.Domains = DefaultSelfSignedNames()
+		}
+		if err := m.ensureSelfSigned(time.Now()); err != nil {
 			return nil, err
 		}
 	default:
@@ -185,6 +198,12 @@ func (m *Manager) Run(ctx context.Context) {
 			} else {
 				wait = 12 * time.Hour
 			}
+		case SelfSigned:
+			if err := m.ensureSelfSigned(time.Now()); err != nil {
+				m.log.Error("renew self-signed certificate", "err", err)
+			} else {
+				wait = 24 * time.Hour
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -194,7 +213,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
-// NeedsRenewal reports whether the ACME certificate is missing, for other
+// NeedsRenewal reports whether the certificate is missing, for other
 // names than configured, or within renewBefore of expiring.
 func (m *Manager) NeedsRenewal(now time.Time) bool {
 	m.mu.RLock()

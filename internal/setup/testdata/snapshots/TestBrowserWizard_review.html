@@ -5,7 +5,7 @@
     <title>
       Review — Cog setup
     </title>
-    <link href="/static/style.css?v=4740c74b892e" rel="stylesheet" />
+    <link href="/static/style.css?v=8dc957e713e4" rel="stylesheet" />
     <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
     <style>
       .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
@@ -26,6 +26,95 @@
       </header>
       <div class="card">
         <h2 class="card-title">
+          Your answers
+        </h2>
+        <dl class="summary">
+          <dt>
+            Runs
+          </dt>
+          <dd>
+            On this computer, as you: starts when you sign in.
+          </dd>
+          <dd>
+            <a href="/step/run">
+              Change
+            </a>
+          </dd>
+          <dt>
+            Folder
+          </dt>
+          <dd>
+            «tmp»/002/cog
+          </dd>
+          <dd>
+            <a href="/step/storage">
+              Change
+            </a>
+          </dd>
+          <dt>
+            Use from
+          </dt>
+          <dd>
+            On your network, at https://192.168.1.20:8443 with a certificate Cog makes
+          </dd>
+          <dd>
+            <a href="/step/access">
+              Change
+            </a>
+          </dd>
+          <dt>
+            Details
+          </dt>
+          <dd>
+            HTTPS on port 8443
+          </dd>
+          <dd>
+            <a href="/step/network">
+              Change
+            </a>
+          </dd>
+          <dt>
+            SFTP and SSH
+          </dt>
+          <dd>
+            On port 8522, keys and app passwords only
+          </dd>
+          <dd>
+            <a href="/step/ssh">
+              Change
+            </a>
+          </dd>
+          <dt>
+            Updates
+          </dt>
+          <dd>
+            Checked daily; admins install them
+          </dd>
+          <dd>
+            <a href="/step/updates">
+              Change
+            </a>
+          </dd>
+          <dt>
+            Admin
+          </dt>
+          <dd>
+            admin
+          </dd>
+          <dd>
+            <a href="/step/admin">
+              Change
+            </a>
+          </dd>
+        </dl>
+        <p class="form-help">
+          <a href="/quick">
+            Edit every setting on one page
+          </a>
+        </p>
+      </div>
+      <div class="card">
+        <h2 class="card-title">
           What setup will do
         </h2>
         <ul>
@@ -41,15 +130,29 @@
           <li>
             Start Cog now and whenever you sign in.
           </li>
+          <li>
+            Make a certificate for 192.168.1.20, homebox, homebox.local, localhost, 127.0.0.1.
+          </li>
         </ul>
       </div>
-      <form action="/apply" class="btn-group" method="post">
-        <button class="btn btn-primary" type="submit">
-          Install
-        </button>
-        <a class="btn btn-secondary" href="/plan">
-          Back
-        </a>
+      <div class="card">
+        <h2 class="card-title">
+          The first visit from each device
+        </h2>
+        <p class="card-desc">
+          Browsers warn that the certificate is not trusted, because Cog signed it itself. When setup finishes it shows the certificate's fingerprint: check that the browser shows the same one (in the warning's details), then continue. Apps such as the Nextcloud client ask the same question once.
+        </p>
+      </div>
+      <form action="/apply" method="post">
+        <div class="wizard-actions">
+          <a class="btn btn-ghost" href="/step/admin">
+            Back
+          </a>
+          <span class="spacer" />
+          <button class="btn btn-primary" type="submit">
+            Install
+          </button>
+        </div>
       </form>
     </main>
   </body>

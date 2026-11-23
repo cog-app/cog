@@ -57,31 +57,46 @@ one or the other.
 
 ## What setup asks
 
-1. **Where Cog runs.** *On this computer, for me* starts Cog when you sign in
-   and runs it as you, with no administrator rights: the right choice for a
-   home computer. *As a system service* starts it with the computer, as an
-   account of its own, and needs an administrator's password.
-2. **A folder.** Cog keeps its program, settings and everyone's files there.
-   Pick a disk with room.
-3. **The admin account** you sign in with.
-4. **Who can reach Cog**: only this computer, your home network, anywhere
-   over HTTPS with your router forwarding ports to you, or anywhere through
-   a reverse proxy you already run. See
-   [Reaching Cog from anywhere](../admin/https.md).
-5. **SSH and SFTP**, and whether account passwords may sign in over it.
-6. **Updates**: check daily, and whether to install them automatically.
+Setup asks one question a page, and skips the pages your answers make
+unnecessary. If you already know what you want, **Show every setting on
+one page** on the first page puts them all on one form.
 
-Setup then shows what it will do, including the port forwarding rules to
-add to your router, and does it: copies Cog into the folder, writes its
-settings, makes the admin account, gets a certificate, starts the service,
-and gives you the link to open.
+1. **How Cog runs.** *On this computer, for me* starts Cog when you sign
+   in and runs it as you, with no administrator rights: the right choice
+   for a home computer. *As a server* starts it with the computer, as an
+   account of its own, and needs an administrator's password.
+2. **Where to keep your files.** One folder holds Cog's program, settings
+   and everyone's files. Pick a disk with room.
+3. **Where you will use Cog from:**
+   - *only on this computer*;
+   - *at home, on your network*, over plain HTTP or over HTTPS with a
+     certificate Cog makes (browsers warn once per device; setup shows the
+     fingerprint to compare);
+   - *anywhere, on your devices with Tailscale*, if Tailscale runs on this
+     computer: no ports to open, and Tailscale Funnel if people without
+     Tailscale need share links;
+   - *anywhere, including people you share with*, over HTTPS with your
+     router forwarding ports to you;
+   - *through a reverse proxy you already run*.
+
+   See [Reaching Cog from anywhere](../admin/https.md).
+4. **SFTP and SSH**, and whether account passwords may sign in over it.
+5. **Updates**: check daily, and whether to install them automatically.
+6. **The admin account** you sign in with.
+
+Setup then shows your answers, each with a link to change it, and what it
+will do, including the port forwarding rules to add to your router. Then
+it does it: copies Cog into the folder, writes its settings, makes the
+admin account, gets a certificate, starts the service, and gives you the
+link to open.
 
 ## Running setup again
 
 Run the downloaded file again, or the installed one (`bin/cog` in the
 folder you chose), to:
 
-- change any setting;
+- change any setting: setup opens on a summary of the current ones, each
+  with a link to the question that sets it;
 - reset an admin's password, for when you are locked out;
 - remove the service (your files and data stay in the folder).
 

@@ -191,3 +191,30 @@ func writeSelfSigned(t *testing.T, certPath, keyPath, name string) {
 	require.NoError(t, os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
 	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600))
 }
+
+func TestSelfSigned(t *testing.T) {
+	data := t.TempDir()
+	cfg := config.TLS{Mode: SelfSigned, Domains: []string{"cog.home.arpa", "192.168.1.20"}}
+	m, err := New(cfg, data, quiet)
+	require.NoError(t, err)
+	require.True(t, m.Ready())
+	c, err := m.GetCertificate(&tls.ClientHelloInfo{ServerName: "cog.home.arpa"})
+	require.NoError(t, err)
+	require.NoError(t, c.Leaf.VerifyHostname("cog.home.arpa"))
+	require.NoError(t, c.Leaf.VerifyHostname("192.168.1.20"))
+	fp := m.Fingerprint()
+	require.Equal(t, 95, len(fp))
+
+	// The same certificate is served after a restart.
+	m2, err := New(cfg, data, quiet)
+	require.NoError(t, err)
+	require.Equal(t, fp, m2.Fingerprint())
+
+	// A new name makes a new one.
+	cfg.Domains = append(cfg.Domains, "cog.local")
+	m3, err := New(cfg, data, quiet)
+	require.NoError(t, err)
+	require.NotEqual(t, fp, m3.Fingerprint())
+	require.False(t, m3.NeedsRenewal(time.Now()))
+	require.True(t, m3.NeedsRenewal(time.Now().Add(380*24*time.Hour)))
+}

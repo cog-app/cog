@@ -6,8 +6,10 @@ computer in your house, and your router passing connections from the
 internet to it. Choose **Anywhere, over HTTPS** in setup and it does
 everything here except the router.
 
-If you already run Caddy, nginx or Traefik, choose **behind my reverse
-proxy** instead and see [Reverse Proxy](reverse-proxy.md).
+If you already run Caddy, nginx or Traefik, choose **through a reverse
+proxy I already run** instead and see [Reverse Proxy](reverse-proxy.md).
+If you use Tailscale, see [With Tailscale](#with-tailscale): it needs no
+domain and no router.
 
 ## What you need
 
@@ -63,6 +65,46 @@ every hour; once the problem is fixed it serves HTTPS without being set up
 again. To experiment without running into Let's Encrypt's limits, tick
 **Use Let's Encrypt's test service**, then run setup again without it.
 
+## With Tailscale
+
+[Tailscale](https://tailscale.com) joins your devices into a private
+network. If it runs on the computer Cog is on, choose **Anywhere, on my
+devices with Tailscale** in setup. Setup runs `tailscale serve`, so
+`https://<computer>.<tailnet>.ts.net` reaches Cog from every device signed
+in to your tailnet, with a certificate Tailscale renews. Nothing is
+forwarded on the router and Cog listens on this computer only.
+
+- Turn on **HTTPS Certificates** on the DNS page of Tailscale's admin
+  console first; setup says so if it is off.
+- On Linux, `tailscale serve` needs root or Tailscale's operator: for a
+  per-user install run `sudo tailscale set --operator=$USER` once.
+- **Tailscale Funnel** also lets in people who do not use Tailscale, which
+  share links need. It must be allowed for the computer in the tailnet's
+  access controls. With it on, the sign-in page is on the internet: the
+  advice under [Keeping it safe](#keeping-it-safe) applies.
+
+Choosing something else in setup later turns `tailscale serve` (or
+Funnel) off again.
+
+## On your network only, over HTTPS
+
+Choose **At home, on my network**, then **HTTPS with a certificate Cog
+makes**. Cog signs a certificate for this computer's address and names
+(`192.168.1.20`, `homebox`, `homebox.local`) and renews it itself. No CA
+vouches for it, so each browser warns the first time: setup and Cog's log
+show its SHA-256 fingerprint, which you compare with the one in the
+browser's warning before you accept it.
+
+```toml
+[tls]
+mode = "self-signed"
+addr = ":8443"
+domains = ["192.168.1.20", "homebox", "homebox.local", "localhost"]
+```
+
+The certificate is kept in `data/tls`; a new name in `domains` makes a new
+one.
+
 ## Keeping it safe
 
 Anyone on the internet can reach your sign-in page once the port is open.
@@ -90,7 +132,7 @@ base_url = "https://cloud.example.com"
 addr = "127.0.0.1:8580"
 
 [tls]
-mode = "acme"                    # or "files", with cert_file and key_file
+mode = "acme"                    # or "files" (cert_file, key_file), "self-signed"
 addr = ":8443"
 domains = ["cloud.example.com"]
 email = "you@example.com"        # optional

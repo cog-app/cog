@@ -89,22 +89,20 @@ templ quitForm() {
 	</form>
 }
 
-templ fieldProblem(prob Problem, field string) {
-	if prob.Field == field && prob.Message != "" {
-		<p class="form-help text-danger" role="alert">{ prob.Message }</p>
+templ fieldProblem(probs Problems, field string) {
+	if msg := probs.For(field); msg != "" {
+		<p class="form-help text-danger" role="alert">{ msg }</p>
 	}
 }
 
-templ radio(name, value, current, label, help string) {
-	<label class="form-check">
+// choice is one answer to a page's question, a large radio button.
+templ choice(name, value, current, label, help string) {
+	<label class="choice">
 		<input type="radio" name={ name } value={ value } checked?={ value == current }/>
-		<span>
-			<strong>{ label }</strong>
-			if help != "" {
-				<br/>
-				<span class="form-help">{ help }</span>
-			}
-		</span>
+		<strong>{ label }</strong>
+		if help != "" {
+			<span class="form-help">{ help }</span>
+		}
 	</label>
 }
 
@@ -121,14 +119,14 @@ templ checkbox(name string, checked bool, label, help string) {
 	</label>
 }
 
-templ input(label, name, typ, value, help string, prob Problem) {
+templ input(label, name, typ, value, help string, probs Problems) {
 	<div class="form-group">
 		<label for={ name }>{ label }</label>
-		<input class="form-control" type={ typ } id={ name } name={ name } value={ value } aria-invalid={ strconv.FormatBool(prob.Field == name) } autocomplete={ autocompleteFor(typ) }/>
+		<input class="form-control" type={ typ } id={ name } name={ name } value={ value } aria-invalid={ strconv.FormatBool(probs.For(name) != "") } autocomplete={ autocompleteFor(typ) }/>
 		if help != "" {
 			<p class="form-help">{ help }</p>
 		}
-		@fieldProblem(prob, name)
+		@fieldProblem(probs, name)
 	</div>
 }
 
@@ -146,111 +144,315 @@ func port(n int) string {
 	return strconv.Itoa(n)
 }
 
-templ planPage(p Plan, prob Problem, lan string, admin bool) {
+func inputType(secret bool) string {
+	if secret {
+		return "password"
+	}
+	return "text"
+}
+
+func boolValue(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+// The answers to each question, shared by the guided pages and the quick
+// setup.
+templ scopeFields(p Plan, probs Problems, admin bool) {
+	@choice("scope", "user", string(p.Scope), "On this computer, for me", "Cog starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer or laptop.")
+	@choice("scope", "system", string(p.Scope), "As a server", "Cog starts with the computer, before anyone signs in, and runs as an account of its own. Needs administrator rights.")
+	@fieldProblem(probs, "scope")
+	<p class="form-help when when-system">
+		if admin {
+			Setup is running with administrator rights.
+		} else {
+			Your computer will ask for an administrator's password when you install.
+		}
+	</p>
+}
+
+templ storageFields(p Plan, probs Problems) {
+	@input("Folder", "dir", "text", p.Dir, "Cog keeps its program, settings and everyone's files here. Pick a disk with room for them all; an external disk works if it is always connected.", probs)
+}
+
+templ accessChoices(p Plan, probs Problems, lan string, ts TailscaleStatus) {
+	@choice("access", AccessLocal, p.Access, "Only on this computer", "Open Cog in this computer's browser. Nothing else can connect.")
+	@choice("access", AccessLAN, p.Access, "At home, on my network", "Phones and computers on the same Wi-Fi reach it at "+lan+".")
+	@choice("access", AccessTailscale, p.Access, "Anywhere, on my devices with Tailscale", tailscaleHelp(ts))
+	@choice("access", AccessInternet, p.Access, "Anywhere, including people I share with", "Over HTTPS from the internet: your router forwards it to this computer. You need a domain name; a free one from a dynamic DNS service works.")
+	@choice("access", AccessProxy, p.Access, "Through a reverse proxy I already run", "Caddy, nginx, Traefik or a tunnel already handles HTTPS and passes requests on to Cog.")
+	@fieldProblem(probs, "access")
+}
+
+func tailscaleHelp(ts TailscaleStatus) string {
+	const what = "A private network between your own devices, with no ports to open. "
+	switch {
+	case ts.Problem() == "":
+		return what + "Tailscale is running here: Cog would be at https://" + ts.Name + "."
+	case !ts.Installed:
+		return what + "Install Tailscale (tailscale.com) on this computer first."
+	default:
+		return what + "Tailscale is installed but not ready: " + ts.Problem()
+	}
+}
+
+templ plainPortField(p Plan, probs Problems) {
+	@input("Cog's HTTP port", "port", "number", port(p.Port), "Where Cog listens on this computer. Change it only if something else uses it.", probs)
+}
+
+templ networkFields(p Plan, probs Problems, lan string, withPort bool) {
+	@choice("lan_https", "0", boolValue(p.LANHTTPS), "No, plain HTTP", "Simplest. Anyone on your network could read what is sent, so only for a network you trust.")
+	@choice("lan_https", "1", boolValue(p.LANHTTPS), "Yes, HTTPS with a certificate Cog makes", "Encrypted. Each browser warns the first time, because no one vouches for the certificate but Cog; you compare its fingerprint, shown when setup finishes, and accept it once.")
+	if withPort {
+		<div class="when when-lan-https">
+			<details class="advanced" open?={ probs.For("https_port") != "" }>
+				<summary>Port</summary>
+				@input("HTTPS port", "https_port", "number", port(p.HTTPSPort), "Cog would be at https://"+lan+":"+port(p.HTTPSPort)+".", probs)
+			</details>
+		</div>
+	}
+}
+
+templ tailscaleFields(p Plan, probs Problems, ts TailscaleStatus) {
+	if ts.Problem() == "" {
+		<p>Cog will be at <strong>https://{ ts.Name }</strong>, with a certificate Tailscale looks after. Nothing to forward on your router.</p>
+	}
+	@fieldProblem(probs, "tailscale")
+	@checkbox("funnel", p.Funnel, "Also let people without Tailscale in (Tailscale Funnel)", "Needed for share links to people outside your tailnet. Anyone on the internet can then reach the sign-in page. Funnel must be allowed for this computer in your tailnet's access controls.")
+}
+
+templ domainFields(p Plan, probs Problems) {
+	@input("Domain name", "domain", "text", p.Domain, "A name that points at your home's public address, such as cloud.example.com. A dynamic DNS service (Duck DNS, deSEC) gives you one for free and keeps it pointing at you when your address changes.", probs)
+	@input("Email (optional)", "email", "email", p.Email, "Let's Encrypt writes here about problems with your certificate.", probs)
+}
+
+templ httpsPortField(p Plan, probs Problems) {
+	@input("HTTPS port on this computer", "https_port", "number", port(p.HTTPSPort), "With a domain, your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.", probs)
+}
+
+templ certificateFields(p Plan, probs Problems, withPort bool) {
+	@choice("challenge", certs.TLSALPN01, p.Challenge, "Through the HTTPS port (recommended)", "Simplest: only port 443 has to be forwarded.")
+	@choice("challenge", certs.HTTP01, p.Challenge, "Through port 80", "For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.")
+	@choice("challenge", certs.DNS01, p.Challenge, "Through my DNS host", "Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.")
+	@fieldProblem(probs, "challenge")
+	<div class="when when-http01">
+		@input("HTTP port on this computer", "http_port", "number", port(p.HTTPPort), "Your router forwards the internet's port 80 to this one.", probs)
+	</div>
+	<div class="when when-dns">
+		<div class="form-group">
+			<label for="dns_provider">DNS host</label>
+			<select class="form-control" id="dns_provider" name="dns_provider">
+				<option value="">Choose…</option>
+				for _, d := range certs.DNSProviders {
+					<option value={ d.Name } selected?={ d.Name == p.DNSProvider }>{ d.Label }</option>
+				}
+			</select>
+			@fieldProblem(probs, "dns_provider")
+		</div>
+		for _, d := range certs.DNSProviders {
+			<div class={ "when when-dns-" + d.Name }>
+				for _, v := range d.Vars {
+					@input(v.Label, "dns_env."+v.Name, inputType(v.Secret), p.DNSEnv[v.Name], "", probs)
+				}
+			</div>
+		}
+	</div>
+	<details class="advanced" open?={ probs.For("https_port") != "" || p.Staging }>
+		<summary>More options</summary>
+		if withPort {
+			@httpsPortField(p, probs)
+		}
+		@checkbox("staging", p.Staging, "Use Let's Encrypt's test service", "For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.")
+	</details>
+}
+
+templ proxyFields(p Plan, probs Problems, lan string) {
+	@input("Public address", "public_url", "url", p.PublicURL, "The https:// address your proxy serves Cog at.", probs)
+	@input("Proxy addresses", "trusted_proxies", "text", p.TrustedProxies, "The proxy's address as a range, such as 127.0.0.1/32 or 172.16.0.0/12, so Cog sees visitors' real addresses. Separate several with commas.", probs)
+	<p class="form-help">Point the proxy at http://{ lan }:{ port(p.Port) }.</p>
+}
+
+templ sshFields(p Plan, probs Problems) {
+	@checkbox("ssh", p.SSH, "Serve SFTP and SSH", "Reach your files with SFTP apps, rsync and scp, or use Cog's shell. Sign in with an SSH key or an app password.")
+	<div class="when when-ssh">
+		@checkbox("ssh_account_passwords", p.SSHAccountPasswords, "Also allow account passwords", "Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if SSH is reachable from the internet.")
+		<details class="advanced" open?={ probs.For("ssh_port") != "" }>
+			<summary>Port</summary>
+			@input("SSH port", "ssh_port", "number", port(p.SSHPort), "", probs)
+		</details>
+	</div>
+}
+
+templ updateFields(p Plan) {
+	@checkbox("update_check", p.UpdateCheck, "Check for new versions daily", "Admins see a new version on the Admin > Updates page and install it with a click.")
+	<div class="when when-update-check">
+		@checkbox("update_auto", p.UpdateAuto, "Install new versions automatically", "Cog restarts itself, which interrupts uploads and downloads in progress.")
+	</div>
+}
+
+templ adminFields(p Plan, probs Problems) {
+	if p.Mode == ModeReconfig {
+		<p class="lead">Leave these empty to keep the accounts as they are. A name that exists has its password reset and is made an admin.</p>
+	}
+	@input("Name", "admin_user", "text", p.AdminUser, "", probs)
+	@input("Password", "admin_password", "password", "", adminPasswordHelp(p), probs)
+	@input("Password again", "admin_password_confirm", "password", "", "", probs)
+}
+
+func adminPasswordHelp(p Plan) string {
+	if p.Access == AccessInternet || p.Access == AccessProxy || (p.Access == AccessTailscale && p.Funnel) {
+		return "Anyone on the internet can reach the sign-in page: make it long, and turn on two-factor sign-in once you are in."
+	}
+	return "At least 8 characters."
+}
+
+// The guided wizard: one question a page.
+templ stepPage(v stepView) {
+	@layout(v.Step.Question) {
+		<p class="steps">
+			if v.Plan.Mode == ModeReconfig {
+				Changing Cog's settings
+			} else {
+				Step { strconv.Itoa(v.Index + 1) } of { strconv.Itoa(v.Total) }
+			}
+		</p>
+		<h1 class="question">{ v.Step.Question }</h1>
+		@stepLead(v)
+		if len(v.Problems) > 0 && !v.Step.Owns(v.Problems[0].Field) {
+			@ui.Alert("error", v.Problems.First())
+		}
+		<form method="post" action={ templ.SafeURL("/step/" + v.Step.ID) }>
+			@stepFields(v)
+			<div class="wizard-actions">
+				if v.Reviewing {
+					<a class="btn btn-ghost" href="/review">Cancel</a>
+				} else if v.Back != "" {
+					<a class="btn btn-ghost" href={ templ.SafeURL(v.Back) }>Back</a>
+				}
+				<span class="spacer"></span>
+				<button class="btn btn-primary" type="submit">
+					if v.Reviewing {
+						Save
+					} else {
+						Continue
+					}
+				</button>
+			</div>
+		</form>
+		if v.Index == 0 && v.Plan.Mode == ModeInstall {
+			<p class="form-help">Know what you want? <a href="/quick">Show every setting on one page</a>.</p>
+		}
+	}
+}
+
+templ stepLead(v stepView) {
+	switch v.Step.ID {
+		case "run":
+			<p class="lead">Most people run Cog on a computer at home. You can change this later by running setup again.</p>
+		case "storage":
+			<p class="lead">Everything Cog stores goes in one folder: its program, settings, and the files everyone uploads.</p>
+		case "access":
+			<p class="lead">Choose the farthest you will need. You can open it up later by running setup again.</p>
+		case "domain":
+			<p class="lead">People reach Cog at this name. Cog gets a free certificate for it from Let's Encrypt so connections are encrypted.</p>
+		case "certificate":
+			<p class="lead">Let's Encrypt only issues a certificate to whoever controls the name. Cog answers its check on its own.</p>
+		case "ssh":
+			<p class="lead">Optional. Most people use the web, the desktop and phone apps, or WebDAV, and never need SSH.</p>
+		case "updates":
+			<p class="lead">New versions fix security problems. Cog checks a signed list of releases and installs only what that list vouches for.</p>
+		case "admin":
+			if v.Plan.Mode == ModeInstall {
+				<p class="lead">The account you sign in with to manage Cog. You can add the rest of your household from the admin pages afterwards.</p>
+			}
+	}
+}
+
+templ stepFields(v stepView) {
+	switch v.Step.ID {
+		case "run":
+			@scopeFields(v.Plan, v.Problems, v.Admin)
+		case "storage":
+			@storageFields(v.Plan, v.Problems)
+		case "access":
+			@accessChoices(v.Plan, v.Problems, v.LAN, v.Tailscale)
+			<details class="advanced" open?={ v.Problems.For("port") != "" }>
+				<summary>Port</summary>
+				@plainPortField(v.Plan, v.Problems)
+			</details>
+		case "network":
+			@networkFields(v.Plan, v.Problems, v.LAN, true)
+		case "tailscale":
+			@tailscaleFields(v.Plan, v.Problems, v.Tailscale)
+		case "domain":
+			@domainFields(v.Plan, v.Problems)
+		case "certificate":
+			@certificateFields(v.Plan, v.Problems, true)
+		case "proxy":
+			@proxyFields(v.Plan, v.Problems, v.LAN)
+		case "ssh":
+			@sshFields(v.Plan, v.Problems)
+		case "updates":
+			@updateFields(v.Plan)
+		case "admin":
+			@adminFields(v.Plan, v.Problems)
+	}
+}
+
+// The quick setup: every question on one page.
+templ quickPage(p Plan, probs Problems, lan string, admin bool, ts TailscaleStatus) {
 	@layout("Set up Cog") {
 		if p.Mode == ModeReconfig {
 			@ui.PageHeader("Change Cog's settings", nil)
 		} else {
 			@ui.PageHeader("Set up Cog", nil)
+			<p class="form-help"><a href={ templ.SafeURL("/step/" + Steps[0].ID) }>Answer one question at a time instead</a></p>
 		}
-		if prob.Message != "" && prob.Field == "" {
-			@ui.Alert("error", prob.Message)
-		} else if prob.Message != "" {
-			@ui.Alert("error", "Something needs fixing below: "+prob.Message)
+		if len(probs) > 0 {
+			@ui.Alert("error", "Something needs fixing below: "+probs.First())
 		}
-		<form method="post" action="/plan">
-			@ui.Card("Where Cog runs") {
+		<form method="post" action="/quick">
+			@ui.Card("How Cog runs") {
 				if p.Mode == ModeInstall {
-					@radio("scope", "user", string(p.Scope), "On this computer, for me", "Starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer.")
-					@radio("scope", "system", string(p.Scope), "As a system service", "Starts when the computer starts and runs as an account of its own. Needs administrator rights; for a computer that is a server.")
-					@fieldProblem(prob, "scope")
-					<p class="form-help when when-system">
-						if admin {
-							Setup is running with administrator rights.
-						} else {
-							Your computer will ask for an administrator's password when you install.
-						}
-					</p>
+					@scopeFields(p, probs, admin)
 				} else {
-					<p class="card-desc">
-						if p.Scope == service.System {
-							A system service.
-						} else {
-							On this computer, for its user.
-						}
-					</p>
+					<p class="card-desc">{ scopeSummary(p) }</p>
 				}
-				@input("Folder", "dir", "text", p.Dir, "Cog keeps its program, settings and everyone's files here. Pick a disk with room for them.", prob)
+				@storageFields(p, probs)
 			}
 			@ui.Card("Admin account") {
-				if p.Mode == ModeReconfig {
-					<p class="card-desc">Leave these empty to keep the accounts as they are. A name that exists has its password reset and is made an admin.</p>
-				} else {
-					<p class="card-desc">The account you sign in with to manage Cog. You can add other people from the admin pages afterwards.</p>
-				}
-				@input("Name", "admin_user", "text", p.AdminUser, "", prob)
-				@input("Password", "admin_password", "password", "", "At least 8 characters. If Cog will be reachable from the internet, make it long.", prob)
-				@input("Password again", "admin_password_confirm", "password", "", "", prob)
+				@adminFields(p, probs)
 			}
-			@ui.Card("Who can reach Cog") {
-				@radio("access", AccessLocal, p.Access, "Only this computer", "Open Cog at http://localhost. Nothing else on the network can connect.")
-				@radio("access", AccessLAN, p.Access, "My home network", "Phones and computers on the same Wi-Fi reach it at http://"+lan+". Not encrypted, so only for a network you trust.")
-				@radio("access", AccessInternet, p.Access, "Anywhere, over HTTPS", "Cog gets a free certificate from Let's Encrypt and your router forwards the internet to this computer. You need a domain name.")
-				@radio("access", AccessProxy, p.Access, "Anywhere, behind my reverse proxy", "Caddy, nginx or similar already handles HTTPS and passes requests on to Cog.")
-				@fieldProblem(prob, "access")
-				@input("Port", "port", "number", port(p.Port), "The plain HTTP port. With HTTPS it answers only on this computer.", prob)
+			@ui.Card("Where you use Cog from") {
+				@accessChoices(p, probs, lan, ts)
+				@plainPortField(p, probs)
+				<div class="when when-lan">
+					<h3 class="card-subtitle">Encryption on your network</h3>
+					@networkFields(p, probs, lan, false)
+				</div>
+				<div class="when when-https">
+					@httpsPortField(p, probs)
+				</div>
+				<div class="when when-tailscale">
+					@tailscaleFields(p, probs, ts)
+				</div>
 				<div class="when when-internet">
 					<h3 class="card-subtitle">Your domain</h3>
-					@input("Domain name", "domain", "text", p.Domain, "A name that points at your home's public address, such as cloud.example.com. A dynamic DNS service (Duck DNS, deSEC) gives you one for free and keeps it pointing at you when your address changes.", prob)
-					@input("Email (optional)", "email", "email", p.Email, "Let's Encrypt writes here about problems with your certificate.", prob)
-					@input("HTTPS port on this computer", "https_port", "number", port(p.HTTPSPort), "Your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.", prob)
+					@domainFields(p, probs)
 					<h3 class="card-subtitle">How Let's Encrypt checks the name is yours</h3>
-					@radio("challenge", certs.TLSALPN01, p.Challenge, "Through the HTTPS port", "Simplest: only port 443 has to be forwarded.")
-					@radio("challenge", certs.HTTP01, p.Challenge, "Through port 80", "For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.")
-					@radio("challenge", certs.DNS01, p.Challenge, "Through my DNS host", "Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.")
-					@fieldProblem(prob, "challenge")
-					<div class="when when-http01">
-						@input("HTTP port on this computer", "http_port", "number", port(p.HTTPPort), "Your router forwards the internet's port 80 to this one.", prob)
-					</div>
-					<div class="when when-dns">
-						<div class="form-group">
-							<label for="dns_provider">DNS host</label>
-							<select class="form-control" id="dns_provider" name="dns_provider">
-								<option value="">Choose…</option>
-								for _, d := range certs.DNSProviders {
-									<option value={ d.Name } selected?={ d.Name == p.DNSProvider }>{ d.Label }</option>
-								}
-							</select>
-							@fieldProblem(prob, "dns_provider")
-						</div>
-						for _, d := range certs.DNSProviders {
-							<div class={ "when when-dns-" + d.Name }>
-								for _, v := range d.Vars {
-									@input(v.Label, "dns_env."+v.Name, inputType(v.Secret), p.DNSEnv[v.Name], "", prob)
-								}
-							</div>
-						}
-					</div>
-					@checkbox("staging", p.Staging, "Use Let's Encrypt's test service", "For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.")
+					@certificateFields(p, probs, false)
 				</div>
 				<div class="when when-proxy">
-					@input("Public address", "public_url", "url", p.PublicURL, "The https:// address your proxy serves Cog at.", prob)
-					@input("Proxy addresses", "trusted_proxies", "text", p.TrustedProxies, "The proxy's address as a range, such as 127.0.0.1/32 or 172.16.0.0/12, so Cog sees visitors' real addresses. Separate several with commas.", prob)
+					@proxyFields(p, probs, lan)
 				</div>
-				<p class="form-help when when-lan">
-					To use Cog away from home later, run setup again and choose HTTPS.
-				</p>
 			}
-			@ui.Card("SSH and SFTP") {
-				@checkbox("ssh", p.SSH, "Serve SSH", "Sign in with an SSH key to reach your files over SFTP, rsync and scp, or use Cog's shell.")
-				<div class="when when-ssh">
-					@input("SSH port", "ssh_port", "number", port(p.SSHPort), "", prob)
-					@checkbox("ssh_account_passwords", p.SSHAccountPasswords, "Allow account passwords over SSH", "Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if your router forwards the SSH port.")
-				</div>
+			@ui.Card("SFTP and SSH") {
+				@sshFields(p, probs)
 			}
 			@ui.Card("Updates") {
-				@checkbox("update_check", p.UpdateCheck, "Check for new versions daily", "Admins see an update on the Admin > Updates page and install it with a click.")
-				@checkbox("update_auto", p.UpdateAuto, "Install new versions automatically", "Cog restarts itself, which interrupts uploads and downloads in progress.")
+				@updateFields(p)
 			}
 			<div class="when when-system">
 				@ui.Card("Firewall") {
@@ -265,16 +467,132 @@ templ planPage(p Plan, prob Problem, lan string, admin bool) {
 	}
 }
 
-func inputType(secret bool) string {
-	if secret {
-		return "password"
+func scopeSummary(p Plan) string {
+	if p.Scope == service.System {
+		return "As a server: starts with the computer, as the account " + p.Account() + "."
 	}
-	return "text"
+	return "On this computer, as you: starts when you sign in."
+}
+
+func accessSummary(p Plan, lan string) string {
+	switch p.Access {
+	case AccessLocal:
+		return "Only on this computer, at http://localhost:" + port(p.Port)
+	case AccessLAN:
+		if p.LANHTTPS {
+			return "On your network, at https://" + lan + ":" + port(p.HTTPSPort) + " with a certificate Cog makes"
+		}
+		return "On your network, at http://" + lan + ":" + port(p.Port) + " (not encrypted)"
+	case AccessTailscale:
+		s := "Your devices on Tailscale, at https://" + p.TailscaleName
+		if p.Funnel {
+			s += ", and anyone through Tailscale Funnel"
+		}
+		return s
+	case AccessInternet:
+		s := "Anywhere, at https://" + strings.TrimPrefix(p.Domain, "*.") + ", certificate from Let's Encrypt"
+		if p.Staging {
+			s += "'s test service"
+		}
+		return s
+	case AccessProxy:
+		return "Through your proxy, at " + p.PublicURL
+	}
+	return ""
+}
+
+func challengeSummary(p Plan) string {
+	switch p.Challenge {
+	case certs.HTTP01:
+		return "Through port 80"
+	case certs.DNS01:
+		if d, ok := certs.FindDNSProvider(p.DNSProvider); ok {
+			return "Through " + d.Label
+		}
+		return "Through your DNS host"
+	}
+	return "Through the HTTPS port"
+}
+
+func sshSummary(p Plan) string {
+	if !p.SSH {
+		return "Off"
+	}
+	s := "On port " + port(p.SSHPort) + ", "
+	if p.SSHAccountPasswords {
+		return s + "keys, app passwords and account passwords"
+	}
+	return s + "keys and app passwords only"
+}
+
+func updateSummary(p Plan) string {
+	switch {
+	case p.UpdateAuto:
+		return "Checked daily and installed automatically"
+	case p.UpdateCheck:
+		return "Checked daily; admins install them"
+	}
+	return "Not checked"
+}
+
+func adminSummary(p Plan) string {
+	if p.AdminUser == "" {
+		return "Accounts stay as they are"
+	}
+	if p.Mode == ModeReconfig {
+		return p.AdminUser + ", password reset"
+	}
+	return p.AdminUser
+}
+
+// accessStep is the page that changes how Cog is reached: its detail
+// page when it has one.
+func accessStep(p Plan) string {
+	switch p.Access {
+	case AccessLAN:
+		return "network"
+	case AccessTailscale:
+		return "tailscale"
+	case AccessInternet:
+		return "domain"
+	case AccessProxy:
+		return "proxy"
+	}
+	return "access"
+}
+
+templ summaryRow(label, value, step string) {
+	<dt>{ label }</dt>
+	<dd>{ value }</dd>
+	<dd><a href={ templ.SafeURL("/step/" + step) }>Change</a></dd>
 }
 
 templ reviewPage(p Plan, lan string, dns DNSCheck) {
 	@layout("Review") {
-		@ui.PageHeader("Ready to set up", nil)
+		if p.Mode == ModeInstall {
+			@ui.PageHeader("Ready to set up", nil)
+		} else {
+			@ui.PageHeader("Cog's settings", nil)
+		}
+		@ui.Card("Your answers") {
+			<dl class="summary">
+				if p.Mode == ModeInstall {
+					@summaryRow("Runs", scopeSummary(p), "run")
+				}
+				@summaryRow("Folder", p.Dir, "storage")
+				@summaryRow("Use from", accessSummary(p, lan), "access")
+				if accessStep(p) != "access" {
+					@summaryRow("Details", accessDetail(p), accessStep(p))
+				}
+				if p.Access == AccessInternet {
+					@summaryRow("Certificate check", challengeSummary(p), "certificate")
+				}
+				@summaryRow("SFTP and SSH", sshSummary(p), "ssh")
+				@summaryRow("Updates", updateSummary(p), "updates")
+				@summaryRow("Admin", adminSummary(p), "admin")
+			</dl>
+			<p class="form-help"><a href="/quick">Edit every setting on one page</a></p>
+		}
 		@ui.Card("What setup will do") {
 			<ul>
 				if p.Mode == ModeInstall {
@@ -291,11 +609,22 @@ templ reviewPage(p Plan, lan string, dns DNSCheck) {
 				} else {
 					<li>Start Cog now and whenever you sign in.</li>
 				}
-				if p.Access == AccessInternet {
-					<li>Get a certificate for { p.Domain } from Let's Encrypt{ stagingNote(p) }.</li>
+				switch p.Access {
+					case AccessInternet:
+						<li>Get a certificate for { p.Domain } from Let's Encrypt{ stagingNote(p) }.</li>
+					case AccessLAN:
+						if p.LANHTTPS {
+							<li>Make a certificate for { strings.Join(SelfSignedNames(lan), ", ") }.</li>
+						}
+					case AccessTailscale:
+						if p.Funnel {
+							<li>Turn on Tailscale Funnel for https://{ p.TailscaleName }, pointing at Cog.</li>
+						} else {
+							<li>Point https://{ p.TailscaleName } at Cog with tailscale serve.</li>
+						}
 				}
-				if p.Firewall {
-					<li>Open { portList(p.reachablePorts()) } in the firewall.</li>
+				if p.PrevTailscale != "" && p.Access != AccessTailscale {
+					<li>Stop serving Cog through Tailscale.</li>
 				}
 			</ul>
 		}
@@ -328,13 +657,15 @@ templ reviewPage(p Plan, lan string, dns DNSCheck) {
 					<p class="card-desc">{ p.Domain } points at { strings.Join(dns.Addrs, ", ") }. That should be your home's public address, which your router's status page shows.</p>
 				}
 			}
+		}
+		if p.Access == AccessInternet || (p.Access == AccessTailscale && p.Funnel) {
 			@ui.Card("Keeping it safe") {
 				<ul>
 					<li>Anyone on the internet can reach the sign-in page. Use a long admin password, and turn on two-factor sign-in under Settings > Security once you are in.</li>
 					<li>Cog limits how fast anyone can guess passwords. Plain HTTP answers only on this computer; everyone else gets HTTPS.</li>
-					if p.SSH {
+					if p.SSH && p.Access == AccessInternet {
 						if p.SSHAccountPasswords {
-							<li>SSH accepts account passwords. If you forward the SSH port, run setup again and turn that off, then add an SSH key under Settings > Security.</li>
+							<li>SSH accepts account passwords. If you forward the SSH port, turn that off, then add an SSH key under Settings > Security.</li>
 						} else {
 							<li>SSH accepts keys and app passwords only. Add an SSH key under Settings > Security. Forwarding its port is optional; leave it off if you only use SSH at home.</li>
 						}
@@ -345,22 +676,68 @@ templ reviewPage(p Plan, lan string, dns DNSCheck) {
 				</ul>
 			}
 		}
+		if p.Access == AccessLAN && p.LANHTTPS {
+			@ui.Card("The first visit from each device") {
+				<p class="card-desc">Browsers warn that the certificate is not trusted, because Cog signed it itself. When setup finishes it shows the certificate's fingerprint: check that the browser shows the same one (in the warning's details), then continue. Apps such as the Nextcloud client ask the same question once.</p>
+			}
+		}
 		if p.Access == AccessProxy {
 			@ui.Card("Your proxy") {
 				<p class="card-desc">Point your proxy at http://{ lan }:{ strconv.Itoa(p.Port) } and have it pass the Host header and X-Forwarded-For. Cog will say it is at { p.PublicURL }.</p>
 			}
 		}
-		<form method="post" action="/apply" class="btn-group">
-			<button class="btn btn-primary" type="submit">
-				if p.Mode == ModeInstall {
-					Install
-				} else {
-					Apply changes
-				}
-			</button>
-			<a class="btn btn-secondary" href="/plan">Back</a>
+		<form method="post" action="/apply">
+			if p.Scope == service.System && len(p.reachablePorts()) > 0 {
+				<input type="hidden" name="firewall_shown" value="1"/>
+				@checkbox("firewall", p.Firewall, "Open "+portList(p.reachablePorts())+" in the firewall", "Windows Firewall, ufw or firewalld, whichever this computer uses.")
+			}
+			<div class="wizard-actions">
+				<a class="btn btn-ghost" href={ templ.SafeURL(reviewBack(p)) }>Back</a>
+				<span class="spacer"></span>
+				<button class="btn btn-primary" type="submit">
+					if p.Mode == ModeInstall {
+						Install
+					} else {
+						Apply changes
+					}
+				</button>
+			</div>
 		</form>
 	}
+}
+
+// reviewBack is the last question for a new install, the start for a
+// change.
+func reviewBack(p Plan) string {
+	steps := VisibleSteps(p)
+	if p.Mode != ModeInstall || len(steps) == 0 {
+		return "/"
+	}
+	return "/step/" + steps[len(steps)-1].ID
+}
+
+func accessDetail(p Plan) string {
+	switch p.Access {
+	case AccessLAN:
+		if p.LANHTTPS {
+			return "HTTPS on port " + port(p.HTTPSPort)
+		}
+		return "Plain HTTP"
+	case AccessTailscale:
+		if p.Funnel {
+			return "Funnel on: anyone can reach it"
+		}
+		return "Only devices on your tailnet"
+	case AccessInternet:
+		s := p.Domain
+		if p.Email != "" {
+			s += ", Let's Encrypt writes to " + p.Email
+		}
+		return s
+	case AccessProxy:
+		return "Proxy at " + p.TrustedProxies
+	}
+	return ""
 }
 
 func stagingNote(p Plan) string {
@@ -378,15 +755,15 @@ func portList(ports []service.Port) string {
 	return strings.Join(s, ", ")
 }
 
-templ resetPage(p Plan, prob Problem) {
+templ resetPage(p Plan, probs Problems) {
 	@layout("Reset admin password") {
 		@ui.PageHeader("Reset an admin's password", nil)
 		@ui.Card("") {
 			<p class="card-desc">Sets the password of this account and makes it an admin, signing it out everywhere. An account that does not exist is made.</p>
 			<form method="post" action="/reset">
-				@input("Name", "admin_user", "text", p.AdminUser, "", prob)
-				@input("New password", "admin_password", "password", "", "At least 8 characters.", prob)
-				@input("New password again", "admin_password_confirm", "password", "", "", prob)
+				@input("Name", "admin_user", "text", p.AdminUser, "", probs)
+				@input("New password", "admin_password", "password", "", "At least 8 characters.", probs)
+				@input("New password again", "admin_password_confirm", "password", "", "", probs)
 				<div class="form-actions btn-group">
 					<button class="btn btn-primary" type="submit">Set password</button>
 					<a class="btn btn-secondary" href="/">Back</a>
@@ -431,6 +808,10 @@ templ progressBody(s snapshot) {
 			if s.Res.URL != "" {
 				<div class="alert alert-success" role="status">
 					<div class="alert-title">Cog is running.</div>
+					if s.Res.Fingerprint != "" {
+						<p>Your browser will warn about the certificate. Continue only if it shows this SHA-256 fingerprint:</p>
+						<p><code class="fingerprint">{ s.Res.Fingerprint }</code></p>
+					}
 					<a class="btn btn-primary" href={ templ.SafeURL(s.Res.URL) } target="_blank" rel="noopener">Open Cog</a>
 				</div>
 			} else {
@@ -444,7 +825,7 @@ templ progressBody(s snapshot) {
 			<div class="btn-group">
 				<form method="post" action="/quit"><button class="btn btn-secondary">Close setup</button></form>
 				if s.Err != nil {
-					<a class="btn btn-secondary" href="/plan">Back to settings</a>
+					<a class="btn btn-secondary" href="/review">Back to settings</a>
 				}
 			</div>
 		}

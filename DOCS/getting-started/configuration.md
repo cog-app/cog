@@ -58,7 +58,7 @@ can hold DNS credentials.
 | `COG_SSH_HOST_KEY` | (auto-generated) | Path to SSH host key file |
 | `COG_SSH_NO_ACCOUNT_PASSWORDS` | `false` | SSH takes keys and app passwords only |
 | `COG_CONFIG` | | Configuration file |
-| `COG_TLS_MODE` | | `acme` or `files` to serve HTTPS |
+| `COG_TLS_MODE` | | `acme`, `files` or `self-signed` to serve HTTPS |
 | `COG_TLS_ADDR` | `:8443` | HTTPS listen address |
 | `COG_TLS_HTTP_ADDR` | | Plain HTTP listener for http-01 and redirects |
 | `COG_TLS_DOMAINS` | | Names for the certificate, comma-separated |

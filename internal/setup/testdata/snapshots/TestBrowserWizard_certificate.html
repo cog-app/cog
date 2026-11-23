@@ -1,0 +1,307 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      How should Let's Encrypt check the name is yours? — Cog setup
+    </title>
+    <link href="/static/style.css?v=8dc957e713e4" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+    <style>
+      .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
+    </style>
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body>
+    <main class="content setup">
+      <p class="steps">
+        Step 5 of 8
+      </p>
+      <h1 class="question">
+        How should Let's Encrypt check the name is yours?
+      </h1>
+      <p class="lead">
+        Let's Encrypt only issues a certificate to whoever controls the name. Cog answers its check on its own.
+      </p>
+      <form action="/step/certificate" method="post">
+        <label class="choice">
+          <input checked="" name="challenge" type="radio" value="tls-alpn-01" />
+          <strong>
+            Through the HTTPS port (recommended)
+          </strong>
+          <span class="form-help">
+            Simplest: only port 443 has to be forwarded.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="challenge" type="radio" value="http-01" />
+          <strong>
+            Through port 80
+          </strong>
+          <span class="form-help">
+            For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="challenge" type="radio" value="dns-01" />
+          <strong>
+            Through my DNS host
+          </strong>
+          <span class="form-help">
+            Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.
+          </span>
+        </label>
+        <div class="when when-http01">
+          <div class="form-group">
+            <label for="http_port">
+              HTTP port on this computer
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="http_port" name="http_port" type="number" value="8080" />
+            <p class="form-help">
+              Your router forwards the internet's port 80 to this one.
+            </p>
+          </div>
+        </div>
+        <div class="when when-dns">
+          <div class="form-group">
+            <label for="dns_provider">
+              DNS host
+            </label>
+            <select class="form-control" id="dns_provider" name="dns_provider">
+              <option value="">
+                Choose…
+              </option>
+              <option value="cloudflare">
+                Cloudflare
+              </option>
+              <option value="digitalocean">
+                DigitalOcean
+              </option>
+              <option value="duckdns">
+                Duck DNS
+              </option>
+              <option value="gandiv5">
+                Gandi
+              </option>
+              <option value="httpreq">
+                HTTP request (lego httpreq)
+              </option>
+              <option value="hetzner">
+                Hetzner
+              </option>
+              <option value="namecheap">
+                Namecheap
+              </option>
+              <option value="ovh">
+                OVH
+              </option>
+              <option value="porkbun">
+                Porkbun
+              </option>
+              <option value="exec">
+                Program (lego exec)
+              </option>
+              <option value="rfc2136">
+                RFC 2136 (BIND, Knot, PowerDNS)
+              </option>
+              <option value="desec">
+                deSEC
+              </option>
+            </select>
+          </div>
+          <div class="when when-dns-cloudflare">
+            <div class="form-group">
+              <label for="dns_env.CLOUDFLARE_DNS_API_TOKEN">
+                API token (Zone:DNS:Edit)
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.CLOUDFLARE_DNS_API_TOKEN" name="dns_env.CLOUDFLARE_DNS_API_TOKEN" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-digitalocean">
+            <div class="form-group">
+              <label for="dns_env.DO_AUTH_TOKEN">
+                API token
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DO_AUTH_TOKEN" name="dns_env.DO_AUTH_TOKEN" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-duckdns">
+            <div class="form-group">
+              <label for="dns_env.DUCKDNS_TOKEN">
+                Token
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DUCKDNS_TOKEN" name="dns_env.DUCKDNS_TOKEN" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-gandiv5">
+            <div class="form-group">
+              <label for="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN">
+                Personal access token
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN" name="dns_env.GANDIV5_PERSONAL_ACCESS_TOKEN" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-httpreq">
+            <div class="form-group">
+              <label for="dns_env.HTTPREQ_ENDPOINT">
+                Endpoint URL
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.HTTPREQ_ENDPOINT" name="dns_env.HTTPREQ_ENDPOINT" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.HTTPREQ_USERNAME">
+                Username
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.HTTPREQ_USERNAME" name="dns_env.HTTPREQ_USERNAME" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.HTTPREQ_PASSWORD">
+                Password
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.HTTPREQ_PASSWORD" name="dns_env.HTTPREQ_PASSWORD" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-hetzner">
+            <div class="form-group">
+              <label for="dns_env.HETZNER_API_TOKEN">
+                API token
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.HETZNER_API_TOKEN" name="dns_env.HETZNER_API_TOKEN" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-namecheap">
+            <div class="form-group">
+              <label for="dns_env.NAMECHEAP_API_USER">
+                API user
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.NAMECHEAP_API_USER" name="dns_env.NAMECHEAP_API_USER" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.NAMECHEAP_API_KEY">
+                API key
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.NAMECHEAP_API_KEY" name="dns_env.NAMECHEAP_API_KEY" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-ovh">
+            <div class="form-group">
+              <label for="dns_env.OVH_ENDPOINT">
+                Endpoint (ovh-eu, ovh-ca, ...)
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.OVH_ENDPOINT" name="dns_env.OVH_ENDPOINT" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.OVH_APPLICATION_KEY">
+                Application key
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.OVH_APPLICATION_KEY" name="dns_env.OVH_APPLICATION_KEY" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.OVH_APPLICATION_SECRET">
+                Application secret
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.OVH_APPLICATION_SECRET" name="dns_env.OVH_APPLICATION_SECRET" type="password" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.OVH_CONSUMER_KEY">
+                Consumer key
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.OVH_CONSUMER_KEY" name="dns_env.OVH_CONSUMER_KEY" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-porkbun">
+            <div class="form-group">
+              <label for="dns_env.PORKBUN_API_KEY">
+                API key
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.PORKBUN_API_KEY" name="dns_env.PORKBUN_API_KEY" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.PORKBUN_SECRET_API_KEY">
+                Secret API key
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.PORKBUN_SECRET_API_KEY" name="dns_env.PORKBUN_SECRET_API_KEY" type="password" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-exec">
+            <div class="form-group">
+              <label for="dns_env.EXEC_PATH">
+                Program path
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.EXEC_PATH" name="dns_env.EXEC_PATH" type="text" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-rfc2136">
+            <div class="form-group">
+              <label for="dns_env.DNSUPDATE_NAMESERVER">
+                Name server (host:port)
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_NAMESERVER" name="dns_env.DNSUPDATE_NAMESERVER" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.DNSUPDATE_TSIG_KEY">
+                TSIG key name
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_TSIG_KEY" name="dns_env.DNSUPDATE_TSIG_KEY" type="text" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.DNSUPDATE_TSIG_SECRET">
+                TSIG secret
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DNSUPDATE_TSIG_SECRET" name="dns_env.DNSUPDATE_TSIG_SECRET" type="password" value="" />
+            </div>
+            <div class="form-group">
+              <label for="dns_env.DNSUPDATE_TSIG_ALGORITHM">
+                TSIG algorithm (hmac-sha256.)
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="dns_env.DNSUPDATE_TSIG_ALGORITHM" name="dns_env.DNSUPDATE_TSIG_ALGORITHM" type="text" value="" />
+            </div>
+          </div>
+          <div class="when when-dns-desec">
+            <div class="form-group">
+              <label for="dns_env.DESEC_TOKEN">
+                Token
+              </label>
+              <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DESEC_TOKEN" name="dns_env.DESEC_TOKEN" type="password" value="" />
+            </div>
+          </div>
+        </div>
+        <details class="advanced">
+          <summary>
+            More options
+          </summary>
+          <div class="form-group">
+            <label for="https_port">
+              HTTPS port on this computer
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="https_port" name="https_port" type="number" value="8443" />
+            <p class="form-help">
+              With a domain, your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.
+            </p>
+          </div>
+          <label class="form-check">
+            <input name="staging" type="checkbox" value="1" />
+            <span>
+              Use Let's Encrypt's test service
+              <br />
+              <span class="form-help">
+                For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.
+              </span>
+            </span>
+          </label>
+        </details>
+        <div class="wizard-actions">
+          <a class="btn btn-ghost" href="/step/domain">
+            Back
+          </a>
+          <span class="spacer" />
+          <button class="btn btn-primary" type="submit">
+            Continue
+          </button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,100 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>
+      Where will you use Cog from? — Cog setup
+    </title>
+    <link href="/static/style.css?v=8dc957e713e4" rel="stylesheet" />
+    <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
+    <style>
+      .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
+    </style>
+    <style>
+      .htmx-indicator{opacity:0} .htmx-request .htmx-indicator{opacity:1; transition: opacity 200ms ease-in;} .htmx-request.htmx-indicator{opacity:1; transition: opacity 200ms ease-in;}
+    </style>
+  </head>
+  <body>
+    <main class="content setup">
+      <p class="steps">
+        Step 3 of 6
+      </p>
+      <h1 class="question">
+        Where will you use Cog from?
+      </h1>
+      <p class="lead">
+        Choose the farthest you will need. You can open it up later by running setup again.
+      </p>
+      <form action="/step/access" method="post">
+        <label class="choice">
+          <input checked="" name="access" type="radio" value="local" />
+          <strong>
+            Only on this computer
+          </strong>
+          <span class="form-help">
+            Open Cog in this computer's browser. Nothing else can connect.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="access" type="radio" value="lan" />
+          <strong>
+            At home, on my network
+          </strong>
+          <span class="form-help">
+            Phones and computers on the same Wi-Fi reach it at 192.168.1.20.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="access" type="radio" value="tailscale" />
+          <strong>
+            Anywhere, on my devices with Tailscale
+          </strong>
+          <span class="form-help">
+            A private network between your own devices, with no ports to open. Tailscale is running here: Cog would be at https://box.tail1234.ts.net.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="access" type="radio" value="internet" />
+          <strong>
+            Anywhere, including people I share with
+          </strong>
+          <span class="form-help">
+            Over HTTPS from the internet: your router forwards it to this computer. You need a domain name; a free one from a dynamic DNS service works.
+          </span>
+        </label>
+        <label class="choice">
+          <input name="access" type="radio" value="proxy" />
+          <strong>
+            Through a reverse proxy I already run
+          </strong>
+          <span class="form-help">
+            Caddy, nginx, Traefik or a tunnel already handles HTTPS and passes requests on to Cog.
+          </span>
+        </label>
+        <details class="advanced">
+          <summary>
+            Port
+          </summary>
+          <div class="form-group">
+            <label for="port">
+              Cog's HTTP port
+            </label>
+            <input aria-invalid="false" autocomplete="off" class="form-control" id="port" name="port" type="number" value="8580" />
+            <p class="form-help">
+              Where Cog listens on this computer. Change it only if something else uses it.
+            </p>
+          </div>
+        </details>
+        <div class="wizard-actions">
+          <a class="btn btn-ghost" href="/step/storage">
+            Back
+          </a>
+          <span class="spacer" />
+          <button class="btn btn-primary" type="submit">
+            Continue
+          </button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>

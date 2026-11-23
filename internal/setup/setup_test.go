@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -49,7 +50,10 @@ func TestValidate(t *testing.T) {
 			p.Access, p.Domain, p.Challenge, p.DNSProvider = AccessInternet, "*.example.com", certs.DNS01, "duckdns"
 			p.DNSEnv = map[string]string{"DUCKDNS_TOKEN": "t"}
 		}, ""},
-		{"same port twice", func(p *Plan) { p.SSHPort = p.Port }, "port"},
+		{"same port twice", func(p *Plan) { p.SSHPort = p.Port }, "ssh_port"},
+		{"tailscale not connected", func(p *Plan) { p.Access = AccessTailscale }, "tailscale"},
+		{"tailscale", func(p *Plan) { p.Access, p.TailscaleName = AccessTailscale, "box.tail1234.ts.net" }, ""},
+		{"self-signed on the plain port", func(p *Plan) { p.Access, p.LANHTTPS, p.HTTPSPort = AccessLAN, true, p.Port }, "https_port"},
 		{"proxy over http", func(p *Plan) { p.Access, p.PublicURL = AccessProxy, "http://cloud.example.com" }, "public_url"},
 		{"proxy range", func(p *Plan) {
 			p.Access, p.PublicURL, p.TrustedProxies = AccessProxy, "https://cloud.example.com", "10.0.0.1"
@@ -65,7 +69,9 @@ func TestValidate(t *testing.T) {
 				return
 			}
 			require.Error(t, err)
-			require.Equal(t, tc.field, problemOf(err).Field, err.Error())
+			var prob Problem
+			require.True(t, errors.As(err, &prob), err.Error())
+			require.Equal(t, tc.field, prob.Field, err.Error())
 		})
 	}
 }
@@ -91,6 +97,103 @@ func TestConfigForInternet(t *testing.T) {
 	require.Equal(t, 8443, fw[0].Local)
 }
 
+// TestConfigForLANHTTPS: a certificate Cog makes for its names and
+// address on the network, and plain HTTP kept to this computer.
+func TestConfigForLANHTTPS(t *testing.T) {
+	saved := LANAddress
+	LANAddress = func() string { return "192.168.1.20" }
+	t.Cleanup(func() { LANAddress = saved })
+	p := newPlan(t)
+	p.Access, p.LANHTTPS = AccessLAN, true
+	require.NoError(t, p.Validate())
+	cfg := p.Config(config.Defaults())
+	require.Equal(t, "127.0.0.1:8580", cfg.Addr)
+	require.Equal(t, "https://192.168.1.20:8443", cfg.BaseURL)
+	require.Equal(t, certs.SelfSigned, cfg.TLS.Mode)
+	require.Equal(t, "192.168.1.20", cfg.TLS.Domains[0])
+	require.Equal(t, 0, len(p.Forwards()))
+}
+
+// TestConfigForTailscale: Cog on loopback only, trusting tailscale serve
+// in front of it, at the tailnet name.
+func TestConfigForTailscale(t *testing.T) {
+	p := newPlan(t)
+	p.Access, p.TailscaleName = AccessTailscale, "box.tail1234.ts.net"
+	require.NoError(t, p.Validate())
+	cfg := p.Config(config.Defaults())
+	require.Equal(t, "127.0.0.1:8580", cfg.Addr)
+	require.Equal(t, "https://box.tail1234.ts.net", cfg.BaseURL)
+	require.Equal(t, "127.0.0.1/32,::1/128", cfg.TrustedProxies)
+	require.Equal(t, TailscaleServe, cfg.Install.Tailscale)
+	require.False(t, cfg.TLS.Enabled())
+	require.Equal(t, 0, len(p.reachablePorts())-boolInt(p.SSH))
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// fakeTailscale records the tailscale commands run and answers status
+// with st.
+func fakeTailscale(t *testing.T, status string) *[]string {
+	t.Helper()
+	var calls []string
+	saved := tailscaleCommand
+	t.Cleanup(func() { tailscaleCommand = saved })
+	tailscaleCommand = func(_ context.Context, args ...string) ([]byte, error) {
+		if args[0] == "status" {
+			if status == "" {
+				return nil, errNoTailscale
+			}
+			return []byte(status), nil
+		}
+		calls = append(calls, strings.Join(args, " "))
+		return nil, nil
+	}
+	return &calls
+}
+
+const tailscaleRunning = `{"BackendState":"Running","Self":{"DNSName":"box.tail1234.ts.net."},"CertDomains":["box.tail1234.ts.net"]}`
+
+func TestCheckTailscale(t *testing.T) {
+	fakeTailscale(t, "")
+	require.Contains(t, CheckTailscale(context.Background()).Problem(), "not installed")
+
+	fakeTailscale(t, `{"BackendState":"Running","Self":{"DNSName":"box.tail1234.ts.net."}}`)
+	require.Contains(t, CheckTailscale(context.Background()).Problem(), "HTTPS Certificates")
+
+	fakeTailscale(t, `{"BackendState":"NeedsLogin","Self":{"DNSName":""}}`)
+	require.Contains(t, CheckTailscale(context.Background()).Problem(), "sign in")
+
+	fakeTailscale(t, tailscaleRunning)
+	st := CheckTailscale(context.Background())
+	require.Equal(t, "", st.Problem())
+	require.Equal(t, "box.tail1234.ts.net", st.Name)
+}
+
+// TestApplyTailscale: serve points the tailnet name at Cog; a change to
+// Funnel turns serve off first; leaving Tailscale turns it off.
+func TestApplyTailscale(t *testing.T) {
+	calls := fakeTailscale(t, tailscaleRunning)
+	p := newPlan(t)
+	p.Access, p.TailscaleName = AccessTailscale, "box.tail1234.ts.net"
+	require.NoError(t, applyTailscale(context.Background(), p, io.Discard))
+	require.Equal(t, []string{"serve --bg --https=443 http://127.0.0.1:8580"}, *calls)
+
+	*calls = nil
+	p.PrevTailscale, p.Funnel = TailscaleServe, true
+	require.NoError(t, applyTailscale(context.Background(), p, io.Discard))
+	require.Equal(t, []string{"serve --https=443 off", "funnel --bg --https=443 http://127.0.0.1:8580"}, *calls)
+
+	*calls = nil
+	p.PrevTailscale, p.Access = TailscaleFunnel, AccessLocal
+	require.NoError(t, applyTailscale(context.Background(), p, io.Discard))
+	require.Equal(t, []string{"funnel --https=443 off"}, *calls)
+}
+
 // TestFromConfigRoundTrip: running setup again starts from what the last
 // run chose.
 func TestFromConfigRoundTrip(t *testing.T) {
@@ -104,6 +207,8 @@ func TestFromConfigRoundTrip(t *testing.T) {
 		func(p *Plan) {
 			p.Access, p.PublicURL, p.TrustedProxies = AccessProxy, "https://cloud.example.com", "127.0.0.1/32"
 		},
+		func(p *Plan) { p.Access, p.LANHTTPS, p.HTTPSPort = AccessLAN, true, 9443 },
+		func(p *Plan) { p.Access, p.TailscaleName, p.Funnel = AccessTailscale, "box.tail1234.ts.net", true },
 	} {
 		p := newPlan(t)
 		edit(&p)
@@ -115,6 +220,10 @@ func TestFromConfigRoundTrip(t *testing.T) {
 		require.Equal(t, ModeReconfig, got.Mode)
 		got.Mode, got.AdminUser, got.AdminPassword = p.Mode, p.AdminUser, p.AdminPassword
 		got.DNSEnv, p.DNSEnv = nil, nil
+		if p.Access == AccessTailscale {
+			require.Equal(t, TailscaleFunnel, got.PrevTailscale, "what to turn off when it changes")
+			got.PrevTailscale = ""
+		}
 		require.Equal(t, p, got)
 	}
 }
@@ -289,7 +398,7 @@ func TestWizardGuard(t *testing.T) {
 	w, client, start := wizard(t)
 	base := "http://" + w.addr
 
-	res, err := client.Get(base + "/plan")
+	res, err := client.Get(base + "/quick")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusForbidden, res.StatusCode, "no token yet")
 
@@ -300,7 +409,7 @@ func TestWizardGuard(t *testing.T) {
 	res, err = client.Get(start)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusSeeOther, res.StatusCode)
-	res, err = client.Get(base + "/plan")
+	res, err = client.Get(base + "/quick")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
@@ -311,7 +420,7 @@ func TestWizardGuard(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// DNS rebinding: a page on another name that resolves here.
-	req, err := http.NewRequest(http.MethodGet, base+"/plan", nil)
+	req, err := http.NewRequest(http.MethodGet, base+"/quick", nil)
 	require.NoError(t, err)
 	req.Host = "evil.example.com"
 	res, err = client.Do(req)
@@ -327,9 +436,9 @@ func TestWizardGuard(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, res.StatusCode)
 }
 
-// TestWizardFlow: the form's answers become a plan, a problem sends the
-// person back to the field, and an apply runs it.
-func TestWizardFlow(t *testing.T) {
+// TestWizardQuick: the one-page form's answers become a plan, and a
+// problem sends the person back to the field.
+func TestWizardQuick(t *testing.T) {
 	w, client, start := wizard(t)
 	base := "http://" + w.addr
 	_, err := client.Get(start)
@@ -348,9 +457,9 @@ func TestWizardFlow(t *testing.T) {
 		"admin_password": {"correct horse"}, "admin_password_confirm": {"different"},
 		"access": {"local"}, "port": {strconv.Itoa(freePort(t))}, "ssh": {"1"}, "ssh_port": {"8522"},
 	}
-	res := post("/plan", form)
-	require.Equal(t, "/plan#admin_password_confirm", res.Header.Get("Location"))
-	page, err := client.Get(base + "/plan")
+	res := post("/quick", form)
+	require.Equal(t, "/quick#admin_password_confirm", res.Header.Get("Location"))
+	page, err := client.Get(base + "/quick")
 	require.NoError(t, err)
 	body, err := io.ReadAll(page.Body)
 	require.NoError(t, err)
@@ -358,13 +467,82 @@ func TestWizardFlow(t *testing.T) {
 	require.NotContains(t, string(body), "correct horse", "a password is not shown again")
 
 	form.Set("admin_password_confirm", "correct horse")
-	res = post("/plan", form)
+	res = post("/quick", form)
 	require.Equal(t, "/review", res.Header.Get("Location"))
 	page, err = client.Get(base + "/review")
 	require.NoError(t, err)
 	body, err = io.ReadAll(page.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(body), "Ready to set up")
+}
+
+// TestWizardGuided: one question a page, the pages a plan needs and no
+// others, a problem kept on its page, and a change from the review
+// asking the questions the change brings.
+func TestWizardGuided(t *testing.T) {
+	fakeTailscale(t, tailscaleRunning)
+	w, client, start := wizard(t)
+	base := "http://" + w.addr
+	res, err := client.Get(start)
+	require.NoError(t, err)
+	res, err = client.Get(base + "/")
+	require.NoError(t, err)
+	require.Equal(t, "/step/run", res.Header.Get("Location"))
+	post := func(path string, form url.Values) string {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(form.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", base)
+		res, err := client.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusSeeOther, res.StatusCode)
+		return res.Header.Get("Location")
+	}
+	get := func(path string) string {
+		t.Helper()
+		res, err := client.Get(base + path)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode, path)
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		return string(body)
+	}
+
+	require.Contains(t, get("/step/run"), "Step 1 of 6", "only this computer: no detail page")
+	require.Equal(t, "/step/storage", post("/step/run", url.Values{"scope": {"user"}}))
+	require.Equal(t, "/step/storage", post("/step/storage", url.Values{"dir": {"relative"}}))
+	require.Contains(t, get("/step/storage"), "must be a full path")
+	require.Equal(t, "/step/access", post("/step/storage", url.Values{"dir": {t.TempDir()}}))
+	require.Equal(t, "/step/tailscale", post("/step/access", url.Values{"access": {"tailscale"}}))
+	page := get("/step/tailscale")
+	require.Contains(t, page, "Step 4 of 7")
+	require.Contains(t, page, "https://box.tail1234.ts.net")
+	require.Equal(t, "/step/ssh", post("/step/tailscale", url.Values{"funnel": {"1"}}))
+	require.Equal(t, "/step/updates", post("/step/ssh", url.Values{"ssh": {"1"}, "ssh_port": {"8522"}}))
+	require.Equal(t, "/step/admin", post("/step/updates", url.Values{"update_check": {"1"}}))
+	// A problem only this page can find keeps the person here.
+	require.Equal(t, "/step/admin", post("/step/admin", url.Values{
+		"admin_user": {"admin"}, "admin_password": {"correct horse battery"}, "admin_password_confirm": {"other"},
+	}))
+	page = get("/step/admin")
+	require.Contains(t, page, "The passwords do not match.")
+	require.NotContains(t, page, "correct horse battery")
+	require.Equal(t, "/review", post("/step/admin", url.Values{
+		"admin_user": {"admin"}, "admin_password": {"correct horse battery"}, "admin_password_confirm": {"correct horse battery"},
+	}))
+	page = get("/review")
+	require.Contains(t, page, "Ready to set up")
+	require.Contains(t, page, "anyone through Tailscale Funnel")
+
+	// From the review, a new way in asks its own questions, then returns.
+	require.Equal(t, "/step/domain", post("/step/access", url.Values{"access": {"internet"}}))
+	require.Equal(t, "/step/domain", post("/step/domain", url.Values{"domain": {"not a name"}}))
+	require.Equal(t, "/review", post("/step/domain", url.Values{"domain": {"cloud.example.com"}}))
+	require.Contains(t, get("/review"), "your router")
+	require.Equal(t, "/step/network", post("/step/access", url.Values{"access": {"lan"}}))
+	require.Equal(t, "/review", post("/step/network", url.Values{"lan_https": {"1"}, "https_port": {"8443"}}))
+	require.Contains(t, get("/review"), "with a certificate Cog makes")
 }
 
 // TestCLIStopsAtEndOfInput: a script that runs out of answers installs

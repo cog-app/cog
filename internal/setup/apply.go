@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.duckfam.us/jj-software/cog/internal/certs"
@@ -34,6 +35,9 @@ type FinishRequest struct {
 type Result struct {
 	URL      string   `json:"url"`      // where to open Cog
 	Warnings []string `json:"warnings"` // what needs attention
+	// Fingerprint is the self-signed certificate's, for the person to
+	// compare with what their browser shows.
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // ops are what Apply does to the system, apart from files: tests replace
@@ -48,6 +52,7 @@ var ops = struct {
 	GiveDir       func(dir, account string) error
 	OpenFirewall  func([]service.Port) error
 	Finish        func(ctx context.Context, p Plan, req FinishRequest, out io.Writer) error
+	Tailscale     func(ctx context.Context, p Plan, out io.Writer) error
 }{
 	IsAdmin:       service.IsAdmin,
 	Query:         service.Query,
@@ -58,6 +63,7 @@ var ops = struct {
 	GiveDir:       service.GiveDir,
 	OpenFirewall:  service.OpenFirewall,
 	Finish:        finish,
+	Tailscale:     applyTailscale,
 }
 
 // Apply carries out p, writing what it does to out. A system service
@@ -78,6 +84,11 @@ func Apply(ctx context.Context, p Plan, out io.Writer) (Result, error) {
 		step(out, "Removing the %s service", p.Scope)
 		if err := ops.Uninstall(spec); err != nil {
 			return res, err
+		}
+		if p.PrevTailscale != "" {
+			if err := ops.Tailscale(ctx, p, out); err != nil {
+				return res, err
+			}
 		}
 		step(out, "Cog's files and data are still in %s: delete the folder to remove them too.", l.Dir)
 		return res, nil
@@ -138,11 +149,22 @@ func Apply(ctx context.Context, p Plan, out io.Writer) (Result, error) {
 
 	// Here rather than in finish: for a system service on Linux, the
 	// server's account may not listen on 80 or 443 outside its unit.
-	if cfg.TLS.Mode == "acme" {
+	switch cfg.TLS.Mode {
+	case "acme":
 		if err := obtainCertificate(ctx, cfg, out); err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("No certificate yet: %v. The server keeps trying every hour; once the problem is fixed it serves HTTPS without being set up again.", err))
 			step(out, "Could not get a certificate: %v", err)
 		}
+	case certs.SelfSigned:
+		// Made now, before the folder is given away, so the fingerprint
+		// can be shown.
+		log := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: slog.LevelWarn}))
+		m, err := certs.New(cfg.TLS, cfg.DataDir, log)
+		if err != nil {
+			return res, err
+		}
+		res.Fingerprint = m.Fingerprint()
+		step(out, "Self-signed certificate for %s, SHA-256 fingerprint %s", strings.Join(cfg.TLS.Domains, ", "), res.Fingerprint)
 	}
 
 	if p.Scope == service.System {
@@ -179,8 +201,13 @@ func Apply(ctx context.Context, p Plan, out io.Writer) (Result, error) {
 	if err := waitReady(ctx, local, time.Minute); err != nil {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("Cog did not answer at %s: %v. Check its log (%s).", local, err, logHint(p)))
 	}
+	if p.Access == AccessTailscale || p.PrevTailscale != "" {
+		if err := ops.Tailscale(ctx, p, out); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("Cog runs, but Tailscale could not be pointed at it: %v. Run setup again once that is fixed; until then open %s.", err, local))
+		}
+	}
 	res.URL = cfg.BaseURL
-	if p.Access == AccessInternet && len(res.Warnings) > 0 {
+	if (p.Access == AccessInternet || p.Access == AccessTailscale) && len(res.Warnings) > 0 {
 		res.URL = local
 	}
 	step(out, "Done")
@@ -192,7 +219,7 @@ func Apply(ctx context.Context, p Plan, out io.Writer) (Result, error) {
 func (p Plan) reachablePorts() []service.Port {
 	var ports []service.Port
 	for _, pt := range p.Ports() {
-		if pt.Number == p.Port && (p.Access == AccessLocal || p.Access == AccessInternet) {
+		if pt.Number == p.Port && p.PlainLocalOnly() {
 			continue // plain HTTP stays on this computer
 		}
 		ports = append(ports, pt)

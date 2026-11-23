@@ -20,7 +20,9 @@ const FileName = "cog.toml"
 // terminates it.
 type TLS struct {
 	// Mode is "" or "off" (plain HTTP only), "acme" (certificates from an
-	// ACME CA such as Let's Encrypt) or "files" (CertFile and KeyFile).
+	// ACME CA such as Let's Encrypt), "files" (CertFile and KeyFile) or
+	// "self-signed" (made by the server for Domains, by default this
+	// computer's names).
 	Mode string `toml:"mode,omitempty"`
 	// Addr is the HTTPS listener, ":8443" by default: a router forwards
 	// the public 443 to it, so the server needs no privileged port.
@@ -74,6 +76,9 @@ type Install struct {
 	Dir string `toml:"dir,omitempty"`
 	// Account is the account a system service runs as.
 	Account string `toml:"account,omitempty"`
+	// Tailscale is "serve" or "funnel" when setup pointed the computer's
+	// Tailscale HTTPS at the server, so a later setup can change or undo it.
+	Tailscale string `toml:"tailscale,omitempty"`
 }
 
 // Defaults is the configuration before a file or the environment changes

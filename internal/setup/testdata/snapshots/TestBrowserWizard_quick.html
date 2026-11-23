@@ -5,7 +5,7 @@
     <title>
       Set up Cog — Cog setup
     </title>
-    <link href="/static/style.css?v=4740c74b892e" rel="stylesheet" />
+    <link href="/static/style.css?v=8dc957e713e4" rel="stylesheet" />
     <link href="/static/favicon.svg?v=f043627311df" rel="icon" type="image/svg+xml" />
     <style>
       .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=cloudflare]:checked) .when-dns-cloudflare{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=digitalocean]:checked) .when-dns-digitalocean{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=duckdns]:checked) .when-dns-duckdns{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=gandiv5]:checked) .when-dns-gandiv5{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=httpreq]:checked) .when-dns-httpreq{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=hetzner]:checked) .when-dns-hetzner{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=namecheap]:checked) .when-dns-namecheap{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=ovh]:checked) .when-dns-ovh{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=porkbun]:checked) .when-dns-porkbun{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=exec]:checked) .when-dns-exec{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=rfc2136]:checked) .when-dns-rfc2136{display:block} .setup form:has(input[name=challenge][value=dns-01]:checked):has(option[value=desec]:checked) .when-dns-desec{display:block}
@@ -24,33 +24,32 @@
         </div>
         <div class="page-actions" />
       </header>
-      <form action="/plan" method="post">
+      <p class="form-help">
+        <a href="/step/run">
+          Answer one question at a time instead
+        </a>
+      </p>
+      <form action="/quick" method="post">
         <div class="card">
           <h2 class="card-title">
-            Where Cog runs
+            How Cog runs
           </h2>
-          <label class="form-check">
+          <label class="choice">
             <input checked="" name="scope" type="radio" value="user" />
-            <span>
-              <strong>
-                On this computer, for me
-              </strong>
-              <br />
-              <span class="form-help">
-                Starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer.
-              </span>
+            <strong>
+              On this computer, for me
+            </strong>
+            <span class="form-help">
+              Cog starts when you sign in and runs as you. No administrator rights needed. The right choice for a home computer or laptop.
             </span>
           </label>
-          <label class="form-check">
+          <label class="choice">
             <input name="scope" type="radio" value="system" />
-            <span>
-              <strong>
-                As a system service
-              </strong>
-              <br />
-              <span class="form-help">
-                Starts when the computer starts and runs as an account of its own. Needs administrator rights; for a computer that is a server.
-              </span>
+            <strong>
+              As a server
+            </strong>
+            <span class="form-help">
+              Cog starts with the computer, before anyone signs in, and runs as an account of its own. Needs administrator rights.
             </span>
           </label>
           <p class="form-help when when-system">
@@ -62,7 +61,7 @@
             </label>
             <input aria-invalid="false" autocomplete="off" class="form-control" id="dir" name="dir" type="text" value="«tmp»/002/cog" />
             <p class="form-help">
-              Cog keeps its program, settings and everyone's files here. Pick a disk with room for them.
+              Cog keeps its program, settings and everyone's files here. Pick a disk with room for them all; an external disk works if it is always connected.
             </p>
           </div>
         </div>
@@ -70,9 +69,6 @@
           <h2 class="card-title">
             Admin account
           </h2>
-          <p class="card-desc">
-            The account you sign in with to manage Cog. You can add other people from the admin pages afterwards.
-          </p>
           <div class="form-group">
             <label for="admin_user">
               Name
@@ -85,7 +81,7 @@
             </label>
             <input aria-invalid="false" autocomplete="new-password" class="form-control" id="admin_password" name="admin_password" type="password" value="" />
             <p class="form-help">
-              At least 8 characters. If Cog will be reachable from the internet, make it long.
+              At least 8 characters.
             </p>
           </div>
           <div class="form-group">
@@ -97,64 +93,114 @@
         </div>
         <div class="card">
           <h2 class="card-title">
-            Who can reach Cog
+            Where you use Cog from
           </h2>
-          <label class="form-check">
-            <input checked="" name="access" type="radio" value="local" />
-            <span>
-              <strong>
-                Only this computer
-              </strong>
-              <br />
-              <span class="form-help">
-                Open Cog at http://localhost. Nothing else on the network can connect.
-              </span>
+          <label class="choice">
+            <input name="access" type="radio" value="local" />
+            <strong>
+              Only on this computer
+            </strong>
+            <span class="form-help">
+              Open Cog in this computer's browser. Nothing else can connect.
             </span>
           </label>
-          <label class="form-check">
-            <input name="access" type="radio" value="lan" />
-            <span>
-              <strong>
-                My home network
-              </strong>
-              <br />
-              <span class="form-help">
-                Phones and computers on the same Wi-Fi reach it at http://192.168.1.20. Not encrypted, so only for a network you trust.
-              </span>
+          <label class="choice">
+            <input checked="" name="access" type="radio" value="lan" />
+            <strong>
+              At home, on my network
+            </strong>
+            <span class="form-help">
+              Phones and computers on the same Wi-Fi reach it at 192.168.1.20.
             </span>
           </label>
-          <label class="form-check">
+          <label class="choice">
+            <input name="access" type="radio" value="tailscale" />
+            <strong>
+              Anywhere, on my devices with Tailscale
+            </strong>
+            <span class="form-help">
+              A private network between your own devices, with no ports to open. Tailscale is running here: Cog would be at https://box.tail1234.ts.net.
+            </span>
+          </label>
+          <label class="choice">
             <input name="access" type="radio" value="internet" />
-            <span>
-              <strong>
-                Anywhere, over HTTPS
-              </strong>
-              <br />
-              <span class="form-help">
-                Cog gets a free certificate from Let's Encrypt and your router forwards the internet to this computer. You need a domain name.
-              </span>
+            <strong>
+              Anywhere, including people I share with
+            </strong>
+            <span class="form-help">
+              Over HTTPS from the internet: your router forwards it to this computer. You need a domain name; a free one from a dynamic DNS service works.
             </span>
           </label>
-          <label class="form-check">
+          <label class="choice">
             <input name="access" type="radio" value="proxy" />
-            <span>
-              <strong>
-                Anywhere, behind my reverse proxy
-              </strong>
-              <br />
-              <span class="form-help">
-                Caddy, nginx or similar already handles HTTPS and passes requests on to Cog.
-              </span>
+            <strong>
+              Through a reverse proxy I already run
+            </strong>
+            <span class="form-help">
+              Caddy, nginx, Traefik or a tunnel already handles HTTPS and passes requests on to Cog.
             </span>
           </label>
           <div class="form-group">
             <label for="port">
-              Port
+              Cog's HTTP port
             </label>
             <input aria-invalid="false" autocomplete="off" class="form-control" id="port" name="port" type="number" value="8580" />
             <p class="form-help">
-              The plain HTTP port. With HTTPS it answers only on this computer.
+              Where Cog listens on this computer. Change it only if something else uses it.
             </p>
+          </div>
+          <div class="when when-lan">
+            <h3 class="card-subtitle">
+              Encryption on your network
+            </h3>
+            <label class="choice">
+              <input name="lan_https" type="radio" value="0" />
+              <strong>
+                No, plain HTTP
+              </strong>
+              <span class="form-help">
+                Simplest. Anyone on your network could read what is sent, so only for a network you trust.
+              </span>
+            </label>
+            <label class="choice">
+              <input checked="" name="lan_https" type="radio" value="1" />
+              <strong>
+                Yes, HTTPS with a certificate Cog makes
+              </strong>
+              <span class="form-help">
+                Encrypted. Each browser warns the first time, because no one vouches for the certificate but Cog; you compare its fingerprint, shown when setup finishes, and accept it once.
+              </span>
+            </label>
+          </div>
+          <div class="when when-https">
+            <div class="form-group">
+              <label for="https_port">
+                HTTPS port on this computer
+              </label>
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="https_port" name="https_port" type="number" value="8443" />
+              <p class="form-help">
+                With a domain, your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.
+              </p>
+            </div>
+          </div>
+          <div class="when when-tailscale">
+            <p>
+              Cog will be at
+              <strong>
+                https://box.tail1234.ts.net
+              </strong>
+              , with a certificate Tailscale looks after. Nothing to forward on your router.
+            </p>
+            <label class="form-check">
+              <input name="funnel" type="checkbox" value="1" />
+              <span>
+                Also let people without Tailscale in (Tailscale Funnel)
+                <br />
+                <span class="form-help">
+                  Needed for share links to people outside your tailnet. Anyone on the internet can then reach the sign-in page. Funnel must be allowed for this computer in your tailnet's access controls.
+                </span>
+              </span>
+            </label>
           </div>
           <div class="when when-internet">
             <h3 class="card-subtitle">
@@ -164,7 +210,7 @@
               <label for="domain">
                 Domain name
               </label>
-              <input aria-invalid="false" autocomplete="off" class="form-control" id="domain" name="domain" type="text" value="" />
+              <input aria-invalid="false" autocomplete="off" class="form-control" id="domain" name="domain" type="text" value="cloud.example.com" />
               <p class="form-help">
                 A name that points at your home's public address, such as cloud.example.com. A dynamic DNS service (Duck DNS, deSEC) gives you one for free and keeps it pointing at you when your address changes.
               </p>
@@ -178,52 +224,34 @@
                 Let's Encrypt writes here about problems with your certificate.
               </p>
             </div>
-            <div class="form-group">
-              <label for="https_port">
-                HTTPS port on this computer
-              </label>
-              <input aria-invalid="false" autocomplete="off" class="form-control" id="https_port" name="https_port" type="number" value="8443" />
-              <p class="form-help">
-                Your router forwards the internet's port 443 to this one. 8443 needs no administrator rights.
-              </p>
-            </div>
             <h3 class="card-subtitle">
               How Let's Encrypt checks the name is yours
             </h3>
-            <label class="form-check">
-              <input checked="" name="challenge" type="radio" value="tls-alpn-01" />
-              <span>
-                <strong>
-                  Through the HTTPS port
-                </strong>
-                <br />
-                <span class="form-help">
-                  Simplest: only port 443 has to be forwarded.
-                </span>
+            <label class="choice">
+              <input name="challenge" type="radio" value="tls-alpn-01" />
+              <strong>
+                Through the HTTPS port (recommended)
+              </strong>
+              <span class="form-help">
+                Simplest: only port 443 has to be forwarded.
               </span>
             </label>
-            <label class="form-check">
+            <label class="choice">
               <input name="challenge" type="radio" value="http-01" />
-              <span>
-                <strong>
-                  Through port 80
-                </strong>
-                <br />
-                <span class="form-help">
-                  For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.
-                </span>
+              <strong>
+                Through port 80
+              </strong>
+              <span class="form-help">
+                For a router or ISP that will not forward 443 until a certificate exists. Port 80 then also sends visitors on to HTTPS.
               </span>
             </label>
-            <label class="form-check">
-              <input name="challenge" type="radio" value="dns-01" />
-              <span>
-                <strong>
-                  Through my DNS host
-                </strong>
-                <br />
-                <span class="form-help">
-                  Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.
-                </span>
+            <label class="choice">
+              <input checked="" name="challenge" type="radio" value="dns-01" />
+              <strong>
+                Through my DNS host
+              </strong>
+              <span class="form-help">
+                Cog adds a record with your DNS host's API. Works with no ports forwarded, and is the only way to get a wildcard (*.example.com) certificate.
               </span>
             </label>
             <div class="when when-http01">
@@ -252,7 +280,7 @@
                   <option value="digitalocean">
                     DigitalOcean
                   </option>
-                  <option value="duckdns">
+                  <option selected="" value="duckdns">
                     Duck DNS
                   </option>
                   <option value="gandiv5">
@@ -305,7 +333,7 @@
                   <label for="dns_env.DUCKDNS_TOKEN">
                     Token
                   </label>
-                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DUCKDNS_TOKEN" name="dns_env.DUCKDNS_TOKEN" type="password" value="" />
+                  <input aria-invalid="false" autocomplete="new-password" class="form-control" id="dns_env.DUCKDNS_TOKEN" name="dns_env.DUCKDNS_TOKEN" type="password" value="token" />
                 </div>
               </div>
               <div class="when when-dns-gandiv5">
@@ -441,16 +469,21 @@
                 </div>
               </div>
             </div>
-            <label class="form-check">
-              <input name="staging" type="checkbox" value="1" />
-              <span>
-                Use Let's Encrypt's test service
-                <br />
-                <span class="form-help">
-                  For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.
+            <details class="advanced">
+              <summary>
+                More options
+              </summary>
+              <label class="form-check">
+                <input name="staging" type="checkbox" value="1" />
+                <span>
+                  Use Let's Encrypt's test service
+                  <br />
+                  <span class="form-help">
+                    For trying setup out: its certificates are not trusted by browsers, but it does not limit how often you retry. Run setup again without it when everything works.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </details>
           </div>
           <div class="when when-proxy">
             <div class="form-group">
@@ -471,42 +504,47 @@
                 The proxy's address as a range, such as 127.0.0.1/32 or 172.16.0.0/12, so Cog sees visitors' real addresses. Separate several with commas.
               </p>
             </div>
+            <p class="form-help">
+              Point the proxy at http://192.168.1.20:8580.
+            </p>
           </div>
-          <p class="form-help when when-lan">
-            To use Cog away from home later, run setup again and choose HTTPS.
-          </p>
         </div>
         <div class="card">
           <h2 class="card-title">
-            SSH and SFTP
+            SFTP and SSH
           </h2>
           <label class="form-check">
             <input checked="" name="ssh" type="checkbox" value="1" />
             <span>
-              Serve SSH
+              Serve SFTP and SSH
               <br />
               <span class="form-help">
-                Sign in with an SSH key to reach your files over SFTP, rsync and scp, or use Cog's shell.
+                Reach your files with SFTP apps, rsync and scp, or use Cog's shell. Sign in with an SSH key or an app password.
               </span>
             </span>
           </label>
           <div class="when when-ssh">
-            <div class="form-group">
-              <label for="ssh_port">
-                SSH port
-              </label>
-              <input aria-invalid="false" autocomplete="off" class="form-control" id="ssh_port" name="ssh_port" type="number" value="8522" />
-            </div>
             <label class="form-check">
               <input name="ssh_account_passwords" type="checkbox" value="1" />
               <span>
-                Allow account passwords over SSH
+                Also allow account passwords
                 <br />
                 <span class="form-help">
-                  Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if your router forwards the SSH port.
+                  Off, SSH takes keys and app passwords only, which cannot be guessed. Leave it off if SSH is reachable from the internet.
                 </span>
               </span>
             </label>
+            <details class="advanced">
+              <summary>
+                Port
+              </summary>
+              <div class="form-group">
+                <label for="ssh_port">
+                  SSH port
+                </label>
+                <input aria-invalid="false" autocomplete="off" class="form-control" id="ssh_port" name="ssh_port" type="number" value="8522" />
+              </div>
+            </details>
           </div>
         </div>
         <div class="card">
@@ -519,20 +557,22 @@
               Check for new versions daily
               <br />
               <span class="form-help">
-                Admins see an update on the Admin > Updates page and install it with a click.
+                Admins see a new version on the Admin > Updates page and install it with a click.
               </span>
             </span>
           </label>
-          <label class="form-check">
-            <input name="update_auto" type="checkbox" value="1" />
-            <span>
-              Install new versions automatically
-              <br />
-              <span class="form-help">
-                Cog restarts itself, which interrupts uploads and downloads in progress.
+          <div class="when when-update-check">
+            <label class="form-check">
+              <input name="update_auto" type="checkbox" value="1" />
+              <span>
+                Install new versions automatically
+                <br />
+                <span class="form-help">
+                  Cog restarts itself, which interrupts uploads and downloads in progress.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
         <div class="when when-system">
           <div class="card">

@@ -18,7 +18,6 @@ import (
 
 	"github.com/a-h/templ"
 
-	"git.duckfam.us/jj-software/cog/internal/certs"
 	"git.duckfam.us/jj-software/cog/internal/service"
 	"git.duckfam.us/jj-software/cog/ui"
 )
@@ -41,8 +40,11 @@ type Wizard struct {
 	mu       sync.Mutex
 	installs []Install
 	draft    Plan
-	problem  error
-	job      *job
+	problems Problems
+	// reviewing is set once the review page has been seen: a page saved
+	// after that goes back to it rather than on to the next question.
+	reviewing bool
+	job       *job
 }
 
 // job is a plan being carried out.
@@ -120,8 +122,10 @@ func (w *Wizard) Handler() http.Handler {
 	mux.HandleFunc("GET /start", w.start)
 	mux.HandleFunc("GET /{$}", w.home)
 	mux.HandleFunc("POST /choose", w.choose)
-	mux.HandleFunc("GET /plan", w.planForm)
-	mux.HandleFunc("POST /plan", w.savePlan)
+	mux.HandleFunc("GET /step/{id}", w.stepForm)
+	mux.HandleFunc("POST /step/{id}", w.saveStep)
+	mux.HandleFunc("GET /quick", w.quickForm)
+	mux.HandleFunc("POST /quick", w.saveQuick)
 	mux.HandleFunc("GET /review", w.review)
 	mux.HandleFunc("POST /apply", w.apply)
 	mux.HandleFunc("GET /reset", w.resetForm)
@@ -187,7 +191,7 @@ func (w *Wizard) home(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(installs) == 0 {
-		http.Redirect(rw, r, "/plan", http.StatusSeeOther)
+		http.Redirect(rw, r, "/step/"+Steps[0].ID, http.StatusSeeOther)
 		return
 	}
 	w.render(rw, r, homePage(installs))
@@ -198,7 +202,7 @@ func (w *Wizard) choose(rw http.ResponseWriter, r *http.Request) {
 	action, dir, _ := strings.Cut(r.FormValue("action"), ":")
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.problem = nil
+	w.problems = nil
 	if action == "new" {
 		p, err := DefaultPlan(service.Scope(r.FormValue("scope")), w.Exe)
 		if err != nil {
@@ -208,8 +212,8 @@ func (w *Wizard) choose(rw http.ResponseWriter, r *http.Request) {
 		if p.Scope == "" {
 			p.Scope = service.User
 		}
-		w.draft = p
-		http.Redirect(rw, r, "/plan", http.StatusSeeOther)
+		w.draft, w.reviewing = p, false
+		http.Redirect(rw, r, "/step/"+Steps[0].ID, http.StatusSeeOther)
 		return
 	}
 	var in *Install
@@ -230,7 +234,10 @@ func (w *Wizard) choose(rw http.ResponseWriter, r *http.Request) {
 	w.draft = p
 	switch action {
 	case "reconfigure":
-		http.Redirect(rw, r, "/plan", http.StatusSeeOther)
+		// Everything is answered already: start from the summary, whose
+		// links open the page for each answer.
+		w.reviewing = true
+		http.Redirect(rw, r, "/review", http.StatusSeeOther)
 	case "reset":
 		w.draft.Mode = ModeResetAdmin
 		w.draft.AdminUser = "admin"
@@ -244,27 +251,105 @@ func (w *Wizard) choose(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (w *Wizard) planForm(rw http.ResponseWriter, r *http.Request) {
+func (w *Wizard) stepForm(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
-	p, prob := w.draft, w.problem
+	p, probs := w.draft, w.problems
 	w.mu.Unlock()
-	w.render(rw, r, planPage(p, problemOf(prob), LANAddress(), service.IsAdmin()))
+	st, i := findStep(p, r.PathValue("id"))
+	if i < 0 {
+		http.Redirect(rw, r, "/", http.StatusSeeOther)
+		return
+	}
+	steps := VisibleSteps(p)
+	back := "/"
+	if i > 0 {
+		back = "/step/" + steps[i-1].ID
+	} else if len(w.installs) == 0 {
+		back = ""
+	}
+	var ts TailscaleStatus
+	if st.ID == "access" || st.ID == "tailscale" {
+		ts = CheckTailscale(r.Context())
+	}
+	v := stepView{
+		Plan: p, Step: st, Index: i, Total: len(steps), Problems: probs,
+		Back: back, Reviewing: w.reviewing, LAN: LANAddress(), Admin: service.IsAdmin(), Tailscale: ts,
+	}
+	w.render(rw, r, stepPage(v))
 }
 
-func problemOf(err error) Problem {
-	var p Problem
-	if errors.As(err, &p) {
-		return p
+// saveStep takes a page's answers into the draft, then moves on: to the
+// page's own problems, to the next question, or (once the review has been
+// seen) back to the review, by way of any page the change has left
+// unanswered.
+func (w *Wizard) saveStep(rw http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p := w.draft
+	st, i := findStep(p, r.PathValue("id"))
+	if i < 0 {
+		http.Redirect(rw, r, "/", http.StatusSeeOther)
+		return
+	}
+	extra := readStep(r.Context(), st.ID, r.PostForm, &p)
+	probs, err := stepProblems(&p, st, extra)
 	if err != nil {
-		return Problem{Message: err.Error()}
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return Problem{}
+	if len(probs) > 0 {
+		if st.ID == "admin" {
+			// A password the person must type again is not kept.
+			p.AdminPassword = ""
+		}
+		w.draft, w.problems = p, probs
+		http.Redirect(rw, r, "/step/"+st.ID, http.StatusSeeOther)
+		return
+	}
+	changedAccess := st.ID == "access" && p.Access != w.draft.Access
+	w.draft, w.problems = p, nil
+	if changedAccess && accessStep(p) != "access" {
+		// A new way in has questions of its own.
+		http.Redirect(rw, r, "/step/"+accessStep(p), http.StatusSeeOther)
+		return
+	}
+	if w.reviewing {
+		next, ok, err := firstStepWithProblems(p)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if ok {
+			http.Redirect(rw, r, "/step/"+next.ID, http.StatusSeeOther)
+			return
+		}
+		http.Redirect(rw, r, "/review", http.StatusSeeOther)
+		return
+	}
+	// The page may have changed which pages follow (a different access).
+	steps := VisibleSteps(p)
+	_, i = findStep(p, st.ID)
+	if i+1 < len(steps) {
+		http.Redirect(rw, r, "/step/"+steps[i+1].ID, http.StatusSeeOther)
+		return
+	}
+	http.Redirect(rw, r, "/review", http.StatusSeeOther)
 }
 
-// savePlan takes the form into the draft and, if it holds together, moves
-// on to the review.
-func (w *Wizard) savePlan(rw http.ResponseWriter, r *http.Request) {
+func (w *Wizard) quickForm(rw http.ResponseWriter, r *http.Request) {
+	w.mu.Lock()
+	p, probs := w.draft, w.problems
+	w.mu.Unlock()
+	w.render(rw, r, quickPage(p, probs, LANAddress(), service.IsAdmin(), CheckTailscale(r.Context())))
+}
+
+// saveQuick takes the one-page form into the draft and, if it holds
+// together, moves on to the review.
+func (w *Wizard) saveQuick(rw http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -273,50 +358,32 @@ func (w *Wizard) savePlan(rw http.ResponseWriter, r *http.Request) {
 	defer w.mu.Unlock()
 	p := w.draft
 	f := r.PostForm
-	if p.Mode == ModeInstall {
-		p.Scope = service.Scope(f.Get("scope"))
-	}
-	p.Dir = strings.TrimSpace(f.Get("dir"))
-	p.AdminUser = f.Get("admin_user")
-	p.AdminPassword = f.Get("admin_password")
-	confirm := f.Get("admin_password_confirm")
-	p.Access = f.Get("access")
-	p.Port = atoi(f.Get("port"))
-	p.Domain = f.Get("domain")
-	p.Email = strings.TrimSpace(f.Get("email"))
-	p.HTTPSPort = atoi(f.Get("https_port"))
-	p.Challenge = f.Get("challenge")
-	p.HTTPPort = atoi(f.Get("http_port"))
-	p.DNSProvider = f.Get("dns_provider")
-	p.DNSEnv = map[string]string{}
-	if prov, ok := certs.FindDNSProvider(p.DNSProvider); ok {
-		for _, v := range prov.Vars {
-			p.DNSEnv[v.Name] = strings.TrimSpace(f.Get("dns_env." + v.Name))
+	var extra Problems
+	for _, st := range Steps {
+		if st.ID == "run" && p.Mode != ModeInstall {
+			continue
 		}
+		if st.ID == "run" {
+			// The form's folder and ports win over the scope's defaults.
+			p.Scope = service.Scope(f.Get("scope"))
+			continue
+		}
+		extra = append(extra, readStep(r.Context(), st.ID, f, &p)...)
 	}
-	p.Staging = f.Get("staging") == "1"
-	p.PublicURL = strings.TrimSpace(f.Get("public_url"))
-	p.TrustedProxies = strings.TrimSpace(f.Get("trusted_proxies"))
-	p.SSH = f.Get("ssh") == "1"
-	p.SSHPort = atoi(f.Get("ssh_port"))
-	p.SSHAccountPasswords = f.Get("ssh_account_passwords") == "1"
-	p.UpdateCheck = f.Get("update_check") == "1"
-	p.UpdateAuto = f.Get("update_auto") == "1"
-	p.Firewall = f.Get("firewall") == "1"
-
-	err := p.Validate()
-	if err == nil && p.AdminPassword != confirm {
-		err = problem("admin_password_confirm", "The passwords do not match.")
-	}
-	// The password is not kept in the draft for the form to show again.
+	p.Firewall = p.Scope == service.System && f.Get("firewall") == "1"
+	probs, err := p.Problems()
 	if err != nil {
-		p.AdminPassword = ""
-	}
-	w.draft, w.problem = p, err
-	if err != nil {
-		http.Redirect(rw, r, "/plan#"+problemOf(err).Field, http.StatusSeeOther)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	probs = append(extra, probs...)
+	if len(probs) > 0 {
+		p.AdminPassword = ""
+		w.draft, w.problems = p, probs
+		http.Redirect(rw, r, "/quick#"+probs[0].Field, http.StatusSeeOther)
+		return
+	}
+	w.draft, w.problems, w.reviewing = p, nil, true
 	http.Redirect(rw, r, "/review", http.StatusSeeOther)
 }
 
@@ -330,10 +397,16 @@ func atoi(s string) int {
 
 func (w *Wizard) review(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
+	w.reviewing = true
 	p := w.draft
 	w.mu.Unlock()
-	if err := p.Validate(); err != nil {
-		http.Redirect(rw, r, "/plan", http.StatusSeeOther)
+	next, ok, err := firstStepWithProblems(p)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if ok {
+		http.Redirect(rw, r, "/step/"+next.ID, http.StatusSeeOther)
 		return
 	}
 	var dns DNSCheck
@@ -344,11 +417,17 @@ func (w *Wizard) review(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Wizard) apply(rw http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.draft.Scope == service.System && r.PostForm.Has("firewall_shown") {
+		w.draft.Firewall = r.FormValue("firewall") == "1"
+	}
 	if err := w.draft.Validate(); err != nil {
-		w.problem = err
-		http.Redirect(rw, r, "/plan", http.StatusSeeOther)
+		http.Redirect(rw, r, "/review", http.StatusSeeOther)
 		return
 	}
 	if w.job == nil || w.job.isDone() {
@@ -359,9 +438,9 @@ func (w *Wizard) apply(rw http.ResponseWriter, r *http.Request) {
 
 func (w *Wizard) resetForm(rw http.ResponseWriter, r *http.Request) {
 	w.mu.Lock()
-	p, prob := w.draft, w.problem
+	p, probs := w.draft, w.problems
 	w.mu.Unlock()
-	w.render(rw, r, resetPage(p, problemOf(prob)))
+	w.render(rw, r, resetPage(p, probs))
 }
 
 func (w *Wizard) reset(rw http.ResponseWriter, r *http.Request) {
@@ -371,17 +450,21 @@ func (w *Wizard) reset(rw http.ResponseWriter, r *http.Request) {
 	p.Mode = ModeResetAdmin
 	p.AdminUser = r.FormValue("admin_user")
 	p.AdminPassword = r.FormValue("admin_password")
-	err := p.Validate()
-	if err == nil && p.AdminPassword != r.FormValue("admin_password_confirm") {
-		err = problem("admin_password_confirm", "The passwords do not match.")
-	}
+	probs, err := p.Problems()
 	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if p.AdminPassword != r.FormValue("admin_password_confirm") {
+		probs = append(probs, Problem{Field: "admin_password_confirm", Message: "The passwords do not match."})
+	}
+	if len(probs) > 0 {
 		p.AdminPassword = ""
-		w.draft, w.problem = p, err
+		w.draft, w.problems = p, probs
 		http.Redirect(rw, r, "/reset", http.StatusSeeOther)
 		return
 	}
-	w.draft, w.problem = p, nil
+	w.draft, w.problems = p, nil
 	w.startJob(p)
 	http.Redirect(rw, r, "/progress", http.StatusSeeOther)
 }

@@ -35,8 +35,20 @@ form must come with `Origin` set to the wizard. Pages reuse the server's
 stylesheet; which parts of the form show depends on CSS `:has()` so the
 wizard needs no script beyond htmx polling the progress log.
 
+**Guided and quick.** The browser wizard asks one question a page
+(`Steps` in `steps.go`), skipping the pages a plan does not need: there is
+no domain page unless Cog is to be reached from the internet. Each page
+owns the plan fields it asks; `Plan.Problems` lists everything wrong with
+a plan, and a page shows only its own, so an unanswered later question
+does not block an earlier page. Once the review has been seen, a saved
+page returns to it, by way of any page the change has left unanswered (a
+new way in asks its own questions). A change to an install starts at the
+review, a summary with a link to each question. `/quick` asks everything
+on one form for people who know what they want; both fill the same plan.
+
 **Plan and apply.** The wizard (browser or terminal) makes a `Plan`: scope,
-folder, admin, access (local, LAN, internet over HTTPS, reverse proxy),
+folder, admin, access (local, LAN over HTTP or self-signed HTTPS,
+Tailscale, internet over HTTPS, reverse proxy),
 ports, SSH, updates, firewall. `Apply` carries it out. A system plan needs
 administrator rights; when setup has none, `Run` writes the plan to a
 private temporary file and runs `cog setup apply` elevated (pkexec or sudo
@@ -62,7 +74,11 @@ it (it holds the admin's password) and appends to a log the wizard tails.
    account*: it opens the database (migrating it) and makes or resets the
    admin. Run as that account so what it makes belongs to the server;
 8. opens the firewall if asked (system scope only);
-9. installs and starts the service, and waits for Cog to answer.
+9. installs and starts the service, and waits for Cog to answer;
+10. for Tailscale, runs `tailscale serve --bg --https=443
+    http://127.0.0.1:<port>` (`funnel` for Funnel), and turns off what a
+    previous setup set up (`cog.toml` records it as `install.tailscale`).
+    A failure is a warning: Cog runs, at its local address.
 
 Running setup again finds installs at the default folders and the one the
 running binary belongs to (`Find`) and offers: change settings (the plan is
@@ -94,7 +110,18 @@ hold DNS credentials.
 ## TLS (`internal/certs`)
 
 `tls.mode = "acme"` obtains and renews a certificate with lego; `"files"`
-serves (and hourly reloads) certificate files. Challenges are answered by
+serves (and hourly reloads) certificate files; `"self-signed"` makes an
+ECDSA certificate for `tls.domains` (IP addresses become IP SANs), valid
+397 days (browsers refuse longer even when trusted), kept in `data/tls`
+and remade when it nears expiry or the names change. Setup makes it so it
+can show the fingerprint.
+
+**Tailscale** is not a TLS mode: Cog stays plain HTTP on loopback and
+`tailscale serve` terminates HTTPS in front of it, trusted as a proxy
+(`trusted_proxies = "127.0.0.1/32,::1/128"`). Setup drives the
+`tailscale` command rather than embedding a node with `tsnet`, which would
+add a second identity on the tailnet, its own sign-in, and much of
+Tailscale to every binary. Challenges are answered by
 the server's own listeners, not servers lego starts: tls-alpn-01 by the
 HTTPS listener's `GetCertificate` (so forwarding 443 alone is enough),
 http-01 by the optional plain listener (`tls.http_addr`, which otherwise

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/mail"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -43,8 +44,12 @@ const (
 const (
 	// AccessLocal: from this computer only.
 	AccessLocal = "local"
-	// AccessLAN: from the local network, over plain HTTP.
+	// AccessLAN: from the local network, over plain HTTP or HTTPS with a
+	// self-signed certificate.
 	AccessLAN = "lan"
+	// AccessTailscale: from the person's devices on their tailnet, through
+	// `tailscale serve` (and, with Funnel, from anywhere).
+	AccessTailscale = "tailscale"
 	// AccessInternet: from anywhere, over HTTPS Cog serves itself, with
 	// the router forwarding ports to this computer.
 	AccessInternet = "internet"
@@ -68,7 +73,18 @@ type Plan struct {
 	// Cog serves HTTPS itself.
 	Port int `json:"port"`
 
-	// For AccessInternet.
+	// For AccessLAN: serve HTTPS on HTTPSPort with a self-signed
+	// certificate, and plain HTTP on this computer only.
+	LANHTTPS bool `json:"lan_https,omitempty"`
+
+	// For AccessTailscale.
+	TailscaleName string `json:"tailscale_name,omitempty"` // host.tailnet.ts.net
+	Funnel        bool   `json:"funnel,omitempty"`
+	// PrevTailscale is what the install had set up ("serve", "funnel" or
+	// ""), so a change can turn it off.
+	PrevTailscale string `json:"prev_tailscale,omitempty"`
+
+	// For AccessInternet (and HTTPSPort for AccessLAN with LANHTTPS).
 	Domain      string            `json:"domain,omitempty"`
 	Email       string            `json:"email,omitempty"`
 	HTTPSPort   int               `json:"https_port,omitempty"`
@@ -95,6 +111,9 @@ type Plan struct {
 
 	// Source is the binary to install: the one running setup.
 	Source string `json:"source"`
+
+	// dirSet is a folder the person chose, which a change of scope keeps.
+	dirSet bool
 }
 
 // DefaultPlan is a new install for scope with the defaults filled in.
@@ -121,6 +140,7 @@ func DefaultPlan(scope service.Scope, source string) (Plan, error) {
 	if scope == service.System {
 		// A server, not behind a router that translates ports.
 		p.HTTPSPort, p.HTTPPort = 443, 80
+		p.Firewall = true
 	}
 	return p, nil
 }
@@ -145,16 +165,24 @@ func FromConfig(cfg config.Config, source string) (Plan, error) {
 	if port != 0 {
 		p.Port = port
 	}
+	p.PrevTailscale = cfg.Install.Tailscale
+	if _, port := splitAddr(cfg.TLS.Addr); port != 0 {
+		p.HTTPSPort = port
+	}
 	switch {
+	case cfg.Install.Tailscale != "":
+		p.Access = AccessTailscale
+		p.Funnel = cfg.Install.Tailscale == TailscaleFunnel
+		p.TailscaleName = strings.TrimPrefix(cfg.BaseURL, "https://")
+	case cfg.TLS.Mode == certs.SelfSigned:
+		p.Access = AccessLAN
+		p.LANHTTPS = true
 	case cfg.TLS.Enabled():
 		p.Access = AccessInternet
 		if len(cfg.TLS.Domains) > 0 {
 			p.Domain = cfg.TLS.Domains[0]
 		}
 		p.Email = cfg.TLS.Email
-		if _, port := splitAddr(cfg.TLS.Addr); port != 0 {
-			p.HTTPSPort = port
-		}
 		if _, port := splitAddr(cfg.TLS.HTTPAddr); port != 0 {
 			p.HTTPPort = port
 		}
@@ -259,135 +287,196 @@ func problem(field, format string, args ...any) error {
 
 // Validate reports the first thing wrong with p.
 func (p *Plan) Validate() error {
+	probs, err := p.Problems()
+	if err != nil {
+		return err
+	}
+	if len(probs) > 0 {
+		return probs[0]
+	}
+	return nil
+}
+
+// Problems are everything wrong with p, in the order the wizard asks
+// about them, so a page can show the ones about its own fields. err is a
+// plan no wizard makes (an unknown mode).
+func (p *Plan) Problems() (probs []Problem, err error) {
 	p.Domain = strings.ToLower(strings.TrimSpace(p.Domain))
 	p.AdminUser = strings.TrimSpace(p.AdminUser)
+	add := func(field, format string, args ...any) {
+		probs = append(probs, Problem{Field: field, Message: fmt.Sprintf(format, args...)})
+	}
+	port := func(field string, n int) {
+		if n < 1 || n > 65535 {
+			add(field, "Enter a port between 1 and 65535.")
+		}
+	}
 	switch p.Mode {
 	case ModeUninstall:
-		return nil
+		return nil, nil
 	case ModeResetAdmin:
-		return p.validateAdmin(true)
+		p.adminProblems(true, add)
+		return probs, nil
 	case ModeInstall, ModeReconfig:
 	default:
-		return fmt.Errorf("unknown setup mode %q", p.Mode)
+		return nil, fmt.Errorf("unknown setup mode %q", p.Mode)
 	}
 	if p.Scope != service.System && p.Scope != service.User {
-		return problem("scope", "Choose how Cog runs.")
+		add("scope", "Choose how Cog runs.")
 	}
 	if !filepath.IsAbs(p.Dir) {
-		return problem("dir", "The install folder must be a full path.")
+		add("dir", "The folder must be a full path, such as %s.", examplePath())
 	}
-	if err := p.validateAdmin(p.Mode == ModeInstall); err != nil {
-		return err
-	}
-	if err := validPort("port", p.Port); err != nil {
-		return err
-	}
+	port("port", p.Port)
 	switch p.Access {
-	case AccessLocal, AccessLAN:
+	case AccessLocal:
+	case AccessLAN:
+		if p.LANHTTPS {
+			port("https_port", p.HTTPSPort)
+		}
+	case AccessTailscale:
+		if p.TailscaleName == "" {
+			add("tailscale", "Tailscale is not connected on this computer.")
+		}
 	case AccessInternet:
 		if !domainPattern.MatchString(p.Domain) {
-			return problem("domain", "Enter the domain name that points at this computer, such as cloud.example.com.")
+			add("domain", "Enter the domain name that points at this computer, such as cloud.example.com.")
 		}
 		if p.Email != "" {
 			if _, err := mail.ParseAddress(p.Email); err != nil {
-				return problem("email", "Enter an email address, or leave it empty.")
+				add("email", "Enter an email address, or leave it empty.")
 			}
 		}
-		if err := validPort("https_port", p.HTTPSPort); err != nil {
-			return err
-		}
+		port("https_port", p.HTTPSPort)
 		switch p.Challenge {
 		case certs.TLSALPN01:
 		case certs.HTTP01:
-			if err := validPort("http_port", p.HTTPPort); err != nil {
-				return err
-			}
+			port("http_port", p.HTTPPort)
 		case certs.DNS01:
-			prov, ok := certs.FindDNSProvider(p.DNSProvider)
-			if !ok {
-				return problem("dns_provider", "Choose your DNS host.")
-			}
-			for _, v := range prov.Vars {
-				if strings.TrimSpace(p.DNSEnv[v.Name]) == "" {
-					return problem("dns_env."+v.Name, "Enter the %s for %s.", strings.ToLower(v.Label), prov.Label)
+			if prov, ok := certs.FindDNSProvider(p.DNSProvider); !ok {
+				add("dns_provider", "Choose your DNS host.")
+			} else {
+				for _, v := range prov.Vars {
+					if strings.TrimSpace(p.DNSEnv[v.Name]) == "" {
+						add("dns_env."+v.Name, "Enter the %s for %s.", strings.ToLower(v.Label), prov.Label)
+					}
 				}
 			}
 		default:
-			return problem("challenge", "Choose how Let's Encrypt checks that the name is yours.")
+			add("challenge", "Choose how Let's Encrypt checks that the name is yours.")
 		}
 		if strings.HasPrefix(p.Domain, "*.") && p.Challenge != certs.DNS01 {
-			return problem("domain", "A wildcard name needs the DNS check.")
+			add("domain", "A wildcard name needs the DNS check.")
 		}
 	case AccessProxy:
 		if !strings.HasPrefix(p.PublicURL, "https://") {
-			return problem("public_url", "Enter the https:// address the proxy serves Cog at.")
+			add("public_url", "Enter the https:// address the proxy serves Cog at.")
 		}
 		for _, cidr := range strings.Split(p.TrustedProxies, ",") {
 			if cidr = strings.TrimSpace(cidr); cidr == "" {
 				continue
 			}
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
-				return problem("trusted_proxies", "%q is not an address range such as 192.168.1.10/32.", cidr)
+				add("trusted_proxies", "%q is not an address range such as 192.168.1.10/32.", cidr)
 			}
 		}
 	default:
-		return problem("access", "Choose who can reach Cog.")
+		add("access", "Choose where you will use Cog from.")
 	}
 	if p.SSH {
-		if err := validPort("ssh_port", p.SSHPort); err != nil {
-			return err
-		}
+		port("ssh_port", p.SSHPort)
 	}
 	if p.Firewall && p.Scope != service.System {
-		return problem("firewall", "Opening the firewall needs a system service.")
+		add("firewall", "Opening the firewall needs a system service.")
 	}
+	p.adminProblems(p.Mode == ModeInstall, add)
 	ports := map[int]string{}
-	for _, pt := range p.Ports() {
-		if other, ok := ports[pt.Number]; ok {
-			return problem("port", "%s and %s cannot both use port %d.", other, pt.Name, pt.Number)
+	for _, pt := range p.ports() {
+		if other, ok := ports[pt.Number]; ok && pt.Number != 0 {
+			add(pt.Field, "%s and %s cannot both use port %d.", other, pt.Name, pt.Number)
 		}
 		ports[pt.Number] = pt.Name
 	}
-	return nil
+	return probs, nil
 }
 
-func (p *Plan) validateAdmin(needPassword bool) error {
+func examplePath() string {
+	if runtime.GOOS == "windows" {
+		return `D:\Cog`
+	}
+	return "/srv/cog"
+}
+
+func (p *Plan) adminProblems(needPassword bool, add func(field, format string, args ...any)) {
 	if p.AdminUser == "" {
-		if p.Mode == ModeReconfig {
-			return nil // keep the accounts as they are
+		if p.Mode != ModeReconfig {
+			add("admin_user", "Enter a name for the admin account.")
 		}
-		return problem("admin_user", "Enter a name for the admin account.")
+		return // reconfigure: keep the accounts as they are
 	}
-	if p.AdminPassword == "" && !needPassword && p.Mode == ModeReconfig {
-		return problem("admin_password", "Enter a password for %s, or leave the admin name empty.", p.AdminUser)
+	switch {
+	case p.AdminPassword == "" && !needPassword && p.Mode == ModeReconfig:
+		add("admin_password", "Enter a password for %s, or leave the admin name empty.", p.AdminUser)
+	case len(p.AdminPassword) < 8 && (needPassword || p.AdminPassword != ""):
+		add("admin_password", "Use at least 8 characters for the admin password.")
 	}
-	if len(p.AdminPassword) < 8 && (needPassword || p.AdminPassword != "") {
-		return problem("admin_password", "Use at least 8 characters for the admin password.")
-	}
-	return nil
 }
 
-func validPort(field string, port int) error {
-	if port < 1 || port > 65535 {
-		return problem(field, "Enter a port between 1 and 65535.")
+// validateAdmin reports the first thing wrong with the admin account.
+func (p *Plan) validateAdmin(needPassword bool) error {
+	var first error
+	p.adminProblems(needPassword, func(field, format string, args ...any) {
+		if first == nil {
+			first = problem(field, format, args...)
+		}
+	})
+	return first
+}
+
+// planPort is a port the server listens on and the plan field it comes
+// from.
+type planPort struct {
+	service.Port
+	Field string
+}
+
+func (p Plan) ports() []planPort {
+	port := func(n int, field, name string) planPort {
+		return planPort{service.Port{Number: n, Proto: "tcp", Name: name}, field}
 	}
-	return nil
+	ports := []planPort{port(p.Port, "port", "web (HTTP)")}
+	if p.Access == AccessInternet || (p.Access == AccessLAN && p.LANHTTPS) {
+		ports = append(ports, port(p.HTTPSPort, "https_port", "web (HTTPS)"))
+	}
+	if p.Access == AccessInternet && p.Challenge == certs.HTTP01 {
+		ports = append(ports, port(p.HTTPPort, "http_port", "HTTP redirect"))
+	}
+	if p.SSH {
+		ports = append(ports, port(p.SSHPort, "ssh_port", "SSH"))
+	}
+	return ports
 }
 
 // Ports are the ports the server listens on, by what they are for.
 func (p Plan) Ports() []service.Port {
 	var ports []service.Port
-	ports = append(ports, service.Port{Number: p.Port, Proto: "tcp", Name: "web (HTTP)"})
-	if p.Access == AccessInternet {
-		ports = append(ports, service.Port{Number: p.HTTPSPort, Proto: "tcp", Name: "web (HTTPS)"})
-		if p.Challenge == certs.HTTP01 {
-			ports = append(ports, service.Port{Number: p.HTTPPort, Proto: "tcp", Name: "HTTP redirect"})
-		}
-	}
-	if p.SSH {
-		ports = append(ports, service.Port{Number: p.SSHPort, Proto: "tcp", Name: "SSH"})
+	for _, pt := range p.ports() {
+		ports = append(ports, pt.Port)
 	}
 	return ports
+}
+
+// PlainLocalOnly reports whether the plain HTTP port answers only on this
+// computer: with nothing else to reach, and when HTTPS (Cog's own, or
+// Tailscale's in front of it) is how everyone else connects.
+func (p Plan) PlainLocalOnly() bool {
+	switch p.Access {
+	case AccessLocal, AccessInternet, AccessTailscale:
+		return true
+	case AccessLAN:
+		return p.LANHTTPS
+	}
+	return false
 }
 
 // Forward is a rule to add to a router: its public port to this computer's.
@@ -397,7 +486,8 @@ type Forward struct {
 	Name   string
 }
 
-// Forwards are the router rules p needs, for internet access.
+// Forwards are the router rules p needs, for internet access through the
+// router (Tailscale and a proxy need none).
 func (p Plan) Forwards() []Forward {
 	if p.Access != AccessInternet {
 		return nil
@@ -425,17 +515,41 @@ func (p Plan) Config(base config.Config) config.Config {
 	cfg.Install = config.Install{Service: string(p.Scope), Dir: p.Dir, Account: p.Account()}
 	cfg.TLS = config.TLS{}
 	cfg.TrustedProxies = ""
+	// Plain HTTP stays, on this computer only when everyone else uses
+	// HTTPS, for the command line and anything set up to use it before.
+	if p.PlainLocalOnly() {
+		cfg.Addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Port))
+	} else {
+		cfg.Addr = ":" + strconv.Itoa(p.Port)
+	}
 	switch p.Access {
 	case AccessLocal:
-		cfg.Addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Port))
 		cfg.BaseURL = "http://localhost:" + strconv.Itoa(p.Port)
 	case AccessLAN:
-		cfg.Addr = ":" + strconv.Itoa(p.Port)
-		cfg.BaseURL = "http://" + net.JoinHostPort(LANAddress(), strconv.Itoa(p.Port))
+		if !p.LANHTTPS {
+			cfg.BaseURL = "http://" + net.JoinHostPort(LANAddress(), strconv.Itoa(p.Port))
+			break
+		}
+		lan := LANAddress()
+		cfg.BaseURL = "https://" + lan
+		if p.HTTPSPort != 443 {
+			cfg.BaseURL = "https://" + net.JoinHostPort(lan, strconv.Itoa(p.HTTPSPort))
+		}
+		cfg.TLS = config.TLS{
+			Mode:    certs.SelfSigned,
+			Addr:    ":" + strconv.Itoa(p.HTTPSPort),
+			Domains: SelfSignedNames(lan),
+		}
+	case AccessTailscale:
+		cfg.BaseURL = "https://" + p.TailscaleName
+		// tailscale serve connects from this computer and says who the
+		// visitor is in X-Forwarded-For.
+		cfg.TrustedProxies = "127.0.0.1/32,::1/128"
+		cfg.Install.Tailscale = TailscaleServe
+		if p.Funnel {
+			cfg.Install.Tailscale = TailscaleFunnel
+		}
 	case AccessInternet:
-		// Plain HTTP stays, on this computer only, for the command line
-		// and anything set up to use it before.
-		cfg.Addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Port))
 		cfg.BaseURL = "https://" + strings.TrimPrefix(p.Domain, "*.")
 		cfg.TLS = config.TLS{
 			Mode:        "acme",
@@ -456,7 +570,6 @@ func (p Plan) Config(base config.Config) config.Config {
 			cfg.TLS.CA = "staging"
 		}
 	case AccessProxy:
-		cfg.Addr = ":" + strconv.Itoa(p.Port)
 		cfg.BaseURL = strings.TrimSuffix(p.PublicURL, "/")
 		cfg.TrustedProxies = p.TrustedProxies
 	}
@@ -487,6 +600,24 @@ func lanAddress() string {
 	}
 	return "localhost"
 }
+
+// SelfSignedNames are the names a self-signed certificate covers: this
+// computer's names and its address on the network.
+func SelfSignedNames(lan string) []string {
+	names := []string{"localhost", "127.0.0.1"}
+	if host, err := Hostname(); err == nil && host != "" {
+		host = strings.ToLower(strings.TrimSuffix(host, ".local"))
+		names = append([]string{host, host + ".local"}, names...)
+	}
+	if lan != "" && lan != "localhost" {
+		names = append([]string{lan}, names...)
+	}
+	return names
+}
+
+// Hostname is this computer's name. A variable so that a test's pages do
+// not depend on the machine.
+var Hostname = os.Hostname
 
 // errElevation is an apply that needs administrator rights it could not
 // get.
