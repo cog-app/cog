@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"text/template"
@@ -379,6 +380,170 @@ func moveNoReplace(fp *files.Plugin, username, from, to string) error {
 		return fmt.Errorf("%s is already taken: %w", to, err)
 	}
 	return err
+}
+
+// RenameKind is a group of renames that move files the same way: the same
+// folders, up to their numbers and at most a folder level apart, with the
+// file names treated the same. A "*" segment is one that differed.
+type RenameKind struct {
+	From, To string
+	Count    int
+	Numbered int
+	Example  RenamePreview
+}
+
+type renameKind struct {
+	from, to        []string
+	count, numbered int
+	widened         bool
+	example         RenamePreview
+}
+
+var digitRun = regexp.MustCompile(`[0-9]+`)
+
+// renameShape is a rename's path segments with numbers generalised and the
+// file name told by how it changes rather than what it is.
+func renameShape(p RenamePreview) (from, to []string) {
+	oldDir, oldBase := path.Split(p.OldPath)
+	newDir, newBase := path.Split(p.NewPath)
+	if p.Numbered {
+		ext := path.Ext(newBase)
+		if i := strings.LastIndexByte(strings.TrimSuffix(newBase, ext), '_'); i >= 0 {
+			newBase = newBase[:i] + ext
+		}
+	}
+	segments := func(dir string) []string {
+		var out []string
+		for seg := range strings.SplitSeq(strings.Trim(dir, "/"), "/") {
+			if seg != "" {
+				out = append(out, digitRun.ReplaceAllString(seg, "#"))
+			}
+		}
+		return out
+	}
+	from, to = segments(oldDir), segments(newDir)
+	if newBase == oldBase {
+		from, to = append(from, "{name}"), append(to, "{name}")
+	} else {
+		from, to = append(from, digitRun.ReplaceAllString(oldBase, "#")), append(to, digitRun.ReplaceAllString(newBase, "#"))
+	}
+	return from, to
+}
+
+// absorbs reports whether a rename of the given shape belongs to the kind:
+// the same depth on both sides and at most one segment apart, never the
+// top folder, which is what tells one source or destination from another.
+// A kind widens by one segment only, or merging one neighbour at a time
+// would chain every kind into "*/*/*".
+func (k *renameKind) absorbs(from, to []string) (side []string, at int, ok bool) {
+	if len(from) != len(k.from) || len(to) != len(k.to) {
+		return nil, 0, false
+	}
+	diffs := 0
+	for _, pair := range []struct{ kind, shape []string }{{k.from, from}, {k.to, to}} {
+		for i := range pair.shape {
+			if pair.kind[i] == "*" || pair.kind[i] == pair.shape[i] {
+				continue
+			}
+			if i == 0 && len(pair.shape) > 1 {
+				return nil, 0, false
+			}
+			diffs++
+			side, at = pair.kind, i
+		}
+	}
+	if diffs == 1 && k.widened {
+		return nil, 0, false
+	}
+	return side, at, diffs <= 1
+}
+
+// RenameSummary is a long rename plan told by kinds rather than file by
+// file. Other counts renames of no kind once the limit of kinds was found.
+type RenameSummary struct {
+	Kinds []RenameKind
+	Other int
+}
+
+// renameDetailLimit is how many renames, or kinds of them, a preview lists.
+const renameDetailLimit = 100
+
+// SummarizeRenames groups renames into at most max kinds, largest first.
+func SummarizeRenames(previews []RenamePreview, max int) RenameSummary {
+	var sum RenameSummary
+	var found []*renameKind
+	seen := map[string]*renameKind{}
+	for _, p := range previews {
+		from, to := renameShape(p)
+		key := strings.Join(from, "/") + "\x00" + strings.Join(to, "/")
+		k := seen[key]
+		if k == nil {
+			for _, candidate := range found {
+				if side, at, ok := candidate.absorbs(from, to); ok {
+					if side != nil {
+						side[at] = "*"
+						candidate.widened = true
+					}
+					k = candidate
+					break
+				}
+			}
+		}
+		if k == nil {
+			if len(found) == max {
+				sum.Other++
+				continue
+			}
+			k = &renameKind{from: from, to: to, example: p}
+			found = append(found, k)
+		}
+		seen[key] = k
+		k.count++
+		if p.Numbered {
+			k.numbered++
+		}
+	}
+	slices.SortStableFunc(found, func(a, b *renameKind) int { return b.count - a.count })
+	for _, k := range found {
+		sum.Kinds = append(sum.Kinds, RenameKind{
+			From:     "/" + strings.Join(k.from, "/"),
+			To:       "/" + strings.Join(k.to, "/"),
+			Count:    k.count,
+			Numbered: k.numbered,
+			Example:  k.example,
+		})
+	}
+	return sum
+}
+
+// SkipKind is a reason photos are left alone, with how many and one of
+// them.
+type SkipKind struct {
+	Reason  string
+	Count   int
+	Example RenameSkip
+}
+
+var quoted = regexp.MustCompile(`“[^”]*”`)
+
+// SummarizeSkips groups skipped photos by their reason with the paths and
+// errors it quotes taken out, largest first.
+func SummarizeSkips(skipped []RenameSkip) []SkipKind {
+	var kinds []SkipKind
+	index := map[string]int{}
+	for _, s := range skipped {
+		reason := quoted.ReplaceAllString(s.Reason, "…")
+		reason, _, _ = strings.Cut(reason, ": ")
+		i, ok := index[reason]
+		if !ok {
+			i = len(kinds)
+			index[reason] = i
+			kinds = append(kinds, SkipKind{Reason: reason, Example: s})
+		}
+		kinds[i].Count++
+	}
+	slices.SortStableFunc(kinds, func(a, b SkipKind) int { return b.Count - a.Count })
+	return kinds
 }
 
 // ApplyRename executes the planned renames using the files plugin. It never

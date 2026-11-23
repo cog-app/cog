@@ -2109,6 +2109,45 @@ templ renameConflictsField(policy ConflictPolicy) {
 	</div>
 }
 
+templ renameKinds(sum RenameSummary) {
+	<p class="card-desc">{ "Too many to list one by one, so here they are by kind, with an example of each: " }<span class="mono">#</span> is any number, <span class="mono">*</span> any folder, and <span class="mono">{ "{name}" }</span> the file's own name.</p>
+	<table class="table table-stack gallery-rename-table">
+		<thead>
+			<tr>
+				<th>Now</th>
+				<th>After</th>
+				<th class="text-right">Files</th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, k := range sum.Kinds {
+				<tr>
+					<td data-label="Now" class="mono">
+						{ k.From }
+						<div class="text-xs text-muted">{ k.Example.OldPath }</div>
+					</td>
+					<td data-label="After" class="mono">
+						{ k.To }
+						<div class="text-xs text-muted">{ k.Example.NewPath }</div>
+					</td>
+					<td data-label="Files" class="text-right">
+						{ strconv.Itoa(k.Count) }
+						if k.Numbered > 0 {
+							<div class="text-xs text-muted" title="Another file has the name the pattern gives, so a number is added">{ strconv.Itoa(k.Numbered) } numbered</div>
+						}
+					</td>
+				</tr>
+			}
+			if sum.Other > 0 {
+				<tr>
+					<td colspan="2">{ "Of other kinds, past the first " + strconv.Itoa(renameDetailLimit) }</td>
+					<td data-label="Files" class="text-right">{ strconv.Itoa(sum.Other) }</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
 templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan, patternErr string, csrfToken string) {
 	@galleryLayout("/apps/gallery/settings") {
 		@ui.PageHeader("Rename preview", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
@@ -2135,27 +2174,31 @@ templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan,
 			} else {
 				<div class="card">
 					<h2 class="card-title">{ plural(len(plan.Renames), "file", "files") + " will be renamed" }</h2>
-					<table class="table table-stack gallery-rename-table">
-						<thead>
-							<tr>
-								<th>Now</th>
-								<th>After</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, p := range plan.Renames {
+					if len(plan.Renames) > renameDetailLimit {
+						@renameKinds(SummarizeRenames(plan.Renames, renameDetailLimit))
+					} else {
+						<table class="table table-stack gallery-rename-table">
+							<thead>
 								<tr>
-									<td data-label="Now" class="mono">{ p.OldPath }</td>
-									<td data-label="After" class="mono">
-										{ p.NewPath }
-										if p.Numbered {
-											<span class="badge badge-outline" title="Another file has the name the pattern gives">numbered</span>
-										}
-									</td>
+									<th>Now</th>
+									<th>After</th>
 								</tr>
-							}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								for _, p := range plan.Renames {
+									<tr>
+										<td data-label="Now" class="mono">{ p.OldPath }</td>
+										<td data-label="After" class="mono">
+											{ p.NewPath }
+											if p.Numbered {
+												<span class="badge badge-outline" title="Another file has the name the pattern gives">numbered</span>
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
 				</div>
 				<form method="post" action="/apps/gallery/rename/apply" class="form-actions">
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
@@ -2168,22 +2211,44 @@ templ renamePreviewPage(pattern string, policy ConflictPolicy, plan *RenamePlan,
 			if len(plan.Skipped) > 0 {
 				<div class="card">
 					<h2 class="card-title">{ plural(len(plan.Skipped), "file", "files") + " left alone" }</h2>
-					<table class="table table-stack gallery-rename-table">
-						<thead>
-							<tr>
-								<th>File</th>
-								<th>Why</th>
-							</tr>
-						</thead>
-						<tbody>
-							for _, s := range plan.Skipped {
+					if len(plan.Skipped) > renameDetailLimit {
+						<table class="table table-stack gallery-rename-table">
+							<thead>
 								<tr>
-									<td data-label="File" class="mono">{ s.Path }</td>
-									<td data-label="Why">{ s.Reason }</td>
+									<th>Why</th>
+									<th class="text-right">Files</th>
 								</tr>
-							}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								for _, k := range SummarizeSkips(plan.Skipped) {
+									<tr>
+										<td data-label="Why">
+											{ k.Reason }
+											<div class="text-xs text-muted"><span class="mono">{ k.Example.Path }</span>: { k.Example.Reason }</div>
+										</td>
+										<td data-label="Files" class="text-right">{ strconv.Itoa(k.Count) }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					} else {
+						<table class="table table-stack gallery-rename-table">
+							<thead>
+								<tr>
+									<th>File</th>
+									<th>Why</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, s := range plan.Skipped {
+									<tr>
+										<td data-label="File" class="mono">{ s.Path }</td>
+										<td data-label="Why">{ s.Reason }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
 				</div>
 			}
 		}
