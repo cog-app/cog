@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1743,20 +1744,68 @@ func (h *Pages) TogglePhotoStar(w http.ResponseWriter, r *http.Request) {
 	ui.Render(w, r, ui.Star(newFav, fmt.Sprintf("/apps/gallery/media/%d/star", id)))
 }
 
-// Duplicates renders the duplicate groups list.
+// duplicatesView is the duplicates list: one kind of group at a time.
+type duplicatesView struct {
+	Kind      DuplicateKind
+	Counts    map[DuplicateKind]int
+	Groups    []DuplicateGroup
+	Identical IdenticalSummary
+	Deleting  bool // identical copies are being deleted
+}
+
+// Duplicates lists the duplicate groups of the kind ?kind= names, or of the
+// first kind that has any.
 func (h *Pages) Duplicates(w http.ResponseWriter, r *http.Request) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	groups, err := ListDuplicateGroups(db)
-	if err != nil {
+	username := plugin.Username(r)
+	v := duplicatesView{}
+	if v.Counts, err = DuplicateKindCounts(db); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	kind, ok := ParseDuplicateKind(r.URL.Query().Get("kind"))
+	if !ok {
+		kind = DuplicateIdentical
+		for _, k := range DuplicateKinds {
+			if v.Counts[k] > 0 {
+				kind = k
+				break
+			}
+		}
+	}
+	v.Kind = kind
+	if v.Groups, err = ListDuplicateGroups(db, kind, duplicateGroupLimit); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if kind == DuplicateIdentical && v.Counts[kind] > 0 {
+		filesDB, err := h.plugin.ctx.PluginDB(username, plugin.OfPlugin("files"))
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if v.Identical, err = SummarizeIdentical(db, filesDB); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+	}
+	if job, ok := h.plugin.DedupeStatus(username); ok {
+		v.Deleting = job.Running()
+	}
 	plugin.SetTitle(w, "Duplicates")
-	ui.Render(w, r, duplicatesPage(r.URL.Path, groups))
+	ui.Render(w, r, duplicatesPage(r.URL.Path, v, plugin.CSRFToken(r)))
+}
+
+// duplicateGroupView is one group under review.
+type duplicateGroupView struct {
+	ID      int64
+	Kind    DuplicateKind
+	Members []DuplicateMember
+	Next    int64 // the group a review goes to after this one; 0 if none
 }
 
 // DuplicateGroupView renders a single duplicate group.
@@ -1771,13 +1820,63 @@ func (h *Pages) DuplicateGroupView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	members, err := DuplicateGroupMembers(db, id)
+	kind, err := DuplicateGroupKind(db, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	v := duplicateGroupView{ID: id, Kind: kind}
+	if v.Members, err = DuplicateGroupMembers(db, id); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if v.Next, _, err = NextDuplicateGroup(db, kind, id); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	filesDB, err := h.plugin.ctx.PluginDB(plugin.Username(r), plugin.OfPlugin("files"))
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if err := fillMemberSizes(filesDB, v.Members); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	plugin.SetTitle(w, "Duplicate Group")
-	ui.Render(w, r, duplicateGroupViewPage(r.URL.Path, id, members, plugin.CSRFToken(r)))
+	ui.Render(w, r, duplicateGroupViewPage(r.URL.Path, v, plugin.CSRFToken(r)))
+}
+
+// fillMemberSizes looks up each member's file size in one query.
+func fillMemberSizes(filesDB *sql.DB, members []DuplicateMember) error {
+	if len(members) == 0 {
+		return nil
+	}
+	ids := make([]any, len(members))
+	for i, m := range members {
+		ids[i] = m.Media.FileID
+	}
+	rows, err := filesDB.Query(`SELECT id, size FROM files WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, ids...)
+	if err != nil {
+		return fmt.Errorf("file sizes: %w", err)
+	}
+	defer rows.Close()
+	sizes := map[int64]int64{}
+	for rows.Next() {
+		var id, size int64
+		if err := rows.Scan(&id, &size); err != nil {
+			return fmt.Errorf("file sizes: %w", err)
+		}
+		sizes[id] = size
+	}
+	for i := range members {
+		members[i].Size = sizes[members[i].Media.FileID]
+	}
+	return rows.Err()
 }
 
 // SetDuplicateKeep sets the keep item in a duplicate group.
@@ -1821,11 +1920,36 @@ func (h *Pages) UnmarkDuplicate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media_id required", http.StatusBadRequest)
 		return
 	}
+	next, err := h.nextAfter(db, groupID)
+	if err != nil {
+		httperr.Internal(w, r, err)
+		return
+	}
 	if err := RemoveDuplicateMember(db, groupID, mediaID); err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	h.redirectAfterDuplicateChange(w, r, db, groupID, nil)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, next, nil)
+}
+
+// nextAfter is where a review goes once groupID is dealt with: the next
+// group of its kind, or the list of that kind when there is none.
+func (h *Pages) nextAfter(db *sql.DB, groupID int64) (string, error) {
+	kind, err := DuplicateGroupKind(db, groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "/apps/gallery/duplicates", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	next, ok, err := NextDuplicateGroup(db, kind, groupID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "/apps/gallery/duplicates?kind=" + kind.Slug(), nil
+	}
+	return fmt.Sprintf("/apps/gallery/duplicates/%d", next), nil
 }
 
 // deleteDuplicateFiles moves each member's file to the trash and drops it
@@ -1862,9 +1986,9 @@ func pruneDuplicateGroup(db *sql.DB, groupID int64) (bool, error) {
 	return true, nil
 }
 
-// redirectAfterDuplicateChange prunes the group and goes back to it, or to
-// the list when it is gone, saying which files could not be deleted.
-func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Request, db *sql.DB, groupID int64, failed []string) {
+// redirectAfterDuplicateChange prunes the group and goes back to it, or on
+// to next when it is gone, saying which files could not be deleted.
+func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Request, db *sql.DB, groupID int64, next string, failed []string) {
 	gone, err := pruneDuplicateGroup(db, groupID)
 	if err != nil {
 		httperr.Internal(w, r, err)
@@ -1872,7 +1996,7 @@ func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Requ
 	}
 	to := fmt.Sprintf("/apps/gallery/duplicates/%d", groupID)
 	if gone {
-		to = "/apps/gallery/duplicates"
+		to = next
 	}
 	if len(failed) > 0 {
 		flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", to)
@@ -1881,30 +2005,42 @@ func (h *Pages) redirectAfterDuplicateChange(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
-// DeleteNonKeepDuplicates deletes non-keep files in a duplicate group.
-func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) {
+// duplicateAction reads a duplicate action's group, its members, and where
+// the review goes after it.
+func (h *Pages) duplicateAction(w http.ResponseWriter, r *http.Request) (db *sql.DB, groupID int64, members []DuplicateMember, next string, ok bool) {
 	db, err := plugin.UserDB(r)
 	if err != nil {
 		httperr.Internal(w, r, err)
-		return
+		return nil, 0, nil, "", false
 	}
-	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	groupID, err = strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
+		return nil, 0, nil, "", false
+	}
+	if members, err = DuplicateGroupMembers(db, groupID); err != nil {
+		httperr.Internal(w, r, err)
+		return nil, 0, nil, "", false
+	}
+	if next, err = h.nextAfter(db, groupID); err != nil {
+		httperr.Internal(w, r, err)
+		return nil, 0, nil, "", false
+	}
+	return db, groupID, members, next, true
+}
+
+// DeleteNonKeepDuplicates deletes non-keep files in a duplicate group.
+func (h *Pages) DeleteNonKeepDuplicates(w http.ResponseWriter, r *http.Request) {
+	db, groupID, members, next, ok := h.duplicateAction(w, r)
+	if !ok {
 		return
 	}
-	username := plugin.Username(r)
-	members, err := DuplicateGroupMembers(db, groupID)
+	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), nonKeep(members))
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	failed, err := h.deleteDuplicateFiles(db, username, nonKeep(members))
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, next, failed)
 }
 
 // nonKeep is the members not marked to keep.
@@ -1918,44 +2054,10 @@ func nonKeep(members []DuplicateMember) []DuplicateMember {
 	return out
 }
 
-// DeleteAllNonKeep deletes non-keep files across all duplicate groups.
-func (h *Pages) DeleteAllNonKeep(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	members, err := NonKeepDuplicates(db)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), members)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	if err := PruneDuplicateGroups(db); err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	if len(failed) > 0 {
-		flashRedirect(w, r, "error", "Could not delete "+strings.Join(failed, ", ")+".", "/apps/gallery/duplicates")
-		return
-	}
-	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
-}
-
 // DeleteDuplicateMember deletes a single member from a duplicate group.
 func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
+	db, groupID, members, next, ok := h.duplicateAction(w, r)
+	if !ok {
 		return
 	}
 	mediaID, err := strconv.ParseInt(r.FormValue("media_id"), 10, 64)
@@ -1963,68 +2065,82 @@ func (h *Pages) DeleteDuplicateMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "media_id required", http.StatusBadRequest)
 		return
 	}
-	username := plugin.Username(r)
-	m, err := GetMedia(db, mediaID)
-	if errors.Is(err, sql.ErrNoRows) {
+	i := slices.IndexFunc(members, func(m DuplicateMember) bool { return m.Media.ID == mediaID })
+	if i < 0 {
 		http.NotFound(w, r)
 		return
 	}
+	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), members[i:i+1])
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	// Deleting the media drops its membership too (ON DELETE CASCADE).
-	failed, err := h.deleteDuplicateFiles(db, username, []DuplicateMember{{Media: *m}})
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, next, failed)
 }
 
 // DeleteAllDuplicates deletes all files in a duplicate group, including the keep.
 func (h *Pages) DeleteAllDuplicates(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
+	db, groupID, members, next, ok := h.duplicateAction(w, r)
+	if !ok {
+		return
+	}
+	failed, err := h.deleteDuplicateFiles(db, plugin.Username(r), members)
 	if err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	username := plugin.Username(r)
-	members, err := DuplicateGroupMembers(db, groupID)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	failed, err := h.deleteDuplicateFiles(db, username, members)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	h.redirectAfterDuplicateChange(w, r, db, groupID, failed)
+	h.redirectAfterDuplicateChange(w, r, db, groupID, next, failed)
 }
 
-// DismissDuplicateGroup removes a group from the duplicates list without deleting files.
+// DismissDuplicateGroup removes a group from the duplicates list without
+// deleting files, and goes on to the next.
 func (h *Pages) DismissDuplicateGroup(w http.ResponseWriter, r *http.Request) {
-	db, err := plugin.UserDB(r)
-	if err != nil {
-		httperr.Internal(w, r, err)
-		return
-	}
-	groupID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
+	db, groupID, _, next, ok := h.duplicateAction(w, r)
+	if !ok {
 		return
 	}
 	if err := DismissDuplicateGroup(db, groupID); err != nil {
 		httperr.Internal(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+const dedupeStatusURL = "/apps/gallery/duplicates/deleting"
+
+// DedupeStart moves every identical copy to the trash in the background.
+func (h *Pages) DedupeStart(w http.ResponseWriter, r *http.Request) {
+	if err := h.plugin.StartDedupe(plugin.Username(r)); err != nil {
+		if errors.Is(err, errDedupeRunning) {
+			flashRedirect(w, r, "error", "Identical copies are already being deleted.", dedupeStatusURL)
+			return
+		}
+		h.serverError(w, r, err)
+		return
+	}
+	http.Redirect(w, r, dedupeStatusURL, http.StatusSeeOther)
+}
+
+// DedupeStatus shows the deletion of identical copies running, or the last.
+func (h *Pages) DedupeStatus(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.plugin.DedupeStatus(plugin.Username(r))
+	if !ok {
+		http.Redirect(w, r, "/apps/gallery/duplicates", http.StatusSeeOther)
+		return
+	}
+	plugin.SetTitle(w, "Deleting identical copies")
+	ui.Render(w, r, dedupeStatusPage(job))
+}
+
+// DedupeStatusPartial is the deletion's progress card, which polls itself
+// while it runs.
+func (h *Pages) DedupeStatusPartial(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.plugin.DedupeStatus(plugin.Username(r))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	ui.Render(w, r, dedupeJobCard(job))
 }
 
 // RenamePreview shows what renaming every photo with ?pattern= would do. It

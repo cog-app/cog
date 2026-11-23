@@ -254,7 +254,11 @@ func (p *Plugin) scanUser(ctx context.Context, username string) (warnings []stri
 	if err := report.time("clustering", func() error { return p.clusterChanged(galleryDB, sysDB, username) }); err != nil {
 		warn("clustering", err)
 	}
-	if err := report.time("duplicates", func() error { return p.detectDuplicates(galleryDB) }); err != nil {
+	if err := report.time("duplicates", func() error {
+		more, err := p.detectDuplicates(ctx, galleryDB, filesDB, username)
+		remaining = remaining || more
+		return err
+	}); err != nil {
 		warn("duplicates", err)
 	}
 

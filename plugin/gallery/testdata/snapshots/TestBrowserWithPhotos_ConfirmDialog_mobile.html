@@ -271,19 +271,19 @@
               <nav aria-label="Breadcrumb" class="breadcrumbs">
                 <ol>
                   <li>
-                    <a href="/apps/gallery/duplicates">
+                    <a href="/apps/gallery/duplicates?kind=similar">
                       Duplicates
                     </a>
                   </li>
                   <li>
                     <span aria-current="page">
-                      Duplicate group
+                      Similar
                     </span>
                   </li>
                 </ol>
               </nav>
               <h1>
-                Duplicate group
+                Similar
               </h1>
             </div>
             <div class="page-actions">
@@ -329,19 +329,24 @@
               </div>
             </div>
           </header>
+          <p class="text-sm text-muted mb-3">
+            Photos that look alike: bursts taken seconds apart, edits and crops. They are not copies, so look before deleting.
+          </p>
           <div class="gallery-dupes">
             <div class="card gallery-dupe is-keep">
               <a class="gallery-thumb" href="/apps/gallery/photo/7">
                 <img alt="IMG_0007.png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/7/thumbnail?size=256" />
               </a>
               <div class="gallery-dupe-body">
-                <span class="badge badge-success">
-                  <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                    <polyline points="22 4 12 14.01 9 11.01" />
-                  </svg>
-                  Keep
-                </span>
+                <div>
+                  <span class="badge badge-success">
+                    <svg aria-hidden="true" fill="none" height="18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="18">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                      <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    Keep
+                  </span>
+                </div>
                 <dl class="gallery-meta">
                   <dt>
                     File
@@ -350,10 +355,28 @@
                     IMG_0007.png
                   </dd>
                   <dt>
+                    Folder
+                  </dt>
+                  <dd>
+                    /Photos
+                  </dd>
+                  <dt>
+                    Taken
+                  </dt>
+                  <dd>
+                    28 Jun 2025 15:30:00
+                  </dd>
+                  <dt>
                     Size
                   </dt>
                   <dd>
-                    400 × 300
+                    400 × 300, 2.1 KB
+                  </dd>
+                  <dt>
+                    Location
+                  </dt>
+                  <dd>
+                    No
                   </dd>
                 </dl>
                 <div class="gallery-dupe-actions">
@@ -385,6 +408,7 @@
                 <img alt="IMG_0007 (copy).png" loading="lazy" onerror="this.parentElement.classList.add('is-missing')" src="/apps/gallery/api/media/8/thumbnail?size=256" />
               </a>
               <div class="gallery-dupe-body">
+                <div />
                 <dl class="gallery-meta">
                   <dt>
                     File
@@ -393,16 +417,34 @@
                     IMG_0007 (copy).png
                   </dd>
                   <dt>
+                    Folder
+                  </dt>
+                  <dd>
+                    /Photos
+                  </dd>
+                  <dt>
+                    Taken
+                  </dt>
+                  <dd>
+                    27 Jun 2025 15:30:00
+                  </dd>
+                  <dt>
                     Size
                   </dt>
                   <dd>
-                    400 × 300
+                    400 × 300, 2.1 KB
                   </dd>
                   <dt>
-                    Difference
+                    Location
                   </dt>
                   <dd>
-                    2
+                    No
+                  </dd>
+                  <dt>
+                    Match
+                  </dt>
+                  <dd>
+                    Fingerprint 2 bits apart
                   </dd>
                 </dl>
                 <div class="gallery-dupe-actions">

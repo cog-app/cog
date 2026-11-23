@@ -166,7 +166,8 @@ CREATE INDEX IF NOT EXISTS idx_rename_log_batch ON rename_log(batch_id);
 
 CREATE TABLE IF NOT EXISTS duplicate_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    kind INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS duplicate_members (
@@ -174,6 +175,7 @@ CREATE TABLE IF NOT EXISTS duplicate_members (
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     is_keep INTEGER NOT NULL DEFAULT 0,
     distance REAL NOT NULL DEFAULT 0.0,
+    score REAL NOT NULL DEFAULT -1,
     PRIMARY KEY (group_id, media_id)
 );
 
@@ -191,3 +193,25 @@ CREATE TABLE IF NOT EXISTS duplicate_exclusions (
 CREATE TABLE IF NOT EXISTS duplicate_keeps (
     media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE
 );
+
+-- A whole-file hash, taken only of files whose content key another shares,
+-- and good while the media's content key is still the one it was taken at.
+CREATE TABLE IF NOT EXISTS media_hashes (
+    media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+    content_key TEXT NOT NULL,
+    sha256 TEXT NOT NULL
+);
+
+-- How alike two photos' pixels are, kept because measuring means decoding
+-- both thumbnails; good while both content keys are the ones measured.
+CREATE TABLE IF NOT EXISTS duplicate_pairs (
+    media_a INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    media_b INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    key_a TEXT NOT NULL,
+    key_b TEXT NOT NULL,
+    score REAL NOT NULL,
+    PRIMARY KEY (media_a, media_b),
+    CHECK (media_a < media_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_duplicate_pairs_b ON duplicate_pairs(media_b);
