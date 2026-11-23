@@ -25,7 +25,9 @@ func docsCmd() *cobra.Command {
 			"as they read outside a running Cog.",
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			d, err := docs.Load(cogdocs.FS, docs.Data{Site: true, Version: version.Get()})
+			// The website is built from master as often as from a release:
+			// it names a version only when the build was stamped with one.
+			d, err := docs.Load(cogdocs.FS, docs.Data{Site: true, Version: version.Version})
 			if err != nil {
 				return err
 			}
