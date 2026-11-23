@@ -37,6 +37,7 @@ import (
 	legolog "github.com/go-acme/lego/v4/log"
 	"github.com/go-acme/lego/v4/registration"
 
+	"git.duckfam.us/jj-software/cog/internal/atomicfile"
 	"git.duckfam.us/jj-software/cog/internal/config"
 )
 
@@ -487,25 +488,15 @@ func (m *Manager) saveAccount(a *account) error {
 	return writeFile(filepath.Join(m.accountDir(), "account.json"), data)
 }
 
-// certPaths are where the certificate for the configured names is kept.
-func (m *Manager) certPaths() (cert, key string) {
-	base := filepath.Join(m.dir, "certificates", sanitize(strings.ReplaceAll(m.cfg.Domains[0], "*", "_wildcard")))
-	return base + ".crt", base + ".key"
+// certBase is where the certificate for the configured names is kept,
+// without an extension: see storePair.
+func (m *Manager) certBase() string {
+	return filepath.Join(m.dir, "certificates", sanitize(strings.ReplaceAll(m.cfg.Domains[0], "*", "_wildcard")))
 }
 
 func (m *Manager) store(res *certificate.Resource) error {
-	certPath, keyPath := m.certPaths()
-	if err := os.MkdirAll(filepath.Dir(certPath), 0o700); err != nil {
-		return fmt.Errorf("certificate directory: %w", err)
-	}
-	cert, err := parsePair(res.Certificate, res.PrivateKey)
+	cert, err := storePair(m.certBase(), res.Certificate, res.PrivateKey)
 	if err != nil {
-		return err
-	}
-	if err := writeFile(keyPath, res.PrivateKey); err != nil {
-		return err
-	}
-	if err := writeFile(certPath, res.Certificate); err != nil {
 		return err
 	}
 	m.set(cert)
@@ -513,8 +504,49 @@ func (m *Manager) store(res *certificate.Resource) error {
 }
 
 func (m *Manager) loadStored() error {
-	certPath, keyPath := m.certPaths()
-	return m.loadPair(certPath, keyPath, true)
+	return m.loadPairAt(m.certBase())
+}
+
+// storePair keeps a certificate and its key at base+".pem", together, so
+// that one rename replaces both: kept apart, a crash between writing the
+// one and the other leaves a key that does not match its certificate,
+// and a server that will not start. It removes the separate .crt and .key
+// an earlier Cog kept.
+func storePair(base string, certPEM, keyPEM []byte) (*tls.Certificate, error) {
+	cert, err := parsePair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(base), 0o700); err != nil {
+		return nil, fmt.Errorf("certificate directory: %w", err)
+	}
+	if err := writeFile(base+".pem", slices.Concat(certPEM, keyPEM)); err != nil {
+		return nil, err
+	}
+	for _, ext := range []string{".crt", ".key"} {
+		if err := os.Remove(base + ext); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("remove the old %s: %w", filepath.Base(base+ext), err)
+		}
+	}
+	return cert, nil
+}
+
+// loadPairAt loads what storePair kept at base, or the separate .crt and
+// .key an earlier Cog kept; nothing if there is neither.
+func (m *Manager) loadPairAt(base string) error {
+	pemData, err := os.ReadFile(base + ".pem")
+	if errors.Is(err, fs.ErrNotExist) {
+		return m.loadPair(base+".crt", base+".key", true)
+	}
+	if err != nil {
+		return fmt.Errorf("read certificate: %w", err)
+	}
+	cert, err := parsePair(pemData, pemData)
+	if err != nil {
+		return fmt.Errorf("%s: %w", base+".pem", err)
+	}
+	m.set(cert)
+	return nil
 }
 
 func (m *Manager) loadFiles() error {
@@ -566,14 +598,7 @@ func parsePair(certPEM, keyPEM []byte) (*tls.Certificate, error) {
 
 // writeFile replaces path with data, readable only by its owner.
 func writeFile(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return errors.Join(fmt.Errorf("write %s: %w", filepath.Base(path), err), os.Remove(tmp))
-	}
-	return nil
+	return atomicfile.WriteFile(path, data, 0o600)
 }
 
 func listen(addr string) (net.Listener, error) {

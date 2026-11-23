@@ -68,7 +68,11 @@ it (it holds the admin's password) and appends to a log the wizard tails.
    service account may bind 80/443 only inside its unit (ambient
    `CAP_NET_BIND_SERVICE`). A failure is a warning: the server retries
    hourly;
-6. gives the folder to the service account (`chown -R`, `icacls`);
+6. gives the folder to the service account (`chown -R`; on Windows
+   `icacls`, which also stops it inheriting `C:\ProgramData`'s grant to
+   every local user and leaves only SYSTEM, Administrators and the
+   service). The folder must be new, empty or an earlier install's (it
+   has `cog.toml`), so this cannot hand over a folder of other things;
 7. runs `cog setup finish` *from the installed binary, as the service
    account*: it opens the database (migrating it) and makes or resets the
    admin. Run as that account so what it makes belongs to the server;
@@ -147,25 +151,36 @@ including tags, to GitHub. A tag `v*` there runs
   on `windows-2022`), darwin arm64, and darwin amd64 cross-compiled by
   clang on the arm64 runner. `-X .../internal/version.Version=<tag>`;
   each native binary must report its tag (`cog version`);
-- `publish` writes `SHA256SUMS` and creates the GitHub release (a tag with
-  a `-` suffix is a prerelease);
-- `pages` rebuilds the site: the docs (`cog docs`, see below) and
-  `releases.json`, which `go tool release manifest` builds from every
-  GitHub release and its `SHA256SUMS`, signed with `COG_RELEASE_KEY`. The
-  site is its own repository, `cog-app/cog-app.github.io`, served from its
-  `main` branch at <https://cog-app.github.io>; the job pushes the result
-  there with a deploy key. It also runs on every push to master.
+- `publish` (in the `release` environment, the only job with
+  `COG_RELEASE_KEY`) writes `SHA256SUMS` for people and signs
+  `release.json`, the record of each binary's SHA-256 and size made from
+  the files it just built (`go tool release record`), and creates the
+  GitHub release with both (a tag with a `-` suffix is a prerelease).
+  Then it builds `releases.json` (`go tool release manifest`) from every
+  GitHub release, taking each binary's checksum from its release's signed
+  record, never from what is attached now: a release without one is left
+  out, and a record that does not verify, or a binary whose size differs
+  from it, fails the run. It signs the list too;
+- `pages` rebuilds the site: the docs (`cog docs`, see below) and, from a
+  release run, the signed `releases.json`. The site is its own
+  repository, `cog-app/cog-app.github.io`, served from its `main` branch
+  at <https://cog-app.github.io>; the job pushes the result there with a
+  deploy key. It also runs on every push to master, without the key,
+  keeping the `releases.json` the site has.
 
 **Docs.** The website is the documentation every Cog serves at `/docs/`
 (readable signed out, linked from the account menu as Help). `DOCS/` is a
 Go package embedding the Markdown; `internal/docs` renders it with one
 `html/template` layout in Cog's stylesheet, for both. `cog docs --out
 public` writes the static site: the pages, `search.json`, and the
-`ui/static` files they load. Search is the same in both: every query word
-must start a word of the page, the title counting most; Cog's navbar
-search lists matching pages under Help (`Docs.Search`), and the docs'
-own box runs `docs-search.js` over `search.json`, so the website searches
-with no server. Each page is a `text/template` first: `.Site` is true on
+`ui/static` files they load. Cog's navbar search finds pages in an in-memory Bleve
+index of their own, shared by every user (title matches first), and lists
+them under Help: first on a docs page, after the user's own results
+elsewhere, and without the Administration pages for anyone else. The
+website's box runs `docs-search.js` over `search.json`, so it searches
+with no server. `ui.Help` puts a help icon beside a feature: a link to a
+heading of the docs, whose part (`/docs/page.html?part=id`) shows in a
+popover on hover. Each page is a `text/template` first: `.Site` is true on
 the website, `.Version` is Cog's, and `{{ skip }}` leaves a page out
 (installation, inside an installed Cog). A link to a page left out of Cog
 goes to the website instead; a link to no page fails the build, and
@@ -183,10 +198,12 @@ Assets are named `cog-<goos>-<goarch>[.exe]`; the manifest keys them by
    `main`, `/`. Add a deploy key with write access (`ssh-keygen -t
    ed25519`) and put its private half in `cog-app/cog` as the secret
    `PAGES_DEPLOY_KEY`.
-3. `cog-app/cog`: Settings > Secrets > Actions: `COG_RELEASE_KEY`, the private
-   key from `go tool release keygen` (base64 Ed25519 seed). The public half
-   is in `internal/update/keys.go`. `manifest` refuses a key that is not
-   trusted there, so a mismatch fails the workflow rather than every
+3. `cog-app/cog`: Settings > Environments > `release`: limit it to tags
+   `v*`, and add the secret `COG_RELEASE_KEY`, the private key from `go
+   tool release keygen` (base64 Ed25519 seed). Not a repository secret:
+   then every workflow could read it. The public half is in
+   `internal/update/keys.go`. `record` and `manifest` refuse a key that is
+   not trusted there, so a mismatch fails the workflow rather than every
    client.
 4. If the repository or Pages address differs from
    `https://cog-app.github.io/releases.json`, change
@@ -199,9 +216,11 @@ To release: `git tag v1.2.3 && git push origin v1.2.3` on GitLab.
 The trust root is the signature, not the transport: `releases.json.sig` is
 an Ed25519 signature of `releases.json` by a key compiled into the binary
 (`TrustedKeys`, a list so the key can be rotated across a release), and the
-manifest carries each binary's SHA-256 and size. A compromised GitHub
-account can withhold updates, not supply them, unless it also holds
-`COG_RELEASE_KEY`.
+manifest carries each binary's SHA-256 and size, from the record signed
+when the binary was built. Replacing a release's files on GitHub does not
+change what installs accept; only a release run, for a tag, signs. A
+compromised GitHub account can withhold updates, not supply them, unless
+it can also run the release environment's key.
 
 `Checker` (wired by `cog_update.go`, absent with `nosetup`) checks a
 minute after start and daily (`update.check`), and admins can check and
@@ -219,7 +238,8 @@ replace a running program's file, it moves the old one to `cog.exe.old`
 server with `errRestart`, `Main` closes everything and `update.Restart`
 either exits with status 75 for the service manager to start it again
 (systemd `Restart=always`, launchd `KeepAlive`, Windows recovery actions on
-non-crash failures), or, when nothing supervises it, `exec`s itself (Unix)
+non-crash failures; setup's unit and job set `COG_SUPERVISED=1` to say so,
+and a Windows service knows it is one), or, when nothing supervises it, `exec`s itself (Unix)
 or starts a new process and exits (Windows).
 
 The service account owns the install folder, binary included, so the

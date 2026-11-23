@@ -1,6 +1,8 @@
 package cog
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"testing"
@@ -35,5 +37,23 @@ func TestServerSpeaksCleartextHTTP2(t *testing.T) {
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.want, res.Proto, tc.name)
 		res.Body.Close()
+	}
+}
+
+// TestRunServiceRestartsAfterUncleanStop: an update restarts the server
+// even when stopping did not go cleanly, and says what went wrong.
+func TestRunServiceRestartsAfterUncleanStop(t *testing.T) {
+	slow := errors.New("shutdown :8580: context deadline exceeded")
+	err := runService(context.Background(), func(ctx context.Context, restart func()) error {
+		restart()
+		<-ctx.Done()
+		return slow
+	})
+	if !errors.Is(err, errRestart) || !errors.Is(err, slow) {
+		t.Fatalf("got %v, want both the restart and the error", err)
+	}
+	err = runService(context.Background(), func(ctx context.Context, restart func()) error { return slow })
+	if errors.Is(err, errRestart) || !errors.Is(err, slow) {
+		t.Fatalf("without an update: got %v", err)
 	}
 }

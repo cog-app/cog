@@ -3,6 +3,7 @@ package docs
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -76,10 +77,36 @@ func (d *Docs) Render(w io.Writer, p *Page, a Assets) error {
 	return nil
 }
 
+// clearSite empties dir for a new build. It only removes a folder that is
+// empty or holds an earlier build (its search.json), so that a mistyped
+// --out cannot delete something else.
+func clearSite(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("docs: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(dir, "search.json")); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("docs: %s is not empty and holds no earlier build of the website; choose another folder", dir)
+		}
+		return fmt.Errorf("docs: %w", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("docs: %w", err)
+	}
+	return nil
+}
+
 // Write builds the website in dir, which it replaces: every page,
 // search.json, and static (Cog's ui/static) StaticFiles under static/.
 func (d *Docs) Write(dir string, static fs.FS) error {
-	if err := os.RemoveAll(dir); err != nil {
+	if err := clearSite(dir); err != nil {
 		return err
 	}
 	write := func(name string, b []byte) error {

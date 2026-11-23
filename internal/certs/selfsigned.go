@@ -46,9 +46,9 @@ func DefaultSelfSignedNames() []string {
 // one when there is none, it does not cover the configured names, or it is
 // near expiry.
 func (m *Manager) ensureSelfSigned(now time.Time) error {
-	certPath, keyPath := m.selfPaths()
+	base := filepath.Join(m.selfDir, "self-signed")
 	if !m.Ready() {
-		if err := m.loadPair(certPath, keyPath, true); err != nil {
+		if err := m.loadPairAt(base); err != nil {
 			return err
 		}
 	}
@@ -59,27 +59,13 @@ func (m *Manager) ensureSelfSigned(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	cert, err := parsePair(certPEM, keyPEM)
+	cert, err := storePair(base, certPEM, keyPEM)
 	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(m.selfDir, 0o700); err != nil {
-		return fmt.Errorf("certificate directory: %w", err)
-	}
-	if err := writeFile(keyPath, keyPEM); err != nil {
-		return err
-	}
-	if err := writeFile(certPath, certPEM); err != nil {
 		return err
 	}
 	m.set(cert)
 	m.log.Info("made a self-signed certificate", "names", m.cfg.Domains, "sha256", Fingerprint(cert.Leaf))
 	return nil
-}
-
-func (m *Manager) selfPaths() (cert, key string) {
-	base := filepath.Join(m.selfDir, "self-signed")
-	return base + ".crt", base + ".key"
 }
 
 // selfSign makes a certificate for names (host names and IP addresses),

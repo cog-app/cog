@@ -5,8 +5,10 @@
 //
 // Trust rests on the signature, not on the transport: releases.json is
 // signed with an Ed25519 key whose public half is compiled in (keys.go),
-// and it carries each binary's SHA-256. A compromised GitHub Pages or
-// Releases can withhold an update but cannot supply one.
+// and it carries each binary's SHA-256, from the record the release
+// workflow signed when it built the binary (internal/cmd/release). A
+// compromised GitHub Pages or Releases can withhold an update but cannot
+// supply one.
 package update
 
 import (

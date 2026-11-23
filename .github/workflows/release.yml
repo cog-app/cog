@@ -1,6 +1,12 @@
 # Builds the binaries for a tag pushed to the GitHub mirror (GitLab pushes
-# tags there), publishes them as a GitHub release, and republishes the docs
-# site with the signed release list the updater reads.
+# tags there), publishes them as a GitHub release with a signed record of
+# what was built, and republishes the docs site with the signed release
+# list the updater reads.
+#
+# This is the only workflow with the signing key (COG_RELEASE_KEY), and it
+# signs the checksums of the binaries it has just built: what is attached
+# to a release later cannot change what installs accept. Keep the secret
+# in the "release" environment, limited to v* tags.
 #
 # Each platform builds on a runner of its own: Cog needs cgo (go-sqlite3,
 # onnxruntime_go), and a native C compiler is simpler and more faithful
@@ -59,6 +65,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-24.04
+    environment: release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -70,6 +77,10 @@ jobs:
           merge-multiple: true
       - name: Checksums
         run: go tool release sums -out dist/SHA256SUMS dist/cog-*
+      - name: Sign the record of the binaries
+        env:
+          COG_RELEASE_KEY: ${{ secrets.COG_RELEASE_KEY }}
+        run: go tool release record -version "$GITHUB_REF_NAME" -out dist/release.json dist/cog-*
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -77,10 +88,21 @@ jobs:
           pre=""
           case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" dist/* --title "Cog $GITHUB_REF_NAME" --generate-notes --verify-tag $pre
+      - name: Release list
+        env:
+          COG_RELEASE_KEY: ${{ secrets.COG_RELEASE_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: go tool release manifest -repo "$GITHUB_REPOSITORY" -out release-list/releases.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-list
+          path: release-list/*
 
   # A release made with the workflow's token starts no other workflow, so
   # the docs site (and releases.json) is republished from here.
   pages:
     needs: publish
     uses: ./.github/workflows/pages.yml
+    with:
+      release_list: true
     secrets: inherit

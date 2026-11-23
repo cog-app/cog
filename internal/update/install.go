@@ -88,6 +88,9 @@ func Install(ctx context.Context, client *http.Client, rel *Release, platform, e
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return fmt.Errorf("make %s executable: %w", tmp, err)
 	}
+	if err := keepOwner(tmp, exe); err != nil {
+		return err
+	}
 	if err := checkRuns(ctx, tmp, rel.Version); err != nil {
 		return err
 	}

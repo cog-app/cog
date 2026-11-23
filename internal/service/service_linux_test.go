@@ -14,6 +14,7 @@ func TestUnit(t *testing.T) {
 	require.Contains(t, unit, `ExecStart="/opt/my cog/bin/cog" serve --config "/opt/my cog/cog.toml"`+"\n")
 	require.Contains(t, unit, "User=cog\n")
 	require.Contains(t, unit, "Restart=always\n", "an update's exit starts the new binary")
+	require.Contains(t, unit, "Environment=COG_SUPERVISED=1\n", "which the server knows it is under")
 	require.Contains(t, unit, "AmbientCapabilities=CAP_NET_BIND_SERVICE\n")
 	require.Contains(t, unit, "WantedBy=multi-user.target\n")
 

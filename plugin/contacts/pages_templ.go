@@ -2945,7 +2945,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var150 string
 		templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 641, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 642, Col: 10}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
 		if templ_7745c5c3_Err != nil {
@@ -2962,7 +2962,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var151 string
 		templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(intro)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 643, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 644, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 		if templ_7745c5c3_Err != nil {
@@ -2993,7 +2993,7 @@ func davAccessCard(id, title, intro, davURL, username string) templ.Component {
 		var templ_7745c5c3_Var152 string
 		templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(username)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 652, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `plugin/contacts/pages.templ`, Line: 653, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 		if templ_7745c5c3_Err != nil {

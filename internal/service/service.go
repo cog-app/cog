@@ -27,6 +27,11 @@ const (
 	User Scope = "user"
 )
 
+// SupervisedEnv is set to "1" in the environment of a Cog run by a service
+// setup installed, whose manager starts it again when it exits. An update
+// exits for it to; a Cog without it restarts itself.
+const SupervisedEnv = "COG_SUPERVISED"
+
 // Spec describes a service.
 type Spec struct {
 	Name        string // "cog"
@@ -68,4 +73,21 @@ type Port struct {
 	Number int
 	Proto  string // "tcp"
 	Name   string // what it is for
+}
+
+// giveDirArgs are icacls's arguments for Windows' GiveDir. The install
+// directory is under C:\ProgramData, whose permissions let every local
+// user read what is in it, and add files to it: the server's database,
+// TLS keys, DNS credentials and everyone's files. So dir stops inheriting
+// them (/inheritance:r) and grants, in their place, full control to
+// SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544), named by SID so
+// that a Windows in another language finds them, and change to the
+// service's account. The grants are inheritable, and Windows hands them
+// down to what is already in dir, in place of what it inherited.
+func giveDirArgs(dir, account string) []string {
+	return []string{dir, "/inheritance:r",
+		"/grant:r", "*S-1-5-18:(OI)(CI)F",
+		"/grant:r", "*S-1-5-32-544:(OI)(CI)F",
+		"/grant:r", account + ":(OI)(CI)M",
+		"/Q"}
 }

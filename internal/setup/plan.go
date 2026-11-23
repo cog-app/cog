@@ -18,6 +18,7 @@ package setup
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/mail"
 	"os"
@@ -297,6 +298,26 @@ func (p *Plan) Validate() error {
 	return nil
 }
 
+// dirProblem says why Cog cannot be installed in dir, or "". Cog fills the
+// folder, and a system install gives all of it to the server's account,
+// so it must be new, empty, or an earlier install's (it has cog.toml): not
+// a folder of other things, such as /srv or a home folder.
+func dirProblem(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) || err == nil && len(entries) == 0 {
+		return ""
+	}
+	if err != nil {
+		return fmt.Sprintf("Cannot read %s: %v.", dir, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.FileName)); err == nil {
+		return ""
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Sprintf("Cannot read %s: %v.", dir, err)
+	}
+	return fmt.Sprintf("%s already holds other files. Choose a new or empty folder, or the folder of an earlier Cog install.", dir)
+}
+
 // Problems are everything wrong with p, in the order the wizard asks
 // about them, so a page can show the ones about its own fields. err is a
 // plan no wizard makes (an unknown mode).
@@ -326,6 +347,8 @@ func (p *Plan) Problems() (probs []Problem, err error) {
 	}
 	if !filepath.IsAbs(p.Dir) {
 		add("dir", "The folder must be a full path, such as %s.", examplePath())
+	} else if msg := dirProblem(p.Dir); msg != "" {
+		add("dir", "%s", msg)
 	}
 	port("port", p.Port)
 	switch p.Access {

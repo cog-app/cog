@@ -2,6 +2,7 @@ package docs
 
 import (
 	"bytes"
+	"errors"
 	"io/fs"
 	"net/http"
 	"os"
@@ -192,4 +193,31 @@ func TestPart(t *testing.T) {
 	require.False(t, ok, "the title is the introduction")
 	_, ok = p.Part("missing")
 	require.False(t, ok)
+}
+
+// TestWriteRefuses: the website replaces an earlier build, but not a
+// folder that holds something else.
+func TestWriteRefuses(t *testing.T) {
+	d, err := Load(testFS, Data{Site: true})
+	require.NoError(t, err)
+	static := fstest.MapFS{}
+	for _, name := range StaticFiles {
+		static[name] = file("x")
+	}
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "notes.txt")
+	require.NoError(t, os.WriteFile(keep, []byte("mine"), 0o600))
+	err = d.Write(dir, static)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "holds no earlier build")
+	_, err = os.Stat(keep)
+	require.NoError(t, err, "left alone")
+
+	site := filepath.Join(dir, "site")
+	require.NoError(t, d.Write(site, static))
+	stale := filepath.Join(site, "stale.html")
+	require.NoError(t, os.WriteFile(stale, []byte("old"), 0o600))
+	require.NoError(t, d.Write(site, static), "over an earlier build")
+	_, err = os.Stat(stale)
+	require.True(t, errors.Is(err, fs.ErrNotExist), "the earlier build is replaced")
 }

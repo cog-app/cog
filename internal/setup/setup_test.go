@@ -30,6 +30,11 @@ func newPlan(t *testing.T) Plan {
 	return p
 }
 
+func must(t *testing.T, err error) {
+	t.Helper()
+	require.NoError(t, err)
+}
+
 func TestValidate(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -38,6 +43,12 @@ func TestValidate(t *testing.T) {
 	}{
 		{"defaults", func(*Plan) {}, ""},
 		{"relative folder", func(p *Plan) { p.Dir = "cog" }, "dir"},
+		{"folder of other things", func(p *Plan) { must(t, os.WriteFile(filepath.Join(p.Dir, "notes.txt"), nil, 0o600)) }, "dir"},
+		{"earlier install", func(p *Plan) {
+			must(t, os.WriteFile(filepath.Join(p.Dir, "notes.txt"), nil, 0o600))
+			must(t, os.WriteFile(filepath.Join(p.Dir, "cog.toml"), nil, 0o600))
+		}, ""},
+		{"new folder", func(p *Plan) { p.Dir = filepath.Join(p.Dir, "new") }, ""},
 		{"short password", func(p *Plan) { p.AdminPassword = "short" }, "admin_password"},
 		{"no admin", func(p *Plan) { p.AdminUser = "" }, "admin_user"},
 		{"internet without a name", func(p *Plan) { p.Access = AccessInternet }, "domain"},

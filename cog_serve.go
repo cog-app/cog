@@ -73,8 +73,11 @@ func runService(parent context.Context, run func(ctx context.Context, restart fu
 		cancel()
 	}
 	err := runManaged(ctx, func(ctx context.Context) error { return run(ctx, restart) })
-	if err == nil && restarting.Load() {
-		return errRestart
+	if restarting.Load() {
+		// An update is in place whether or not stopping went cleanly (a
+		// download outlasting the shutdown grace, say): start it anyway,
+		// saying what went wrong.
+		return errors.Join(errRestart, err)
 	}
 	return err
 }

@@ -41,6 +41,7 @@ func Unit(s Spec) string {
 	b.WriteString("[Service]\n")
 	fmt.Fprintf(&b, "ExecStart=%s\n", systemdCommand(s.Exe, s.Args))
 	fmt.Fprintf(&b, "WorkingDirectory=%s\n", systemdCommand(s.Dir, nil))
+	fmt.Fprintf(&b, "Environment=%s=1\n", SupervisedEnv)
 	// Always, so that the exit an update ends with starts the new binary.
 	b.WriteString("Restart=always\nRestartSec=2\n")
 	if s.Scope == System {

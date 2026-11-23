@@ -4,16 +4,24 @@
 //	    Make a signing key: the private half goes to release-key (and the
 //	    COG_RELEASE_KEY secret), the public half is printed for
 //	    internal/update/keys.go.
+//	go tool release record -version v1.2.3 -out dist/release.json dist/cog-*
+//	    Sign the record of a release the job just built: each binary's
+//	    checksum and size, made from the files themselves.
 //	go tool release manifest -repo owner/name -out public/releases.json
-//	    List the repository's GitHub releases, with each binary's checksum
-//	    from the release's SHA256SUMS, and sign the list with the key in
-//	    COG_RELEASE_KEY. GITHUB_TOKEN, if set, raises GitHub's rate limit.
+//	    List the repository's GitHub releases and sign the list. Each
+//	    binary's checksum comes from its release's signed record, never
+//	    from what is attached to the release now: a release without a
+//	    record is left out, and one whose record or binaries do not check
+//	    out stops it.
 //	go tool release sums -out dist/SHA256SUMS dist/cog-*
-//	    Write the checksums of a release's binaries.
+//	    Write the checksums of a release's binaries, for people.
+//
+// record and manifest sign with the key in COG_RELEASE_KEY, which only the
+// release workflow, run for a tag, has. GITHUB_TOKEN, if set, raises
+// GitHub's rate limit.
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -29,6 +37,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,7 +47,7 @@ import (
 func main() {
 	log.SetFlags(0)
 	if len(os.Args) < 2 {
-		log.Fatal("usage: go tool release keygen|manifest|sums [flags]")
+		log.Fatal("usage: go tool release keygen|record|manifest|sums [flags]")
 	}
 	var err error
 	switch os.Args[1] {
@@ -48,6 +57,8 @@ func main() {
 		err = manifest(os.Args[2:])
 	case "sums":
 		err = sums(os.Args[2:])
+	case "record":
+		err = recordCmd(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -125,11 +136,13 @@ type ghRelease struct {
 	Draft       bool      `json:"draft"`
 	Prerelease  bool      `json:"prerelease"`
 	PublishedAt time.Time `json:"published_at"`
-	Assets      []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-		Size int64  `json:"size"`
-	} `json:"assets"`
+	Assets      []ghAsset `json:"assets"`
+}
+
+type ghAsset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+	Size int64  `json:"size"`
 }
 
 // assetName is a release binary: cog-linux-amd64, cog-windows-amd64.exe.
@@ -163,31 +176,30 @@ func manifest(args []string) error {
 		if r.Draft {
 			continue
 		}
-		rel := update.Release{Version: r.TagName, Date: r.PublishedAt, NotesURL: r.HTMLURL, Prerelease: r.Prerelease, Assets: map[string]update.Asset{}}
-		var sumsURL string
+		var recURL, sigURL string
 		for _, a := range r.Assets {
-			if a.Name == "SHA256SUMS" {
-				sumsURL = a.URL
+			switch a.Name {
+			case recordName:
+				recURL = a.URL
+			case recordName + update.SignatureSuffix:
+				sigURL = a.URL
 			}
 		}
-		if sumsURL == "" {
-			log.Printf("%s: no SHA256SUMS, left out", r.TagName)
+		if recURL == "" || sigURL == "" {
+			log.Printf("%s: no signed %s, left out", r.TagName, recordName)
 			continue
 		}
-		checksums, err := getSums(ctx, sumsURL)
+		rec, err := get(ctx, recURL)
 		if err != nil {
 			return fmt.Errorf("%s: %w", r.TagName, err)
 		}
-		for _, a := range r.Assets {
-			match := assetName.FindStringSubmatch(a.Name)
-			if match == nil {
-				continue
-			}
-			sum, ok := checksums[a.Name]
-			if !ok {
-				return fmt.Errorf("%s: %s is not in SHA256SUMS", r.TagName, a.Name)
-			}
-			rel.Assets[match[1]] = update.Asset{URL: a.URL, SHA256: sum, Size: a.Size}
+		sig, err := get(ctx, sigURL)
+		if err != nil {
+			return fmt.Errorf("%s: %w", r.TagName, err)
+		}
+		rel, err := release(r, rec, sig, update.TrustedKeys)
+		if err != nil {
+			return fmt.Errorf("%s: %w", r.TagName, err)
 		}
 		m.Releases = append(m.Releases, rel)
 	}
@@ -206,6 +218,124 @@ func manifest(args []string) error {
 	}
 	log.Printf("wrote %s with %d releases", *out, len(m.Releases))
 	return nil
+}
+
+// recordName is the release asset that holds a release's signed record.
+const recordName = "release.json"
+
+// record is what the release workflow signs for a release, from the
+// binaries it built: what each one must hash to, and its size.
+type record struct {
+	Version string                 `json:"version"`
+	Assets  map[string]recordAsset `json:"assets"` // by platform, "linux-amd64"
+}
+
+type recordAsset struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+func recordCmd(args []string) error {
+	fs := flag.NewFlagSet("record", flag.ExitOnError)
+	ver := fs.String("version", os.Getenv("GITHUB_REF_NAME"), "the release's version, its tag")
+	out := fs.String("out", "dist/"+recordName, "file to write; the signature goes beside it")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *ver == "" {
+		return errors.New("record: no -version")
+	}
+	key, err := privateKey()
+	if err != nil {
+		return err
+	}
+	rec, err := makeRecord(*ver, fs.Args())
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out+update.SignatureSuffix, update.Sign(key, data), 0o644); err != nil {
+		return err
+	}
+	log.Printf("signed %s for %s: %d binaries", *out, *ver, len(rec.Assets))
+	return nil
+}
+
+// makeRecord is the record of release version, made from its binaries.
+func makeRecord(version string, paths []string) (record, error) {
+	rec := record{Version: version, Assets: map[string]recordAsset{}}
+	for _, path := range paths {
+		name := filepath.Base(path)
+		match := assetName.FindStringSubmatch(name)
+		if match == nil {
+			continue
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return record{}, err
+		}
+		h := sha256.New()
+		n, err := io.Copy(h, f)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return record{}, fmt.Errorf("%s: %w", path, err)
+		}
+		rec.Assets[match[1]] = recordAsset{Name: name, SHA256: hex.EncodeToString(h.Sum(nil)), Size: n}
+	}
+	if len(rec.Assets) == 0 {
+		return record{}, errors.New("record: no binaries (cog-<os>-<arch>)")
+	}
+	return rec, nil
+}
+
+// release is r as the manifest lists it: its binaries as its signed
+// record (rec, signed sig) has them, each found among r's assets by name
+// and size.
+func release(r ghRelease, rec, sig []byte, keys []ed25519.PublicKey) (update.Release, error) {
+	if err := update.Verify(keys, rec, sig); err != nil {
+		return update.Release{}, fmt.Errorf("%s: %w", recordName, err)
+	}
+	var signed record
+	if err := json.Unmarshal(rec, &signed); err != nil {
+		return update.Release{}, fmt.Errorf("%s: %w", recordName, err)
+	}
+	if signed.Version != r.TagName {
+		return update.Release{}, fmt.Errorf("%s is the record of %q", recordName, signed.Version)
+	}
+	rel := update.Release{Version: r.TagName, Date: r.PublishedAt, NotesURL: r.HTMLURL, Prerelease: r.Prerelease, Assets: map[string]update.Asset{}}
+	for platform, a := range signed.Assets {
+		i := slices.IndexFunc(r.Assets, func(g ghAsset) bool { return g.Name == a.Name })
+		if i < 0 {
+			return update.Release{}, fmt.Errorf("%s is not attached", a.Name)
+		}
+		if r.Assets[i].Size != a.Size {
+			return update.Release{}, fmt.Errorf("%s is %d bytes, not the %d it was built as", a.Name, r.Assets[i].Size, a.Size)
+		}
+		rel.Assets[platform] = update.Asset{URL: r.Assets[i].URL, SHA256: a.SHA256, Size: a.Size}
+	}
+	return rel, nil
+}
+
+func get(ctx context.Context, url string) ([]byte, error) {
+	res, err := request(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", url, err)
+	}
+	return b, nil
 }
 
 func request(ctx context.Context, url string) (*http.Response, error) {
@@ -234,25 +364,4 @@ func getJSON(ctx context.Context, url string, v any) error {
 	}
 	defer res.Body.Close()
 	return json.NewDecoder(res.Body).Decode(v)
-}
-
-func getSums(ctx context.Context, url string) (map[string]string, error) {
-	res, err := request(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	sums := map[string]string{}
-	sc := bufio.NewScanner(res.Body)
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) != 2 {
-			continue
-		}
-		if _, err := hex.DecodeString(f[0]); err != nil {
-			return nil, fmt.Errorf("SHA256SUMS: %q is not a checksum", f[0])
-		}
-		sums[strings.TrimPrefix(f[1], "*")] = f[0]
-	}
-	return sums, sc.Err()
 }

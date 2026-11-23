@@ -47,7 +47,7 @@ func docsCmd() *cobra.Command {
 			return srv.ListenAndServe()
 		},
 	}
-	c.Flags().StringVar(&out, "out", "public", "the folder to build the website in (replaced)")
+	c.Flags().StringVar(&out, "out", "public", "the folder to build the website in: new, empty, or an earlier build, which it replaces")
 	c.Flags().StringVar(&serve, "serve", "", "then serve it at this address, such as localhost:8080")
 	return c
 }

@@ -307,9 +307,9 @@ func utf16LE(s string) []byte {
 func CreateAccount(string, string) error { return nil }
 
 // GiveDir lets account change everything in dir, and what is made there
-// later.
+// later, and keeps everyone else out but SYSTEM and Administrators.
 func GiveDir(dir, account string) error {
-	return run("icacls", filepath.Clean(dir), "/grant", account+":(OI)(CI)M", "/T", "/Q")
+	return run("icacls", giveDirArgs(filepath.Clean(dir), account)...)
 }
 
 // RunAs does nothing: a virtual account cannot be run as, and what setup

@@ -244,6 +244,13 @@ func Main(plugins ...plugin.Plugin) {
 
 	err := root.Execute()
 	if errors.Is(err, errRestart) {
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			for _, e := range joined.Unwrap() {
+				if e != errRestart {
+					fmt.Fprintln(os.Stderr, "Error while stopping to restart:", e)
+				}
+			}
+		}
 		err = restartProcess()
 	}
 	if err != nil {

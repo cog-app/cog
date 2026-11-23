@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"git.duckfam.us/jj-software/cog/internal/atomicfile"
 )
 
 // FileName is the name setup gives the configuration file, in the
@@ -138,12 +140,8 @@ func Save(path string, cfg Config) error {
 	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0o600); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return errors.Join(fmt.Errorf("write config: %w", err), os.Remove(tmp))
+	if err := atomicfile.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 	return nil
 }

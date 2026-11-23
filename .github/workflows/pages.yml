@@ -1,16 +1,24 @@
-# Publishes the docs site, with releases.json and its signature: the list of
-# releases the updater in every installed Cog reads (internal/update). The
-# site lives in its own repository (cog-app/cog-app.github.io, served at
-# https://cog-app.github.io from its main branch), so this builds it here
-# and pushes it there with a deploy key (PAGES_DEPLOY_KEY). releases.json is
-# rebuilt from the GitHub releases each time and signed with
-# COG_RELEASE_KEY (go tool release keygen).
+# Publishes the docs site. The site lives in its own repository
+# (cog-app/cog-app.github.io, served at https://cog-app.github.io from its
+# main branch), so this builds it here and pushes it there with a deploy
+# key (PAGES_DEPLOY_KEY).
+#
+# The site also serves releases.json and its signature: the list of
+# releases the updater in every installed Cog reads (internal/update). Only
+# the release workflow signs one, and passes it here (release_list); a push
+# to master keeps the one the site has. This workflow never sees the
+# signing key.
 name: Pages
 
 on:
   push:
     branches: [master]
   workflow_call:
+    inputs:
+      release_list:
+        description: publish the release list the calling release run signed
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -34,10 +42,11 @@ jobs:
       - name: Docs
         run: go run ./cmd/cog docs --out public
       - name: Release list
-        env:
-          COG_RELEASE_KEY: ${{ secrets.COG_RELEASE_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: go tool release manifest -repo "$GITHUB_REPOSITORY" -out public/releases.json
+        if: ${{ inputs.release_list }}
+        uses: actions/download-artifact@v4
+        with:
+          name: release-list
+          path: public
       - name: Push the site
         env:
           PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
@@ -47,7 +56,12 @@ jobs:
           chmod 600 ~/.ssh/pages
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/pages -o IdentitiesOnly=yes"
           git clone --depth 1 "git@github.com:$SITE_REPO.git" site
-          rsync -a --delete --exclude .git public/ site/
+          # releases.json is only replaced by one in public/, which only a
+          # release run puts there.
+          rsync -a --delete --exclude .git --exclude 'releases.json*' public/ site/
+          if [ -f public/releases.json ]; then
+            cp public/releases.json public/releases.json.sig site/
+          fi
           touch site/.nojekyll
           cd site
           git add -A

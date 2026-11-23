@@ -9,7 +9,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"math/big"
@@ -217,4 +219,37 @@ func TestSelfSigned(t *testing.T) {
 	require.NotEqual(t, fp, m3.Fingerprint())
 	require.False(t, m3.NeedsRenewal(time.Now()))
 	require.True(t, m3.NeedsRenewal(time.Now().Add(380*24*time.Hour)))
+}
+
+// TestStoredPairIsOneFile: a certificate and its key are kept in one file,
+// so that replacing them cannot leave a key that does not match; the
+// separate files an earlier Cog kept are still read, and replaced.
+func TestStoredPairIsOneFile(t *testing.T) {
+	data := t.TempDir()
+	base := filepath.Join(data, "tls", "self-signed")
+	require.NoError(t, os.MkdirAll(filepath.Dir(base), 0o700))
+	cfg := config.TLS{Mode: SelfSigned, Domains: []string{"cog.home.arpa"}}
+	certPEM, keyPEM, err := selfSign(cfg.Domains, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(base+".crt", certPEM, 0o600))
+	require.NoError(t, os.WriteFile(base+".key", keyPEM, 0o600))
+	old, err := parsePair(certPEM, keyPEM)
+	require.NoError(t, err)
+
+	m, err := New(cfg, data, quiet)
+	require.NoError(t, err)
+	require.Equal(t, Fingerprint(old.Leaf), m.Fingerprint(), "an earlier Cog's files")
+
+	cfg.Domains = append(cfg.Domains, "cog.local")
+	m, err = New(cfg, data, quiet)
+	require.NoError(t, err)
+	for _, ext := range []string{".crt", ".key"} {
+		_, err := os.Stat(base + ext)
+		require.True(t, errors.Is(err, fs.ErrNotExist), ext+" replaced")
+	}
+	pemData, err := os.ReadFile(base + ".pem")
+	require.NoError(t, err)
+	both, err := parsePair(pemData, pemData)
+	require.NoError(t, err)
+	require.Equal(t, m.Fingerprint(), Fingerprint(both.Leaf))
 }

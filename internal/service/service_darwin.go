@@ -60,6 +60,7 @@ func Plist(s Spec) string {
 	}
 	b.WriteString("\t</array>\n")
 	fmt.Fprintf(&b, "\t<key>WorkingDirectory</key>\n\t<string>%s</string>\n", esc(s.Dir))
+	fmt.Fprintf(&b, "\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>%s</key>\n\t\t<string>1</string>\n\t</dict>\n", SupervisedEnv)
 	// KeepAlive starts it again whenever it exits, which is how an
 	// update's restart takes effect.
 	b.WriteString("\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<true/>\n")

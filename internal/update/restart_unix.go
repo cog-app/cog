@@ -6,20 +6,19 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"git.duckfam.us/jj-software/cog/internal/service"
 )
 
 // renameOverRunning: a running program's file can be replaced by a rename.
 const renameOverRunning = true
 
 // Supervised reports whether a service manager restarts this process when
-// it exits: systemd (Restart=always, which sets INVOCATION_ID) or launchd
-// (KeepAlive, which sets XPC_SERVICE_NAME).
+// it exits: the systemd unit or launchd job setup installed, which say so
+// in the environment. Other variables those managers set (INVOCATION_ID,
+// XPC_SERVICE_NAME) are inherited by shells in terminals they run too.
 func Supervised() bool {
-	if os.Getenv("INVOCATION_ID") != "" {
-		return true
-	}
-	name := os.Getenv("XPC_SERVICE_NAME")
-	return name != "" && name != "0"
+	return os.Getenv(service.SupervisedEnv) == "1"
 }
 
 // Restart replaces this process with exe run with the same arguments, or
