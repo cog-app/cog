@@ -165,11 +165,16 @@ func TestBrowserHelp(t *testing.T) {
 	require.Equal(t, "App Passwords", b.Eval(t, `document.querySelector("#help-popover h1").textContent`))
 	require.Equal(t, "/docs/using-cog/app-passwords.html",
 		b.Eval(t, `new URL(document.querySelector("#help-popover .help-more").href).pathname`))
-	b.Snapshot(t)
 
 	// Into the popover and back onto the icon: it stays.
 	b.Hover(t, "#help-popover .help-more")
 	b.Hover(t, `a[data-help][href="/docs/using-cog/app-passwords.html"]`)
 	time.Sleep(500 * time.Millisecond) // past the popover's 200ms hide delay
 	require.Equal(t, false, b.Eval(t, `document.querySelector("#help-popover").hidden`))
+
+	// Last, since a failing snapshot's screenshot moves the pointer off the
+	// icon. The popover's position comes from where the fonts put the icon,
+	// which differs between machines, so it stays out of the golden.
+	b.Eval(t, `() => document.querySelector("#help-popover").removeAttribute("style")`)
+	b.Snapshot(t)
 }

@@ -271,7 +271,7 @@ func (w *Wizard) stepForm(rw http.ResponseWriter, r *http.Request) {
 	}
 	v := stepView{
 		Plan: p, Step: st, Index: i, Total: len(steps), Problems: probs,
-		Back: back, Reviewing: w.reviewing, LAN: LANAddress(), Admin: service.IsAdmin(), Tailscale: ts,
+		Back: back, Reviewing: w.reviewing, LAN: LANAddress(), Admin: ops.IsAdmin(), Tailscale: ts,
 	}
 	w.render(rw, r, stepPage(v))
 }
