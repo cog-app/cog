@@ -2,21 +2,18 @@ package gallery
 
 import (
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"log/slog"
-	"math/bits"
-	"slices"
+	"path"
+	"regexp"
 	"strings"
 
 	"github.com/ajdnik/imghash"
 	"github.com/ajdnik/imghash/hashtype"
-	"github.com/ajdnik/imghash/similarity"
 
 	_ "golang.org/x/image/webp"
 )
@@ -52,6 +49,7 @@ func getHasher(algorithm DuplicateAlgorithm) (binaryHasher, error) {
 // DuplicateGroup represents a set of duplicate media items.
 type DuplicateGroup struct {
 	ID           int64
+	Kind         DuplicateKind
 	MemberCount  int
 	CoverMediaID int64
 	CreatedAt    int64
@@ -61,10 +59,26 @@ type DuplicateGroup struct {
 type DuplicateMember struct {
 	Media    Media
 	IsKeep   bool
-	Distance float64
+	Distance float64 // fingerprint bits that differ from the kept one's
+	Score    float64 // PSNR against the kept one in dB, or -1 if not measured
+	Size     int64   // file size in bytes, when known
 }
 
-// --- Store functions ---
+// IsEdit reports whether the file's name says an editor saved it:
+// Google Photos' "-edited" and the "~2" of Android's gallery.
+func (m DuplicateMember) IsEdit() bool {
+	name := m.Media.FileName()
+	stem := name[:len(name)-len(path.Ext(name))]
+	return strings.HasSuffix(stem, "-edited") || editSuffix.MatchString(stem)
+}
+
+// IsMotion reports whether the photo is a Pixel motion photo, which
+// carries a short video inside it.
+func (m DuplicateMember) IsMotion() bool {
+	return strings.Contains(m.Media.FileName(), ".MP")
+}
+
+var editSuffix = regexp.MustCompile(`~\d+$`)
 
 // UpdateFingerprint sets the fingerprint for a media item.
 func UpdateFingerprint(db *sql.DB, mediaID int64, fingerprint string) error {
@@ -99,16 +113,23 @@ func AddDuplicateMember(db *sql.DB, groupID, mediaID int64, isKeep bool, distanc
 	return err
 }
 
-// ListDuplicateGroups returns all duplicate groups with member count and cover media ID.
-func ListDuplicateGroups(db *sql.DB) ([]DuplicateGroup, error) {
-	rows, err := db.Query(`SELECT g.id, g.created_at, COUNT(dm.media_id) as cnt,
+// duplicateGroupLimit caps the groups a list shows at once; the page says
+// how many more there are.
+const duplicateGroupLimit = 500
+
+// ListDuplicateGroups returns up to limit groups of a kind with two or more
+// members, in the order a review goes through them, oldest group first.
+func ListDuplicateGroups(db *sql.DB, kind DuplicateKind, limit int) ([]DuplicateGroup, error) {
+	rows, err := db.Query(`SELECT g.id, g.kind, g.created_at, COUNT(dm.media_id) as cnt,
 		COALESCE((SELECT media_id FROM duplicate_members WHERE group_id = g.id AND is_keep = 1 LIMIT 1),
 			(SELECT media_id FROM duplicate_members WHERE group_id = g.id LIMIT 1)) as cover
 		FROM duplicate_groups g
 		JOIN duplicate_members dm ON dm.group_id = g.id
+		WHERE g.kind = ?
 		GROUP BY g.id
 		HAVING cnt >= 2
-		ORDER BY g.created_at DESC`)
+		ORDER BY g.id
+		LIMIT ?`, kind, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +138,56 @@ func ListDuplicateGroups(db *sql.DB) ([]DuplicateGroup, error) {
 	var groups []DuplicateGroup
 	for rows.Next() {
 		var g DuplicateGroup
-		if err := rows.Scan(&g.ID, &g.CreatedAt, &g.MemberCount, &g.CoverMediaID); err != nil {
+		if err := rows.Scan(&g.ID, &g.Kind, &g.CreatedAt, &g.MemberCount, &g.CoverMediaID); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)
 	}
 	return groups, rows.Err()
+}
+
+// DuplicateKindCounts is how many groups of two or more there are of each kind.
+func DuplicateKindCounts(db *sql.DB) (map[DuplicateKind]int, error) {
+	rows, err := db.Query(`SELECT g.kind, COUNT(*) FROM duplicate_groups g
+		WHERE (SELECT COUNT(*) FROM duplicate_members WHERE group_id = g.id) >= 2
+		GROUP BY g.kind`)
+	if err != nil {
+		return nil, fmt.Errorf("count duplicate groups: %w", err)
+	}
+	defer rows.Close()
+	out := map[DuplicateKind]int{}
+	for rows.Next() {
+		var k DuplicateKind
+		var n int
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, fmt.Errorf("count duplicate groups: %w", err)
+		}
+		out[k] = n
+	}
+	return out, rows.Err()
+}
+
+// DuplicateGroupKind is a group's kind, or sql.ErrNoRows when it is gone.
+func DuplicateGroupKind(db *sql.DB, groupID int64) (DuplicateKind, error) {
+	var k DuplicateKind
+	err := db.QueryRow(`SELECT kind FROM duplicate_groups WHERE id = ?`, groupID).Scan(&k)
+	return k, err
+}
+
+// NextDuplicateGroup is the group of the same kind that a review comes to
+// after groupID, going round to the start; ok is false when there is none.
+func NextDuplicateGroup(db *sql.DB, kind DuplicateKind, groupID int64) (next int64, ok bool, err error) {
+	err = db.QueryRow(`SELECT id FROM duplicate_groups g
+		WHERE kind = ? AND id != ?
+			AND (SELECT COUNT(*) FROM duplicate_members WHERE group_id = g.id) >= 2
+		ORDER BY id <= ?, id LIMIT 1`, kind, groupID, groupID).Scan(&next)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("next duplicate group: %w", err)
+	}
+	return next, true, nil
 }
 
 // DuplicateGroupMembers returns all members of a group with full media details.
@@ -132,9 +197,10 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 		MediaID  int64
 		IsKeep   bool
 		Distance float64
+		Score    float64
 	}
-	mRows, err := db.Query(`SELECT media_id, is_keep, distance FROM duplicate_members
-		WHERE group_id = ? ORDER BY is_keep DESC`, groupID)
+	mRows, err := db.Query(`SELECT media_id, is_keep, distance, score FROM duplicate_members
+		WHERE group_id = ? ORDER BY is_keep DESC, media_id`, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +210,7 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 	for mRows.Next() {
 		var mi memberInfo
 		var isKeep int
-		if err := mRows.Scan(&mi.MediaID, &isKeep, &mi.Distance); err != nil {
+		if err := mRows.Scan(&mi.MediaID, &isKeep, &mi.Distance, &mi.Score); err != nil {
 			return nil, err
 		}
 		mi.IsKeep = isKeep == 1
@@ -180,31 +246,8 @@ func DuplicateGroupMembers(db *sql.DB, groupID int64) ([]DuplicateMember, error)
 			Media:    *m,
 			IsKeep:   mi.IsKeep,
 			Distance: mi.Distance,
+			Score:    mi.Score,
 		})
-	}
-	return members, nil
-}
-
-// NonKeepDuplicates returns, in one query, the media of every member that is
-// not its group's keep item, across the groups ListDuplicateGroups shows (two
-// or more members). A media item in more than one group comes back once.
-func NonKeepDuplicates(db *sql.DB) ([]DuplicateMember, error) {
-	rows, err := db.Query(`SELECT ` + mediaCols + ` FROM media m
-		WHERE m.id IN (
-			SELECT media_id FROM duplicate_members
-			WHERE is_keep = 0 AND group_id IN (
-				SELECT group_id FROM duplicate_members GROUP BY group_id HAVING COUNT(*) >= 2))`)
-	if err != nil {
-		return nil, fmt.Errorf("list non-keep duplicates: %w", err)
-	}
-	defer rows.Close()
-	media, err := scanMediaRows(rows)
-	if err != nil {
-		return nil, fmt.Errorf("scan non-keep duplicates: %w", err)
-	}
-	members := make([]DuplicateMember, len(media))
-	for i, m := range media {
-		members[i] = DuplicateMember{Media: m}
 	}
 	return members, nil
 }
@@ -301,332 +344,6 @@ func DuplicateGroupMemberCount(db *sql.DB, groupID int64) (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM duplicate_members WHERE group_id = ?`, groupID).Scan(&count)
 	return count, err
-}
-
-// --- Fingerprint computation ---
-
-// --- Duplicate detection ---
-
-// detectDuplicates groups media with similar fingerprints.
-// fpEntry holds media fingerprint data for duplicate detection.
-type fpEntry struct {
-	ID           int64
-	Fingerprint  string
-	Width        int
-	Height       int
-	DateTaken    *int64
-	DateIndexed  int64
-	QualityScore float64
-}
-
-func (p *Plugin) detectDuplicates(db *sql.DB) error {
-	sysDB, err := p.SystemDB()
-	if err != nil {
-		return fmt.Errorf("system db: %w", err)
-	}
-	if !SettingDuplicateDetectionEnabled.MustGet(sysDB) {
-		return nil
-	}
-
-	return rebuildDuplicateGroups(db, SettingDuplicateDistance.MustGet(sysDB), p.log)
-}
-
-// rebuildDuplicateGroups groups photos whose fingerprints are within maxDist
-// of each other, honouring what people decided about earlier groups.
-func rebuildDuplicateGroups(db *sql.DB, maxDist int, log *slog.Logger) error {
-	entries, err := loadFingerprints(db)
-	if err != nil {
-		return err
-	}
-	excluded, err := loadDuplicateExclusions(db)
-	if err != nil {
-		return err
-	}
-	kept, err := loadDuplicateKeeps(db)
-	if err != nil {
-		return err
-	}
-
-	hashes := make([]hashtype.Binary, len(entries))
-	for i, e := range entries {
-		b, err := hex.DecodeString(e.Fingerprint)
-		if err != nil {
-			log.Warn("duplicates: bad fingerprint, skipping", "id", e.ID, "err", err)
-			continue
-		}
-		hashes[i] = hashtype.Binary(b)
-	}
-
-	parent := make([]int, len(entries))
-	for i := range parent {
-		parent[i] = i
-	}
-	var find func(int) int
-	find = func(x int) int {
-		if parent[x] != x {
-			parent[x] = find(parent[x])
-		}
-		return parent[x]
-	}
-	words := make([][]uint64, len(hashes))
-	for i, h := range hashes {
-		words[i] = packWords(h)
-	}
-	for i := range entries {
-		if hashes[i] == nil {
-			continue
-		}
-		wi := words[i]
-		for j := i + 1; j < len(entries); j++ {
-			if hashes[j] == nil || len(hashes[i]) != len(hashes[j]) {
-				continue
-			}
-			if hammingWords(wi, words[j]) > maxDist {
-				continue
-			}
-			if excluded[pairKey(entries[i].ID, entries[j].ID)] {
-				continue
-			}
-			if ri, rj := find(i), find(j); ri != rj {
-				parent[ri] = rj
-			}
-		}
-	}
-
-	byRoot := map[int][]int{}
-	for i := range entries {
-		if hashes[i] != nil {
-			byRoot[find(i)] = append(byRoot[find(i)], i)
-		}
-	}
-	var groups []duplicateGroup
-	for _, members := range byRoot {
-		if len(members) < 2 {
-			continue
-		}
-		keepIdx := members[0]
-		for _, idx := range members[1:] {
-			if kept[entries[idx].ID] != kept[entries[keepIdx].ID] {
-				if kept[entries[idx].ID] {
-					keepIdx = idx
-				}
-				continue
-			}
-			if betterKeep(entries[idx], entries[keepIdx]) {
-				keepIdx = idx
-			}
-		}
-		g := duplicateGroup{keep: entries[keepIdx].ID}
-		for _, idx := range members {
-			dist := 0.0
-			if len(hashes[idx]) == len(hashes[keepIdx]) {
-				dist = float64(similarity.Hamming(hashes[idx], hashes[keepIdx]))
-			}
-			g.members = append(g.members, duplicateMemberRow{mediaID: entries[idx].ID, distance: dist})
-		}
-		groups = append(groups, g)
-	}
-	return replaceDuplicateGroups(db, groups)
-}
-
-// packWords packs a fingerprint into 64-bit words. Every pair of photos is
-// compared, and similarity.Hamming, a byte at a time, took 80 seconds over
-// 34,000 of them.
-func packWords(h hashtype.Binary) []uint64 {
-	if h == nil {
-		return nil
-	}
-	w := make([]uint64, (len(h)+7)/8)
-	for i, b := range h {
-		w[i/8] |= uint64(b) << (8 * (i % 8))
-	}
-	return w
-}
-
-func hammingWords(a, b []uint64) int {
-	d := 0
-	for k := range a {
-		d += bits.OnesCount64(a[k] ^ b[k])
-	}
-	return d
-}
-
-type duplicateMemberRow struct {
-	mediaID  int64
-	distance float64
-}
-
-type duplicateGroup struct {
-	keep    int64
-	members []duplicateMemberRow
-}
-
-func pairKey(a, b int64) [2]int64 {
-	if a > b {
-		a, b = b, a
-	}
-	return [2]int64{a, b}
-}
-
-func loadFingerprints(db *sql.DB) ([]fpEntry, error) {
-	rows, err := db.Query(`SELECT id, fingerprint, width, height, date_taken, date_indexed, quality_score
-		FROM media WHERE fingerprint != '' AND fingerprint != '-'`)
-	if err != nil {
-		return nil, fmt.Errorf("load fingerprints: %w", err)
-	}
-	defer rows.Close()
-	var entries []fpEntry
-	for rows.Next() {
-		var e fpEntry
-		if err := rows.Scan(&e.ID, &e.Fingerprint, &e.Width, &e.Height, &e.DateTaken, &e.DateIndexed, &e.QualityScore); err != nil {
-			return nil, fmt.Errorf("load fingerprints: %w", err)
-		}
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}
-
-func loadDuplicateExclusions(db *sql.DB) (map[[2]int64]bool, error) {
-	rows, err := db.Query(`SELECT media_a, media_b FROM duplicate_exclusions`)
-	if err != nil {
-		return nil, fmt.Errorf("load duplicate exclusions: %w", err)
-	}
-	defer rows.Close()
-	out := map[[2]int64]bool{}
-	for rows.Next() {
-		var a, b int64
-		if err := rows.Scan(&a, &b); err != nil {
-			return nil, fmt.Errorf("load duplicate exclusions: %w", err)
-		}
-		out[[2]int64{a, b}] = true
-	}
-	return out, rows.Err()
-}
-
-func loadDuplicateKeeps(db *sql.DB) (map[int64]bool, error) {
-	rows, err := db.Query(`SELECT media_id FROM duplicate_keeps`)
-	if err != nil {
-		return nil, fmt.Errorf("load duplicate keeps: %w", err)
-	}
-	defer rows.Close()
-	out := map[int64]bool{}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("load duplicate keeps: %w", err)
-		}
-		out[id] = true
-	}
-	return out, rows.Err()
-}
-
-// replaceDuplicateGroups makes the stored groups the given ones in one
-// transaction. A group whose members are unchanged keeps its row, so a page
-// open on it survives a scan.
-func replaceDuplicateGroups(db *sql.DB, groups []duplicateGroup) error {
-	return inTx(db, func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT group_id, media_id FROM duplicate_members ORDER BY group_id, media_id`)
-		if err != nil {
-			return fmt.Errorf("load duplicate groups: %w", err)
-		}
-		existing := map[string]int64{}
-		var (
-			cur  int64 = -1
-			key  strings.Builder
-			stop error
-		)
-		flush := func() {
-			if cur >= 0 {
-				existing[key.String()] = cur
-			}
-			key.Reset()
-		}
-		for rows.Next() {
-			var g, m int64
-			if stop = rows.Scan(&g, &m); stop != nil {
-				break
-			}
-			if g != cur {
-				flush()
-				cur = g
-			}
-			fmt.Fprintf(&key, "%d,", m)
-		}
-		flush()
-		if err := errors.Join(stop, rows.Err(), rows.Close()); err != nil {
-			return fmt.Errorf("load duplicate groups: %w", err)
-		}
-
-		keepIDs := map[int64]bool{}
-		for _, g := range groups {
-			ids := make([]int64, len(g.members))
-			for i, m := range g.members {
-				ids[i] = m.mediaID
-			}
-			slices.Sort(ids)
-			var k strings.Builder
-			for _, id := range ids {
-				fmt.Fprintf(&k, "%d,", id)
-			}
-			groupID, ok := existing[k.String()]
-			if ok {
-				keepIDs[groupID] = true
-				if _, err := tx.Exec(`UPDATE duplicate_members SET is_keep = (media_id = ?) WHERE group_id = ?`, g.keep, groupID); err != nil {
-					return fmt.Errorf("update group %d: %w", groupID, err)
-				}
-				continue
-			}
-			res, err := tx.Exec(`INSERT INTO duplicate_groups DEFAULT VALUES`)
-			if err != nil {
-				return fmt.Errorf("insert group: %w", err)
-			}
-			if groupID, err = res.LastInsertId(); err != nil {
-				return fmt.Errorf("insert group: %w", err)
-			}
-			keepIDs[groupID] = true
-			for _, m := range g.members {
-				if _, err := tx.Exec(`INSERT INTO duplicate_members (group_id, media_id, is_keep, distance) VALUES (?, ?, ?, ?)`,
-					groupID, m.mediaID, m.mediaID == g.keep, m.distance); err != nil {
-					return fmt.Errorf("add member: %w", err)
-				}
-			}
-		}
-		for _, groupID := range existing {
-			if keepIDs[groupID] {
-				continue
-			}
-			if _, err := tx.Exec(`DELETE FROM duplicate_groups WHERE id = ?`, groupID); err != nil {
-				return fmt.Errorf("delete group %d: %w", groupID, err)
-			}
-		}
-		return nil
-	})
-}
-
-// betterKeep returns true if candidate is a better keep choice than current.
-// Prefers: highest resolution → clearly sharper → oldest date. Resolution
-// comes first because sharpness is measured on a downscaled copy, where a
-// small copy of a photo looks as sharp as its original.
-func betterKeep(candidate, current fpEntry) bool {
-	cPx := candidate.Width * candidate.Height
-	kPx := current.Width * current.Height
-	if cPx != kPx {
-		return cPx > kPx
-	}
-	cq, kq := candidate.QualityScore, current.QualityScore
-	if cq > kq*1.1 || kq > cq*1.1 {
-		return cq > kq
-	}
-	// Oldest date tiebreaker.
-	cDate := candidate.DateIndexed
-	if candidate.DateTaken != nil {
-		cDate = *candidate.DateTaken
-	}
-	kDate := current.DateIndexed
-	if current.DateTaken != nil {
-		kDate = *current.DateTaken
-	}
-	return cDate < kDate
 }
 
 // UpdateQualityScore sets the quality score for a media item.

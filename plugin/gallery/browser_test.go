@@ -168,8 +168,8 @@ func TestBrowserWithPhotos(t *testing.T) {
 		{"TagView", "/apps/gallery/tag/beach", "beach"},
 		{"People", "/apps/gallery/people", "3 photos"},
 		{"PersonView", fmt.Sprintf("/apps/gallery/person/%d", s.person), "Hide"},
-		{"Duplicates", "/apps/gallery/duplicates", "similar photos"},
-		{"DuplicateGroup", fmt.Sprintf("/apps/gallery/duplicates/%d", s.dupGroup), "Duplicate group"},
+		{"Duplicates", "/apps/gallery/duplicates", "2 files"},
+		{"DuplicateGroup", fmt.Sprintf("/apps/gallery/duplicates/%d", s.dupGroup), "Not duplicates"},
 		{"PhotoView", fmt.Sprintf("/apps/gallery/photo/%d", s.detailed), "Details"},
 		{"PhotoViewMinimal", fmt.Sprintf("/apps/gallery/photo/%d", s.plain), "Details"},
 		{"VideoView", fmt.Sprintf("/apps/gallery/photo/%d", s.video), "Details"},
@@ -500,8 +500,10 @@ func testPNG(t *testing.T, w, h int, c color.RGBA) []byte {
 			}
 		}
 	}
+	// Uncompressed, so the file's size, which the duplicates page shows, does
+	// not change with the Go release's deflate.
 	var buf bytes.Buffer
-	require.NoError(t, png.Encode(&buf, img))
+	require.NoError(t, (&png.Encoder{CompressionLevel: png.NoCompression}).Encode(&buf, img))
 	return buf.Bytes()
 }
 

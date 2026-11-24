@@ -72,7 +72,7 @@ func TestSummarizeSkipsByReason(t *testing.T) {
 func TestRenameJobRunsOneAtATime(t *testing.T) {
 	p := New()
 	release := make(chan struct{})
-	require.NoError(t, p.startRenameJob("alice", false, func(j *renameJob) error {
+	require.NoError(t, p.startRenameJob("alice", false, func(j *fileJob) error {
 		j.begin(2)
 		j.step()
 		<-release
@@ -97,7 +97,7 @@ func TestRenameJobRunsOneAtATime(t *testing.T) {
 	require.Equal(t, 2, job.Done)
 	require.Equal(t, "", job.Err)
 
-	require.NoError(t, p.startRenameJob("alice", true, func(*renameJob) error { return errors.New("no rename batch to undo") }))
+	require.NoError(t, p.startRenameJob("alice", true, func(*fileJob) error { return errors.New("no rename batch to undo") }))
 	for job, _ = p.RenameStatus("alice"); job.Running(); job, _ = p.RenameStatus("alice") {
 		time.Sleep(time.Millisecond)
 	}

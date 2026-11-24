@@ -250,3 +250,26 @@ func TestThumbnailsStopAtDeadline(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, remaining)
 }
+
+// A video's cached thumbnail is named by its etag, which a rename changes;
+// the scan that sees the move carries the thumbnail to the new name.
+func TestScanCarriesVideoThumbnailAcrossRename(t *testing.T) {
+	e := newScanEnv(t)
+	e.upload(t, "/Photos/clip.mp4", []byte("not really a video"))
+	e.scan(t)
+	etag := func() string {
+		var s string
+		require.NoError(t, e.db.QueryRow(`SELECT file_etag FROM media WHERE file_path LIKE '%.mp4'`).Scan(&s))
+		return s
+	}
+	cache, err := e.g.UserCacheForTest(e.alice.Username)
+	require.NoError(t, err)
+	_, err = cache.Put("video_thumbs/"+etag()+"_256.jpg", bytes.NewReader([]byte("thumb")))
+	require.NoError(t, err)
+
+	req := cogtest.NewRequest(t, "MOVE", e.Providers.Config.BaseURL+"/remote.php/dav/files/alice/Photos/clip.mp4", nil)
+	e.Do(t, req, e.alice.Auth, cogtest.Header("Destination", "/remote.php/dav/files/alice/Photos/renamed.mp4")).Status(201)
+	e.scan(t)
+	_, err = cache.Stat("video_thumbs/" + etag() + "_256.jpg")
+	require.NoError(t, err)
+}

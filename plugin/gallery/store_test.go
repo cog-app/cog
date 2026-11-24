@@ -36,14 +36,11 @@ func TestUpsertReturnsExistingID(t *testing.T) {
 	require.Equal(t, albumID, againAlbum)
 }
 
-// Deleting every non-keep duplicate reads them all in one query: keep items
-// and groups too small to show are left out, and a media item in two groups
-// comes back once. Pruning then drops exactly the groups left with fewer
-// than two members.
-func TestNonKeepDuplicatesAndPrune(t *testing.T) {
+// Pruning drops exactly the groups left with fewer than two members.
+func TestPruneDuplicateGroups(t *testing.T) {
 	db := testDB(t)
-	keepA, dupA, keepB, dupB, lone := insertTestMedia(t, db, 0), insertTestMedia(t, db, 0),
-		insertTestMedia(t, db, 0), insertTestMedia(t, db, 0), insertTestMedia(t, db, 0)
+	keepA, dupA, keepB, dupB := insertTestMedia(t, db, 0), insertTestMedia(t, db, 0),
+		insertTestMedia(t, db, 0), insertTestMedia(t, db, 0)
 
 	groupA, err := InsertDuplicateGroup(db)
 	require.NoError(t, err)
@@ -53,28 +50,11 @@ func TestNonKeepDuplicatesAndPrune(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, AddDuplicateMember(db, groupB, keepB, true, 0))
 	require.NoError(t, AddDuplicateMember(db, groupB, dupB, false, 1))
-	require.NoError(t, AddDuplicateMember(db, groupB, dupA, false, 2))
-	small, err := InsertDuplicateGroup(db)
-	require.NoError(t, err)
-	require.NoError(t, AddDuplicateMember(db, small, lone, false, 0))
 
-	members, err := NonKeepDuplicates(db)
+	_, err = db.Exec(`DELETE FROM media WHERE id = ?`, dupA)
 	require.NoError(t, err)
-	got := map[int64]bool{}
-	for _, m := range members {
-		require.False(t, got[m.Media.ID], "media returned twice")
-		got[m.Media.ID] = true
-	}
-	require.Equal(t, map[int64]bool{dupA: true, dupB: true}, got)
-
-	for id := range got {
-		_, err := db.Exec(`DELETE FROM media WHERE id = ?`, id)
-		require.NoError(t, err)
-	}
 	require.NoError(t, PruneDuplicateGroups(db))
-	var left int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM duplicate_groups`).Scan(&left))
-	require.Equal(t, 0, left)
+	require.Equal(t, map[int64][]int64{groupB: {keepB, dupB}}, groupsOf(t, db))
 }
 
 func groupsOf(t *testing.T, db *sql.DB) map[int64][]int64 {
@@ -113,7 +93,7 @@ func TestDuplicateDecisionsSurviveRebuild(t *testing.T) {
 		_, err := db.Exec(`UPDATE media SET fingerprint = ? WHERE id = ?`, fp, ids[i])
 		require.NoError(t, err)
 	}
-	require.NoError(t, rebuildDuplicateGroups(db, 0, log))
+	require.NoError(t, rebuildDuplicateGroups(db, nil, 0, nil, log))
 	groups := groupsOf(t, db)
 	require.Equal(t, 2, len(groups))
 	var big, small int64
@@ -129,7 +109,7 @@ func TestDuplicateDecisionsSurviveRebuild(t *testing.T) {
 	require.NoError(t, RemoveDuplicateMember(db, big, ids[0]))
 	require.NoError(t, DismissDuplicateGroup(db, small))
 
-	require.NoError(t, rebuildDuplicateGroups(db, 0, log))
+	require.NoError(t, rebuildDuplicateGroups(db, nil, 0, nil, log))
 	groups = groupsOf(t, db)
 	require.Equal(t, map[int64][]int64{big: {ids[1], ids[2]}}, groups)
 	require.Equal(t, ids[2], keepOf(t, db, big))
@@ -137,9 +117,10 @@ func TestDuplicateDecisionsSurviveRebuild(t *testing.T) {
 
 // A smaller copy is never kept over its original, however sharp its
 // downscaled thumbnail looks.
-func TestBetterKeepPrefersResolution(t *testing.T) {
-	original := fpEntry{Width: 4000, Height: 3000, QualityScore: 10}
-	copy := fpEntry{Width: 1600, Height: 1200, QualityScore: 30}
-	require.True(t, betterKeep(original, copy))
-	require.False(t, betterKeep(copy, original))
+func TestKeepPrefersResolution(t *testing.T) {
+	original := dupEntry{Width: 4000, Height: 3000, QualityScore: 10}
+	small := dupEntry{Width: 1600, Height: 1200, QualityScore: 30}
+	require.True(t, similarBetter(&original, &small))
+	require.False(t, similarBetter(&small, &original))
+	require.True(t, copyBetter(&original, &small))
 }

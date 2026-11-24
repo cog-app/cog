@@ -552,7 +552,7 @@ func SummarizeSkips(skipped []RenameSkip) []SkipKind {
 // ApplyRename executes the planned renames using the files plugin. It never
 // replaces a file: one that appeared at a new path since the plan was made
 // leaves that photo where it is.
-func (p *Plugin) ApplyRename(username string, renames []RenamePreview, job *renameJob) error {
+func (p *Plugin) ApplyRename(username string, renames []RenamePreview, job *fileJob) error {
 	fp, err := p.filesPlugin()
 	if err != nil {
 		return err
@@ -652,7 +652,7 @@ func renameErrors(errs []error, n int) error {
 }
 
 // UndoLastRename reverses the most recent rename batch.
-func (p *Plugin) UndoLastRename(username string, job *renameJob) error {
+func (p *Plugin) UndoLastRename(username string, job *fileJob) error {
 	fp, err := p.filesPlugin()
 	if err != nil {
 		return err

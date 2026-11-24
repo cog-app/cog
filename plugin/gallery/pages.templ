@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -1483,30 +1484,74 @@ templ starredPage(media []Media) {
 }
 
 // --- Duplicates ---
-templ duplicatesPage(activePath string, groups []DuplicateGroup) {
+templ duplicatesPage(activePath string, v duplicatesView, csrfToken string) {
 	@galleryLayout(activePath) {
-		@ui.PageHeader("Duplicates", nil) {
-			if len(groups) > 0 {
-				<span class="badge badge-neutral">{ plural(len(groups), "group", "groups") }</span>
+		@ui.PageHeader("Duplicates", nil)
+		<nav class="gallery-segmented" aria-label="Kind of duplicate">
+			for _, k := range DuplicateKinds {
+				if v.Counts[k] > 0 || k == v.Kind {
+					@segmentLink("/apps/gallery/duplicates?kind="+k.Slug(), k.Tab(), v.Counts[k], k == v.Kind)
+				}
 			}
-		}
-		if len(groups) == 0 {
+		</nav>
+		<p class="text-sm text-muted mb-3">{ duplicateKindHelp(v.Kind) }</p>
+		if v.Kind == DuplicateIdentical && v.Identical.Copies > 0 {
 			<div class="card">
-				@ui.EmptyState("No duplicates found", "Photos that look the same show up here after a scan.")
+				<div class="card-header">
+					<h2 class="card-title">{ plural(v.Identical.Copies, "identical copy", "identical copies") + ", " + formatBytes(uint64(v.Identical.Bytes)) }</h2>
+					if v.Deleting {
+						<a href="/apps/gallery/duplicates/deleting" class="btn">Deleting…</a>
+					} else {
+						<form
+							method="post"
+							action="/apps/gallery/duplicates/identical/delete"
+							data-confirm={ "Move " + plural(v.Identical.Copies, "identical copy", "identical copies") + " to the trash? Each group keeps one file, and every copy is compared with it byte for byte again first." }
+							data-confirm-title="Delete identical copies"
+						>
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit" class="btn btn-danger">
+								@ui.Icon("trash")
+								Delete all identical copies
+							</button>
+						</form>
+					}
+				</div>
+				<p class="card-desc">Each group keeps the file whose name does not look copied — no _1, (1) or -001 — or else the one with the shortest path. Change it in any group before deleting.</p>
+			</div>
+		}
+		if len(v.Groups) == 0 {
+			<div class="card">
+				@ui.EmptyState("No duplicates of this kind", "Photos that look the same show up here after a scan.")
 			</div>
 		} else {
+			if v.Counts[v.Kind] > len(v.Groups) {
+				<p class="text-sm text-muted">{ "Showing the first " + strconv.Itoa(len(v.Groups)) + " of " + strconv.Itoa(v.Counts[v.Kind]) + "." }</p>
+			}
 			<div class="gallery-albums">
-				for _, g := range groups {
+				for _, g := range v.Groups {
 					<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", g.ID)) } class="gallery-album">
 						<span class="gallery-thumb">
 							<img src={ thumbURL(g.CoverMediaID, 256) } alt="" loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
 						</span>
-						<span class="gallery-album-name">{ plural(g.MemberCount, "similar photo", "similar photos") }</span>
+						<span class="gallery-album-name">{ plural(g.MemberCount, "file", "files") }</span>
 					</a>
 				}
 			</div>
 		}
 	}
+}
+
+// duplicateKindHelp says what a kind of group holds and how far to trust it.
+func duplicateKindHelp(k DuplicateKind) string {
+	switch k {
+	case DuplicateIdentical:
+		return "Files with exactly the same bytes. Deleting the copies loses nothing."
+	case DuplicateSamePicture:
+		return "The same picture at the same size, saved more than once. The files differ, often only in their date or location, so check which to keep."
+	case DuplicateSmaller:
+		return "The same picture at a smaller size, often sent through a chat app that dropped its date and location."
+	}
+	return "Photos that look alike: bursts taken seconds apart, edits and crops. They are not copies, so look before deleting."
 }
 
 func othersCount(members []DuplicateMember) int {
@@ -1519,26 +1564,61 @@ func othersCount(members []DuplicateMember) int {
 	return n
 }
 
-templ duplicateGroupViewPage(activePath string, groupID int64, members []DuplicateMember, csrfToken string) {
+// memberDate is when a member was taken, or a dash.
+func memberDate(m DuplicateMember) string {
+	if m.Media.DateTaken == nil {
+		return "—"
+	}
+	return time.Unix(*m.Media.DateTaken, 0).UTC().Format("2 Jan 2006 15:04:05")
+}
+
+// memberSize is a member's dimensions and, when known, its file size.
+func memberSize(m DuplicateMember) string {
+	s := strconv.Itoa(m.Media.Width) + " × " + strconv.Itoa(m.Media.Height)
+	if m.Size > 0 {
+		s += ", " + formatBytes(uint64(m.Size))
+	}
+	return s
+}
+
+// memberMatch says how a member compares with the kept one.
+func memberMatch(kind DuplicateKind, m DuplicateMember) string {
+	switch {
+	case kind == DuplicateIdentical:
+		return "Same bytes"
+	case m.Score >= identicalScore:
+		return "Same pixels"
+	case m.Score >= copyScore:
+		return fmt.Sprintf("Same picture (%.0f dB)", m.Score)
+	case m.Score >= 0:
+		return fmt.Sprintf("Differs (%.0f dB)", m.Score)
+	}
+	return fmt.Sprintf("Fingerprint %.0f bits apart", m.Distance)
+}
+
+templ duplicateGroupViewPage(activePath string, v duplicateGroupView, csrfToken string) {
 	@galleryLayout(activePath) {
-		@ui.PageHeader("Duplicate group", []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates"}}) {
-			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", groupID)) }>
+		@ui.PageHeader(v.Kind.Label(), []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates?kind=" + v.Kind.Slug()}}) {
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/dismiss", v.ID)) }>
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<button type="submit" class="btn">Not duplicates</button>
 			</form>
-			if othersCount(members) > 0 {
+			if othersCount(v.Members) > 0 {
 				<form
 					method="post"
-					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", groupID)) }
-					data-confirm={ "Move " + plural(othersCount(members), "photo", "photos") + " to the trash and keep the one marked Keep?" }
+					action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete", v.ID)) }
+					data-confirm={ "Move " + plural(othersCount(v.Members), "photo", "photos") + " to the trash and keep the one marked Keep?" }
 					data-confirm-title="Delete the others"
 				>
 					<input type="hidden" name="csrf_token" value={ csrfToken }/>
 					<button type="submit" class="btn btn-danger">
 						@ui.Icon("trash")
-						{ "Delete " + plural(othersCount(members), "other", "others") }
+						{ "Delete " + plural(othersCount(v.Members), "other", "others") }
 					</button>
 				</form>
+			}
+			if v.Next != 0 {
+				<a href={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d", v.Next)) } class="btn">Skip</a>
 			}
 			<div class="dropdown">
 				<button type="button" class="btn btn-square" data-dropdown-toggle aria-expanded="false" aria-controls="dupe-menu" aria-label="More actions">
@@ -1552,38 +1632,59 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 				</div>
 			</div>
 		}
+		<p class="text-sm text-muted mb-3">{ duplicateKindHelp(v.Kind) }</p>
 		<div class="gallery-dupes">
-			for _, m := range members {
+			for _, m := range v.Members {
 				<div class={ "card gallery-dupe", templ.KV("is-keep", m.IsKeep) }>
 					<a href={ templ.SafeURL(photoURL(m.Media.ID)) } class="gallery-thumb">
 						<img src={ thumbURL(m.Media.ID, 256) } alt={ m.Media.FileName() } loading="lazy" onerror="this.parentElement.classList.add('is-missing')"/>
 					</a>
 					<div class="gallery-dupe-body">
-						if m.IsKeep {
-							<span class="badge badge-success">
-								@ui.Icon("check-circle")
-								Keep
-							</span>
-						}
+						<div>
+							if m.IsKeep {
+								<span class="badge badge-success">
+									@ui.Icon("check-circle")
+									Keep
+								</span>
+							}
+							if m.IsEdit() {
+								<span class="badge badge-neutral">Edited</span>
+							}
+							if m.IsMotion() {
+								<span class="badge badge-neutral">Motion photo</span>
+							}
+						</div>
 						<dl class="gallery-meta">
 							<dt>File</dt>
 							<dd>{ m.Media.FileName() }</dd>
+							<dt>Folder</dt>
+							<dd>{ path.Dir(m.Media.FilePath) }</dd>
+							<dt>Taken</dt>
+							<dd>{ memberDate(m) }</dd>
 							<dt>Size</dt>
-							<dd>{ strconv.Itoa(m.Media.Width) } × { strconv.Itoa(m.Media.Height) }</dd>
-							if m.Distance > 0 {
-								<dt>Difference</dt>
-								<dd>{ fmt.Sprintf("%.0f", m.Distance) }</dd>
+							<dd>{ memberSize(m) }</dd>
+							<dt>Location</dt>
+							<dd>
+								if m.Media.Latitude != nil {
+									Yes
+								} else {
+									No
+								}
+							</dd>
+							if !m.IsKeep {
+								<dt>Match</dt>
+								<dd>{ memberMatch(v.Kind, m) }</dd>
 							}
 						</dl>
 						<div class="gallery-dupe-actions">
 							if !m.IsKeep {
-								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", groupID)) }>
+								<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/keep", v.ID)) }>
 									<input type="hidden" name="csrf_token" value={ csrfToken }/>
 									<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
 									<button type="submit" class="btn btn-sm">Keep this one</button>
 								</form>
 							}
-							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", groupID)) }>
+							<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/unmark", v.ID)) }>
 								<input type="hidden" name="csrf_token" value={ csrfToken }/>
 								<input type="hidden" name="media_id" value={ strconv.FormatInt(m.Media.ID, 10) }/>
 								<button type="submit" class="btn btn-sm">Not a duplicate</button>
@@ -1591,7 +1692,7 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 							<form
 								class="ml-auto"
 								method="post"
-								action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", groupID)) }
+								action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-member", v.ID)) }
 								data-confirm={ "Move “" + m.Media.FileName() + "” to the trash?" }
 								data-confirm-title="Delete photo"
 							>
@@ -1607,10 +1708,10 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 			}
 		</div>
 		@ui.Modal("gallery-delete-all", "Delete every photo in this group") {
-			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", groupID)) }>
+			<form method="post" action={ templ.SafeURL(fmt.Sprintf("/apps/gallery/duplicates/%d/delete-all", v.ID)) }>
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				<div class="modal-body">
-					<p>{ "This moves all " + plural(len(members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery." }</p>
+					<p>{ "This moves all " + plural(len(v.Members), "photo", "photos") + " to the trash, including the one marked Keep. None of them stays in the gallery." }</p>
 					<div class="form-group mb-0 mt-2">
 						<label for="gallery-delete-all-confirm">Type <strong>delete</strong> to confirm</label>
 						<input class="form-control" id="gallery-delete-all-confirm" type="text" required pattern="[Dd][Ee][Ll][Ee][Tt][Ee]" autocomplete="off"/>
@@ -1623,6 +1724,55 @@ templ duplicateGroupViewPage(activePath string, groupID int64, members []Duplica
 			</form>
 		}
 	}
+}
+
+templ dedupeStatusPage(job FileJob) {
+	@galleryLayout("/apps/gallery/duplicates") {
+		@ui.PageHeader("Deleting identical copies", []ui.Crumb{{Label: "Duplicates", URL: "/apps/gallery/duplicates"}})
+		@dedupeJobCard(job)
+	}
+}
+
+templ dedupeJobCard(job FileJob) {
+	<div
+		id="dedupe-job"
+		class="card"
+		if job.Running() {
+			hx-get="/apps/gallery/api/dedupe-status"
+			hx-trigger="every 1s"
+			hx-swap="outerHTML"
+		}
+	>
+		if job.Running() {
+			if job.Total == 0 {
+				<p>Finding the copies…</p>
+			} else {
+				<div class="progress mb-1" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={ strconv.Itoa(job.Percent()) }>
+					<div class="progress-bar" style={ "width:" + strconv.Itoa(job.Percent()) + "%" }></div>
+				</div>
+				<p class="text-sm">{ strconv.Itoa(job.Done+job.Failed) } of { strconv.Itoa(job.Total) } copies ({ strconv.Itoa(job.Percent()) }%)</p>
+			}
+			<p class="text-sm text-muted">It goes on if you leave this page.</p>
+		} else if job.Err != "" {
+			@ui.Alert("error", "Stopped: "+job.Err)
+		} else {
+			<p>{ "Moved " + plural(job.Done, "identical copy", "identical copies") + " to the trash." }</p>
+		}
+		if job.Failed > 0 {
+			<p class="text-danger">{ plural(job.Failed, "copy was", "copies were") } left alone:</p>
+			<ul class="text-sm mono">
+				for _, f := range job.Failures {
+					<li>{ firstLine(f) }</li>
+				}
+				if job.Failed > len(job.Failures) {
+					<li>{ "and " + strconv.Itoa(job.Failed-len(job.Failures)) + " more" }</li>
+				}
+			</ul>
+		}
+		if !job.Running() {
+			<a href="/apps/gallery/duplicates" class="btn">Back to duplicates</a>
+		}
+	</div>
 }
 
 // --- Settings (per user) ---
@@ -2109,7 +2259,7 @@ templ renameConflictsField(policy ConflictPolicy) {
 	</div>
 }
 
-templ renameStatusPage(job RenameJob) {
+templ renameStatusPage(job FileJob) {
 	@galleryLayout("/apps/gallery/settings") {
 		if job.Undo {
 			@ui.PageHeader("Undo rename", []ui.Crumb{{Label: "Settings", URL: "/apps/gallery/settings"}})
@@ -2120,7 +2270,7 @@ templ renameStatusPage(job RenameJob) {
 	}
 }
 
-templ renameJobCard(job RenameJob) {
+templ renameJobCard(job FileJob) {
 	<div
 		id="rename-job"
 		class="card"

@@ -68,3 +68,30 @@ func TestPreviewAppliesOrientation(t *testing.T) {
 	r, _, b, _ = thumb.At(32, 118).RGBA()
 	assert.True(t, b > r, "bottom of the upright thumbnail should be blue")
 }
+
+// Moving a photo gives it a new etag, which names its thumbnails; they move
+// with it rather than being made again, and moving it back works the same.
+func TestRenameKeepsThumbnails(t *testing.T) {
+	env := cogtest.New(t)
+	alice := env.CreateUser(t, "alice", "pass")
+	plug := getFilesPlugin(t, env)
+	var buf bytes.Buffer
+	require.NoError(t, jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 64, 48)), nil))
+	_, err := plug.Upload(alice.Username, "/a.jpg", &buf)
+	require.NoError(t, err)
+	made, err := plug.EnsurePreview(alice.Username, "/a.jpg", 256)
+	require.NoError(t, err)
+	require.True(t, made)
+
+	_, err = plug.Rename(alice.Username, "/a.jpg", "/b.jpg")
+	require.NoError(t, err)
+	made, err = plug.EnsurePreview(alice.Username, "/b.jpg", 256)
+	require.NoError(t, err)
+	assert.False(t, made, "the thumbnail was made again after a rename")
+
+	_, err = plug.RenameNoReplace(alice.Username, "/b.jpg", "/sub/a.jpg")
+	require.NoError(t, err)
+	made, err = plug.EnsurePreview(alice.Username, "/sub/a.jpg", 256)
+	require.NoError(t, err)
+	assert.False(t, made, "the thumbnail was made again after a move")
+}
